@@ -1,8 +1,20 @@
+import java.util.Properties
+
 // :app, la app de Android: una sola para la tablet (copia de la PC con interfaz táctil) y el celular.
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
+
+/**
+ * Solo para la pantalla de desarrollo de las compilaciones de depuración: `tpvc.dev.url`, `tpvc.dev.token` y `tpvc.dev.deviceId` de
+ * local.properties, que nunca se sube. La compilación de publicación no lleva estos campos ni la pantalla.
+ */
+val devProperties = Properties().apply {
+    providers.fileContents(rootProject.layout.projectDirectory.file("local.properties")).asText.orNull?.let { load(it.reader()) }
+}
+
+fun devField(key: String): String = "\"" + devProperties.getProperty(key, "").replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 android {
     namespace = "io.github.marioalr.tpvca"
@@ -22,6 +34,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("String", "TPVC_DEV_URL", devField("tpvc.dev.url"))
+            buildConfigField("String", "TPVC_DEV_TOKEN", devField("tpvc.dev.token"))
+            buildConfigField("String", "TPVC_DEV_DEVICE_ID", devField("tpvc.dev.deviceId"))
+        }
         release {
             // La firma de publicación se configura fuera del repositorio (nunca se suben llaves)
             isMinifyEnabled = false
@@ -79,6 +96,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material3.windowsizeclass)
+    debugImplementation(libs.kotlinx.coroutines.core)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 

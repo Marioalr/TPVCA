@@ -1,0 +1,2973 @@
+{
+  "rule": "best-sellers",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "«Más vendidos» del panel «Negocio» (BusinessReportRules.TopProducts y TopServices): las mismas entradas y reglas de renglón que business-summary.json; sin canceladas.",
+    "products: los renglones de producto del type (Medicamentos por omisión en la pantalla; sin type, todos los productos), uno por producto y por si son piezas sueltas (solo los renglones con isIndividualUnits true; sin la marca, paquetes; las piezas cuentan como piezas: quantityText '4 piezas sueltas'). ranking Quantity: Σ cantidad de mayor a menor, luego utilidad; Profit: utilidad, luego cantidad; después ventas de mayor a menor y el nombre (de hoy) con Collator es-MX. hasEstimatedCost si algún renglón no tiene costo guardado. top como máximo.",
+    "services: los renglones de Consultas y Servicios (del type si se da), uno por serviceId (o por nombre sin él): count = Σ cantidad, income = Σ subtotal; de más a menos veces, luego ingreso y nombre (es-MX)."
+  ],
+  "cases": [
+    {
+      "name": "productos · medicamentos por cantidad (la vista de inicio)",
+      "input": {
+        "check": "products",
+        "period": {
+          "from": "2026-10-01",
+          "to": "2026-11-01"
+        },
+        "ranking": "Quantity",
+        "top": 10,
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "stock": 30,
+            "category": "Medicamentos",
+            "price": "45",
+            "unitCost": "20",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Amoxicilina 500 mg",
+            "stock": 10,
+            "category": "Medicamentos",
+            "price": "120",
+            "unitCost": "70",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 3,
+            "code": "CUR-001",
+            "name": "Gasas estériles 10x10",
+            "stock": 5,
+            "category": "Material de Curación",
+            "price": "60",
+            "unitCost": "30",
+            "costExcludesVat": true,
+            "unitsPerPackage": 10
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Jeringa 5 ml",
+            "stock": 50,
+            "category": "Insumos",
+            "price": "8",
+            "unitCost": "0",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 5,
+            "code": "MED-003",
+            "name": "Ketorolaco ampolleta 30 mg",
+            "stock": 4,
+            "category": "Medicamentos",
+            "price": "90",
+            "unitCost": "35.5",
+            "costExcludesVat": false,
+            "unitsPerPackage": 3
+          },
+          {
+            "id": 6,
+            "code": "ANT-001",
+            "name": "Ácido acético 3 %",
+            "stock": 0,
+            "category": "Antisépticos",
+            "active": false,
+            "price": "40",
+            "unitCost": "12",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          }
+        ],
+        "services": [
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta"
+          },
+          {
+            "id": 2,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones"
+          },
+          {
+            "id": 3,
+            "code": "SERV-005",
+            "name": "Certificado Médico Oficial",
+            "category": "Certificados"
+          },
+          {
+            "id": 4,
+            "code": "SERV-010",
+            "name": "Consulta de seguimiento",
+            "category": "Seguimiento"
+          }
+        ],
+        "sales": [
+          {
+            "id": 1,
+            "date": "2026-10-05 10:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-001",
+                "description": "Consulta Médica General",
+                "quantity": 1,
+                "unitPrice": "300",
+                "subtotal": "300.00",
+                "serviceId": 1
+              },
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 2,
+                "unitPrice": "45",
+                "subtotal": "90.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "date": "2026-10-06 12:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-002",
+                "description": "Curación Menor y Asepsia",
+                "quantity": 1,
+                "unitPrice": "250",
+                "subtotal": "250.00",
+                "serviceId": 2
+              },
+              {
+                "productId": 3,
+                "isService": false,
+                "code": "CUR-001",
+                "description": "Gasas estériles 10x10",
+                "quantity": 4,
+                "unitPrice": "6.00",
+                "subtotal": "24.00",
+                "unitCost": "3.48",
+                "isIndividualUnits": true
+              },
+              {
+                "productId": 4,
+                "isService": false,
+                "code": "INS-001",
+                "description": "Jeringa 5 ml",
+                "quantity": 1,
+                "unitPrice": "8",
+                "subtotal": "8.00",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "date": "2026-10-07 09:00",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 2,
+                "isService": false,
+                "code": "MED-002",
+                "description": "Amoxicilina 500 mg",
+                "quantity": 1,
+                "unitPrice": "120",
+                "subtotal": "120.00"
+              },
+              {
+                "productId": 5,
+                "isService": false,
+                "code": "MED-003",
+                "description": "Ketorolaco ampolleta 30 mg",
+                "quantity": 2,
+                "unitPrice": "30",
+                "subtotal": "60.00"
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "date": "2026-10-08 11:00",
+            "cancelled": true,
+            "items": [
+              {
+                "productId": 2,
+                "isService": false,
+                "code": "MED-002",
+                "description": "Amoxicilina 500 mg",
+                "quantity": 3,
+                "unitPrice": "120",
+                "subtotal": "360.00",
+                "unitCost": "70",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "date": "2026-10-09 17:45",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "CARGO",
+                "description": "Aplicación de inyección",
+                "quantity": 1,
+                "unitPrice": "50",
+                "subtotal": "50.00"
+              },
+              {
+                "isService": true,
+                "code": "INSUMO",
+                "description": "Venda elástica",
+                "quantity": 1,
+                "unitPrice": "35",
+                "subtotal": "35.00"
+              }
+            ]
+          },
+          {
+            "id": 6,
+            "date": "2026-10-10 13:00",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 99,
+                "isService": false,
+                "code": "OLD-1",
+                "description": "Producto borrado",
+                "quantity": 1,
+                "unitPrice": "15",
+                "subtotal": "15.00"
+              }
+            ]
+          },
+          {
+            "id": 7,
+            "date": "2026-10-12 16:20",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-010",
+                "description": "Consulta de seguimiento",
+                "quantity": 1,
+                "unitPrice": "200",
+                "subtotal": "200.00",
+                "serviceId": 4
+              },
+              {
+                "productId": 3,
+                "isService": false,
+                "code": "CUR-001",
+                "description": "Gasas estériles 10x10",
+                "quantity": 2,
+                "unitPrice": "6.00",
+                "subtotal": "12.00",
+                "unitCost": "3.48",
+                "isIndividualUnits": true
+              },
+              {
+                "productId": 5,
+                "isService": false,
+                "code": "MED-003",
+                "description": "Ketorolaco ampolleta 30 mg",
+                "quantity": 1,
+                "unitPrice": "30",
+                "subtotal": "30.00",
+                "unitCost": "11.83",
+                "isIndividualUnits": true
+              }
+            ]
+          },
+          {
+            "id": 8,
+            "date": "2026-10-31 23:30",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-005",
+                "description": "Certificado Médico Oficial",
+                "quantity": 1,
+                "unitPrice": "200",
+                "subtotal": "200.00",
+                "serviceId": 3
+              },
+              {
+                "isService": true,
+                "code": "SERV-077",
+                "description": "Retiro de puntos",
+                "quantity": 1,
+                "unitPrice": "150",
+                "subtotal": "150.00",
+                "serviceId": 77
+              }
+            ]
+          },
+          {
+            "id": 9,
+            "date": "2026-11-01 00:10",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 1,
+                "unitPrice": "45",
+                "subtotal": "45.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 10,
+            "date": "2026-09-30 18:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-001",
+                "description": "Consulta Médica General",
+                "quantity": 1,
+                "unitPrice": "300",
+                "subtotal": "300.00",
+                "serviceId": 1
+              },
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 1,
+                "unitPrice": "45",
+                "subtotal": "45.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          }
+        ],
+        "type": "Medicamentos"
+      },
+      "expected": [
+        {
+          "productId": 1,
+          "name": "Paracetamol 500 mg",
+          "type": "Medicamentos",
+          "isLoosePieces": false,
+          "quantity": 2,
+          "quantityText": "2",
+          "sales": "90.00",
+          "cost": "40.00",
+          "profit": "50.00",
+          "hasEstimatedCost": false
+        },
+        {
+          "productId": 5,
+          "name": "Ketorolaco ampolleta 30 mg",
+          "type": "Medicamentos",
+          "isLoosePieces": false,
+          "quantity": 2,
+          "quantityText": "2",
+          "sales": "60.00",
+          "cost": "71.00",
+          "profit": "-11.00",
+          "hasEstimatedCost": true
+        },
+        {
+          "productId": 2,
+          "name": "Amoxicilina 500 mg",
+          "type": "Medicamentos",
+          "isLoosePieces": false,
+          "quantity": 1,
+          "quantityText": "1",
+          "sales": "120.00",
+          "cost": "70.00",
+          "profit": "50.00",
+          "hasEstimatedCost": true
+        },
+        {
+          "productId": 5,
+          "name": "Ketorolaco ampolleta 30 mg",
+          "type": "Medicamentos",
+          "isLoosePieces": true,
+          "quantity": 1,
+          "quantityText": "1 pieza suelta",
+          "sales": "30.00",
+          "cost": "11.83",
+          "profit": "18.17",
+          "hasEstimatedCost": false
+        }
+      ]
+    },
+    {
+      "name": "productos · medicamentos por utilidad",
+      "input": {
+        "check": "products",
+        "period": {
+          "from": "2026-10-01",
+          "to": "2026-11-01"
+        },
+        "ranking": "Profit",
+        "top": 10,
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "stock": 30,
+            "category": "Medicamentos",
+            "price": "45",
+            "unitCost": "20",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Amoxicilina 500 mg",
+            "stock": 10,
+            "category": "Medicamentos",
+            "price": "120",
+            "unitCost": "70",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 3,
+            "code": "CUR-001",
+            "name": "Gasas estériles 10x10",
+            "stock": 5,
+            "category": "Material de Curación",
+            "price": "60",
+            "unitCost": "30",
+            "costExcludesVat": true,
+            "unitsPerPackage": 10
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Jeringa 5 ml",
+            "stock": 50,
+            "category": "Insumos",
+            "price": "8",
+            "unitCost": "0",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 5,
+            "code": "MED-003",
+            "name": "Ketorolaco ampolleta 30 mg",
+            "stock": 4,
+            "category": "Medicamentos",
+            "price": "90",
+            "unitCost": "35.5",
+            "costExcludesVat": false,
+            "unitsPerPackage": 3
+          },
+          {
+            "id": 6,
+            "code": "ANT-001",
+            "name": "Ácido acético 3 %",
+            "stock": 0,
+            "category": "Antisépticos",
+            "active": false,
+            "price": "40",
+            "unitCost": "12",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          }
+        ],
+        "services": [
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta"
+          },
+          {
+            "id": 2,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones"
+          },
+          {
+            "id": 3,
+            "code": "SERV-005",
+            "name": "Certificado Médico Oficial",
+            "category": "Certificados"
+          },
+          {
+            "id": 4,
+            "code": "SERV-010",
+            "name": "Consulta de seguimiento",
+            "category": "Seguimiento"
+          }
+        ],
+        "sales": [
+          {
+            "id": 1,
+            "date": "2026-10-05 10:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-001",
+                "description": "Consulta Médica General",
+                "quantity": 1,
+                "unitPrice": "300",
+                "subtotal": "300.00",
+                "serviceId": 1
+              },
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 2,
+                "unitPrice": "45",
+                "subtotal": "90.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "date": "2026-10-06 12:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-002",
+                "description": "Curación Menor y Asepsia",
+                "quantity": 1,
+                "unitPrice": "250",
+                "subtotal": "250.00",
+                "serviceId": 2
+              },
+              {
+                "productId": 3,
+                "isService": false,
+                "code": "CUR-001",
+                "description": "Gasas estériles 10x10",
+                "quantity": 4,
+                "unitPrice": "6.00",
+                "subtotal": "24.00",
+                "unitCost": "3.48",
+                "isIndividualUnits": true
+              },
+              {
+                "productId": 4,
+                "isService": false,
+                "code": "INS-001",
+                "description": "Jeringa 5 ml",
+                "quantity": 1,
+                "unitPrice": "8",
+                "subtotal": "8.00",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "date": "2026-10-07 09:00",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 2,
+                "isService": false,
+                "code": "MED-002",
+                "description": "Amoxicilina 500 mg",
+                "quantity": 1,
+                "unitPrice": "120",
+                "subtotal": "120.00"
+              },
+              {
+                "productId": 5,
+                "isService": false,
+                "code": "MED-003",
+                "description": "Ketorolaco ampolleta 30 mg",
+                "quantity": 2,
+                "unitPrice": "30",
+                "subtotal": "60.00"
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "date": "2026-10-08 11:00",
+            "cancelled": true,
+            "items": [
+              {
+                "productId": 2,
+                "isService": false,
+                "code": "MED-002",
+                "description": "Amoxicilina 500 mg",
+                "quantity": 3,
+                "unitPrice": "120",
+                "subtotal": "360.00",
+                "unitCost": "70",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "date": "2026-10-09 17:45",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "CARGO",
+                "description": "Aplicación de inyección",
+                "quantity": 1,
+                "unitPrice": "50",
+                "subtotal": "50.00"
+              },
+              {
+                "isService": true,
+                "code": "INSUMO",
+                "description": "Venda elástica",
+                "quantity": 1,
+                "unitPrice": "35",
+                "subtotal": "35.00"
+              }
+            ]
+          },
+          {
+            "id": 6,
+            "date": "2026-10-10 13:00",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 99,
+                "isService": false,
+                "code": "OLD-1",
+                "description": "Producto borrado",
+                "quantity": 1,
+                "unitPrice": "15",
+                "subtotal": "15.00"
+              }
+            ]
+          },
+          {
+            "id": 7,
+            "date": "2026-10-12 16:20",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-010",
+                "description": "Consulta de seguimiento",
+                "quantity": 1,
+                "unitPrice": "200",
+                "subtotal": "200.00",
+                "serviceId": 4
+              },
+              {
+                "productId": 3,
+                "isService": false,
+                "code": "CUR-001",
+                "description": "Gasas estériles 10x10",
+                "quantity": 2,
+                "unitPrice": "6.00",
+                "subtotal": "12.00",
+                "unitCost": "3.48",
+                "isIndividualUnits": true
+              },
+              {
+                "productId": 5,
+                "isService": false,
+                "code": "MED-003",
+                "description": "Ketorolaco ampolleta 30 mg",
+                "quantity": 1,
+                "unitPrice": "30",
+                "subtotal": "30.00",
+                "unitCost": "11.83",
+                "isIndividualUnits": true
+              }
+            ]
+          },
+          {
+            "id": 8,
+            "date": "2026-10-31 23:30",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-005",
+                "description": "Certificado Médico Oficial",
+                "quantity": 1,
+                "unitPrice": "200",
+                "subtotal": "200.00",
+                "serviceId": 3
+              },
+              {
+                "isService": true,
+                "code": "SERV-077",
+                "description": "Retiro de puntos",
+                "quantity": 1,
+                "unitPrice": "150",
+                "subtotal": "150.00",
+                "serviceId": 77
+              }
+            ]
+          },
+          {
+            "id": 9,
+            "date": "2026-11-01 00:10",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 1,
+                "unitPrice": "45",
+                "subtotal": "45.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 10,
+            "date": "2026-09-30 18:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-001",
+                "description": "Consulta Médica General",
+                "quantity": 1,
+                "unitPrice": "300",
+                "subtotal": "300.00",
+                "serviceId": 1
+              },
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 1,
+                "unitPrice": "45",
+                "subtotal": "45.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          }
+        ],
+        "type": "Medicamentos"
+      },
+      "expected": [
+        {
+          "productId": 1,
+          "name": "Paracetamol 500 mg",
+          "type": "Medicamentos",
+          "isLoosePieces": false,
+          "quantity": 2,
+          "quantityText": "2",
+          "sales": "90.00",
+          "cost": "40.00",
+          "profit": "50.00",
+          "hasEstimatedCost": false
+        },
+        {
+          "productId": 2,
+          "name": "Amoxicilina 500 mg",
+          "type": "Medicamentos",
+          "isLoosePieces": false,
+          "quantity": 1,
+          "quantityText": "1",
+          "sales": "120.00",
+          "cost": "70.00",
+          "profit": "50.00",
+          "hasEstimatedCost": true
+        },
+        {
+          "productId": 5,
+          "name": "Ketorolaco ampolleta 30 mg",
+          "type": "Medicamentos",
+          "isLoosePieces": true,
+          "quantity": 1,
+          "quantityText": "1 pieza suelta",
+          "sales": "30.00",
+          "cost": "11.83",
+          "profit": "18.17",
+          "hasEstimatedCost": false
+        },
+        {
+          "productId": 5,
+          "name": "Ketorolaco ampolleta 30 mg",
+          "type": "Medicamentos",
+          "isLoosePieces": false,
+          "quantity": 2,
+          "quantityText": "2",
+          "sales": "60.00",
+          "cost": "71.00",
+          "profit": "-11.00",
+          "hasEstimatedCost": true
+        }
+      ]
+    },
+    {
+      "name": "productos · insumos: las piezas sueltas cuentan como piezas",
+      "input": {
+        "check": "products",
+        "period": {
+          "from": "2026-10-01",
+          "to": "2026-11-01"
+        },
+        "ranking": "Quantity",
+        "top": 10,
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "stock": 30,
+            "category": "Medicamentos",
+            "price": "45",
+            "unitCost": "20",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Amoxicilina 500 mg",
+            "stock": 10,
+            "category": "Medicamentos",
+            "price": "120",
+            "unitCost": "70",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 3,
+            "code": "CUR-001",
+            "name": "Gasas estériles 10x10",
+            "stock": 5,
+            "category": "Material de Curación",
+            "price": "60",
+            "unitCost": "30",
+            "costExcludesVat": true,
+            "unitsPerPackage": 10
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Jeringa 5 ml",
+            "stock": 50,
+            "category": "Insumos",
+            "price": "8",
+            "unitCost": "0",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 5,
+            "code": "MED-003",
+            "name": "Ketorolaco ampolleta 30 mg",
+            "stock": 4,
+            "category": "Medicamentos",
+            "price": "90",
+            "unitCost": "35.5",
+            "costExcludesVat": false,
+            "unitsPerPackage": 3
+          },
+          {
+            "id": 6,
+            "code": "ANT-001",
+            "name": "Ácido acético 3 %",
+            "stock": 0,
+            "category": "Antisépticos",
+            "active": false,
+            "price": "40",
+            "unitCost": "12",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          }
+        ],
+        "services": [
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta"
+          },
+          {
+            "id": 2,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones"
+          },
+          {
+            "id": 3,
+            "code": "SERV-005",
+            "name": "Certificado Médico Oficial",
+            "category": "Certificados"
+          },
+          {
+            "id": 4,
+            "code": "SERV-010",
+            "name": "Consulta de seguimiento",
+            "category": "Seguimiento"
+          }
+        ],
+        "sales": [
+          {
+            "id": 1,
+            "date": "2026-10-05 10:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-001",
+                "description": "Consulta Médica General",
+                "quantity": 1,
+                "unitPrice": "300",
+                "subtotal": "300.00",
+                "serviceId": 1
+              },
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 2,
+                "unitPrice": "45",
+                "subtotal": "90.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "date": "2026-10-06 12:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-002",
+                "description": "Curación Menor y Asepsia",
+                "quantity": 1,
+                "unitPrice": "250",
+                "subtotal": "250.00",
+                "serviceId": 2
+              },
+              {
+                "productId": 3,
+                "isService": false,
+                "code": "CUR-001",
+                "description": "Gasas estériles 10x10",
+                "quantity": 4,
+                "unitPrice": "6.00",
+                "subtotal": "24.00",
+                "unitCost": "3.48",
+                "isIndividualUnits": true
+              },
+              {
+                "productId": 4,
+                "isService": false,
+                "code": "INS-001",
+                "description": "Jeringa 5 ml",
+                "quantity": 1,
+                "unitPrice": "8",
+                "subtotal": "8.00",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "date": "2026-10-07 09:00",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 2,
+                "isService": false,
+                "code": "MED-002",
+                "description": "Amoxicilina 500 mg",
+                "quantity": 1,
+                "unitPrice": "120",
+                "subtotal": "120.00"
+              },
+              {
+                "productId": 5,
+                "isService": false,
+                "code": "MED-003",
+                "description": "Ketorolaco ampolleta 30 mg",
+                "quantity": 2,
+                "unitPrice": "30",
+                "subtotal": "60.00"
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "date": "2026-10-08 11:00",
+            "cancelled": true,
+            "items": [
+              {
+                "productId": 2,
+                "isService": false,
+                "code": "MED-002",
+                "description": "Amoxicilina 500 mg",
+                "quantity": 3,
+                "unitPrice": "120",
+                "subtotal": "360.00",
+                "unitCost": "70",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "date": "2026-10-09 17:45",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "CARGO",
+                "description": "Aplicación de inyección",
+                "quantity": 1,
+                "unitPrice": "50",
+                "subtotal": "50.00"
+              },
+              {
+                "isService": true,
+                "code": "INSUMO",
+                "description": "Venda elástica",
+                "quantity": 1,
+                "unitPrice": "35",
+                "subtotal": "35.00"
+              }
+            ]
+          },
+          {
+            "id": 6,
+            "date": "2026-10-10 13:00",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 99,
+                "isService": false,
+                "code": "OLD-1",
+                "description": "Producto borrado",
+                "quantity": 1,
+                "unitPrice": "15",
+                "subtotal": "15.00"
+              }
+            ]
+          },
+          {
+            "id": 7,
+            "date": "2026-10-12 16:20",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-010",
+                "description": "Consulta de seguimiento",
+                "quantity": 1,
+                "unitPrice": "200",
+                "subtotal": "200.00",
+                "serviceId": 4
+              },
+              {
+                "productId": 3,
+                "isService": false,
+                "code": "CUR-001",
+                "description": "Gasas estériles 10x10",
+                "quantity": 2,
+                "unitPrice": "6.00",
+                "subtotal": "12.00",
+                "unitCost": "3.48",
+                "isIndividualUnits": true
+              },
+              {
+                "productId": 5,
+                "isService": false,
+                "code": "MED-003",
+                "description": "Ketorolaco ampolleta 30 mg",
+                "quantity": 1,
+                "unitPrice": "30",
+                "subtotal": "30.00",
+                "unitCost": "11.83",
+                "isIndividualUnits": true
+              }
+            ]
+          },
+          {
+            "id": 8,
+            "date": "2026-10-31 23:30",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-005",
+                "description": "Certificado Médico Oficial",
+                "quantity": 1,
+                "unitPrice": "200",
+                "subtotal": "200.00",
+                "serviceId": 3
+              },
+              {
+                "isService": true,
+                "code": "SERV-077",
+                "description": "Retiro de puntos",
+                "quantity": 1,
+                "unitPrice": "150",
+                "subtotal": "150.00",
+                "serviceId": 77
+              }
+            ]
+          },
+          {
+            "id": 9,
+            "date": "2026-11-01 00:10",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 1,
+                "unitPrice": "45",
+                "subtotal": "45.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 10,
+            "date": "2026-09-30 18:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-001",
+                "description": "Consulta Médica General",
+                "quantity": 1,
+                "unitPrice": "300",
+                "subtotal": "300.00",
+                "serviceId": 1
+              },
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 1,
+                "unitPrice": "45",
+                "subtotal": "45.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          }
+        ],
+        "type": "Insumos"
+      },
+      "expected": [
+        {
+          "productId": 3,
+          "name": "Gasas estériles 10x10",
+          "type": "Insumos",
+          "isLoosePieces": true,
+          "quantity": 6,
+          "quantityText": "6 piezas sueltas",
+          "sales": "36.00",
+          "cost": "20.88",
+          "profit": "15.12",
+          "hasEstimatedCost": false
+        },
+        {
+          "productId": 4,
+          "name": "Jeringa 5 ml",
+          "type": "Insumos",
+          "isLoosePieces": false,
+          "quantity": 1,
+          "quantityText": "1",
+          "sales": "8.00",
+          "cost": "0.00",
+          "profit": "8.00",
+          "hasEstimatedCost": true
+        }
+      ]
+    },
+    {
+      "name": "productos · todos los productos",
+      "input": {
+        "check": "products",
+        "period": {
+          "from": "2026-10-01",
+          "to": "2026-11-01"
+        },
+        "ranking": "Quantity",
+        "top": 10,
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "stock": 30,
+            "category": "Medicamentos",
+            "price": "45",
+            "unitCost": "20",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Amoxicilina 500 mg",
+            "stock": 10,
+            "category": "Medicamentos",
+            "price": "120",
+            "unitCost": "70",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 3,
+            "code": "CUR-001",
+            "name": "Gasas estériles 10x10",
+            "stock": 5,
+            "category": "Material de Curación",
+            "price": "60",
+            "unitCost": "30",
+            "costExcludesVat": true,
+            "unitsPerPackage": 10
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Jeringa 5 ml",
+            "stock": 50,
+            "category": "Insumos",
+            "price": "8",
+            "unitCost": "0",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 5,
+            "code": "MED-003",
+            "name": "Ketorolaco ampolleta 30 mg",
+            "stock": 4,
+            "category": "Medicamentos",
+            "price": "90",
+            "unitCost": "35.5",
+            "costExcludesVat": false,
+            "unitsPerPackage": 3
+          },
+          {
+            "id": 6,
+            "code": "ANT-001",
+            "name": "Ácido acético 3 %",
+            "stock": 0,
+            "category": "Antisépticos",
+            "active": false,
+            "price": "40",
+            "unitCost": "12",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          }
+        ],
+        "services": [
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta"
+          },
+          {
+            "id": 2,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones"
+          },
+          {
+            "id": 3,
+            "code": "SERV-005",
+            "name": "Certificado Médico Oficial",
+            "category": "Certificados"
+          },
+          {
+            "id": 4,
+            "code": "SERV-010",
+            "name": "Consulta de seguimiento",
+            "category": "Seguimiento"
+          }
+        ],
+        "sales": [
+          {
+            "id": 1,
+            "date": "2026-10-05 10:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-001",
+                "description": "Consulta Médica General",
+                "quantity": 1,
+                "unitPrice": "300",
+                "subtotal": "300.00",
+                "serviceId": 1
+              },
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 2,
+                "unitPrice": "45",
+                "subtotal": "90.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "date": "2026-10-06 12:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-002",
+                "description": "Curación Menor y Asepsia",
+                "quantity": 1,
+                "unitPrice": "250",
+                "subtotal": "250.00",
+                "serviceId": 2
+              },
+              {
+                "productId": 3,
+                "isService": false,
+                "code": "CUR-001",
+                "description": "Gasas estériles 10x10",
+                "quantity": 4,
+                "unitPrice": "6.00",
+                "subtotal": "24.00",
+                "unitCost": "3.48",
+                "isIndividualUnits": true
+              },
+              {
+                "productId": 4,
+                "isService": false,
+                "code": "INS-001",
+                "description": "Jeringa 5 ml",
+                "quantity": 1,
+                "unitPrice": "8",
+                "subtotal": "8.00",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "date": "2026-10-07 09:00",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 2,
+                "isService": false,
+                "code": "MED-002",
+                "description": "Amoxicilina 500 mg",
+                "quantity": 1,
+                "unitPrice": "120",
+                "subtotal": "120.00"
+              },
+              {
+                "productId": 5,
+                "isService": false,
+                "code": "MED-003",
+                "description": "Ketorolaco ampolleta 30 mg",
+                "quantity": 2,
+                "unitPrice": "30",
+                "subtotal": "60.00"
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "date": "2026-10-08 11:00",
+            "cancelled": true,
+            "items": [
+              {
+                "productId": 2,
+                "isService": false,
+                "code": "MED-002",
+                "description": "Amoxicilina 500 mg",
+                "quantity": 3,
+                "unitPrice": "120",
+                "subtotal": "360.00",
+                "unitCost": "70",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "date": "2026-10-09 17:45",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "CARGO",
+                "description": "Aplicación de inyección",
+                "quantity": 1,
+                "unitPrice": "50",
+                "subtotal": "50.00"
+              },
+              {
+                "isService": true,
+                "code": "INSUMO",
+                "description": "Venda elástica",
+                "quantity": 1,
+                "unitPrice": "35",
+                "subtotal": "35.00"
+              }
+            ]
+          },
+          {
+            "id": 6,
+            "date": "2026-10-10 13:00",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 99,
+                "isService": false,
+                "code": "OLD-1",
+                "description": "Producto borrado",
+                "quantity": 1,
+                "unitPrice": "15",
+                "subtotal": "15.00"
+              }
+            ]
+          },
+          {
+            "id": 7,
+            "date": "2026-10-12 16:20",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-010",
+                "description": "Consulta de seguimiento",
+                "quantity": 1,
+                "unitPrice": "200",
+                "subtotal": "200.00",
+                "serviceId": 4
+              },
+              {
+                "productId": 3,
+                "isService": false,
+                "code": "CUR-001",
+                "description": "Gasas estériles 10x10",
+                "quantity": 2,
+                "unitPrice": "6.00",
+                "subtotal": "12.00",
+                "unitCost": "3.48",
+                "isIndividualUnits": true
+              },
+              {
+                "productId": 5,
+                "isService": false,
+                "code": "MED-003",
+                "description": "Ketorolaco ampolleta 30 mg",
+                "quantity": 1,
+                "unitPrice": "30",
+                "subtotal": "30.00",
+                "unitCost": "11.83",
+                "isIndividualUnits": true
+              }
+            ]
+          },
+          {
+            "id": 8,
+            "date": "2026-10-31 23:30",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-005",
+                "description": "Certificado Médico Oficial",
+                "quantity": 1,
+                "unitPrice": "200",
+                "subtotal": "200.00",
+                "serviceId": 3
+              },
+              {
+                "isService": true,
+                "code": "SERV-077",
+                "description": "Retiro de puntos",
+                "quantity": 1,
+                "unitPrice": "150",
+                "subtotal": "150.00",
+                "serviceId": 77
+              }
+            ]
+          },
+          {
+            "id": 9,
+            "date": "2026-11-01 00:10",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 1,
+                "unitPrice": "45",
+                "subtotal": "45.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 10,
+            "date": "2026-09-30 18:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-001",
+                "description": "Consulta Médica General",
+                "quantity": 1,
+                "unitPrice": "300",
+                "subtotal": "300.00",
+                "serviceId": 1
+              },
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 1,
+                "unitPrice": "45",
+                "subtotal": "45.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          }
+        ]
+      },
+      "expected": [
+        {
+          "productId": 3,
+          "name": "Gasas estériles 10x10",
+          "type": "Insumos",
+          "isLoosePieces": true,
+          "quantity": 6,
+          "quantityText": "6 piezas sueltas",
+          "sales": "36.00",
+          "cost": "20.88",
+          "profit": "15.12",
+          "hasEstimatedCost": false
+        },
+        {
+          "productId": 1,
+          "name": "Paracetamol 500 mg",
+          "type": "Medicamentos",
+          "isLoosePieces": false,
+          "quantity": 2,
+          "quantityText": "2",
+          "sales": "90.00",
+          "cost": "40.00",
+          "profit": "50.00",
+          "hasEstimatedCost": false
+        },
+        {
+          "productId": 5,
+          "name": "Ketorolaco ampolleta 30 mg",
+          "type": "Medicamentos",
+          "isLoosePieces": false,
+          "quantity": 2,
+          "quantityText": "2",
+          "sales": "60.00",
+          "cost": "71.00",
+          "profit": "-11.00",
+          "hasEstimatedCost": true
+        },
+        {
+          "productId": 2,
+          "name": "Amoxicilina 500 mg",
+          "type": "Medicamentos",
+          "isLoosePieces": false,
+          "quantity": 1,
+          "quantityText": "1",
+          "sales": "120.00",
+          "cost": "70.00",
+          "profit": "50.00",
+          "hasEstimatedCost": true
+        },
+        {
+          "productId": 5,
+          "name": "Ketorolaco ampolleta 30 mg",
+          "type": "Medicamentos",
+          "isLoosePieces": true,
+          "quantity": 1,
+          "quantityText": "1 pieza suelta",
+          "sales": "30.00",
+          "cost": "11.83",
+          "profit": "18.17",
+          "hasEstimatedCost": false
+        },
+        {
+          "productId": 99,
+          "name": "Producto borrado",
+          "type": "Otros",
+          "isLoosePieces": false,
+          "quantity": 1,
+          "quantityText": "1",
+          "sales": "15.00",
+          "cost": "0.00",
+          "profit": "15.00",
+          "hasEstimatedCost": true
+        },
+        {
+          "productId": 4,
+          "name": "Jeringa 5 ml",
+          "type": "Insumos",
+          "isLoosePieces": false,
+          "quantity": 1,
+          "quantityText": "1",
+          "sales": "8.00",
+          "cost": "0.00",
+          "profit": "8.00",
+          "hasEstimatedCost": true
+        }
+      ]
+    },
+    {
+      "name": "productos · todos los productos, los 2 primeros",
+      "input": {
+        "check": "products",
+        "period": {
+          "from": "2026-10-01",
+          "to": "2026-11-01"
+        },
+        "ranking": "Quantity",
+        "top": 2,
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "stock": 30,
+            "category": "Medicamentos",
+            "price": "45",
+            "unitCost": "20",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Amoxicilina 500 mg",
+            "stock": 10,
+            "category": "Medicamentos",
+            "price": "120",
+            "unitCost": "70",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 3,
+            "code": "CUR-001",
+            "name": "Gasas estériles 10x10",
+            "stock": 5,
+            "category": "Material de Curación",
+            "price": "60",
+            "unitCost": "30",
+            "costExcludesVat": true,
+            "unitsPerPackage": 10
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Jeringa 5 ml",
+            "stock": 50,
+            "category": "Insumos",
+            "price": "8",
+            "unitCost": "0",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 5,
+            "code": "MED-003",
+            "name": "Ketorolaco ampolleta 30 mg",
+            "stock": 4,
+            "category": "Medicamentos",
+            "price": "90",
+            "unitCost": "35.5",
+            "costExcludesVat": false,
+            "unitsPerPackage": 3
+          },
+          {
+            "id": 6,
+            "code": "ANT-001",
+            "name": "Ácido acético 3 %",
+            "stock": 0,
+            "category": "Antisépticos",
+            "active": false,
+            "price": "40",
+            "unitCost": "12",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          }
+        ],
+        "services": [
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta"
+          },
+          {
+            "id": 2,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones"
+          },
+          {
+            "id": 3,
+            "code": "SERV-005",
+            "name": "Certificado Médico Oficial",
+            "category": "Certificados"
+          },
+          {
+            "id": 4,
+            "code": "SERV-010",
+            "name": "Consulta de seguimiento",
+            "category": "Seguimiento"
+          }
+        ],
+        "sales": [
+          {
+            "id": 1,
+            "date": "2026-10-05 10:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-001",
+                "description": "Consulta Médica General",
+                "quantity": 1,
+                "unitPrice": "300",
+                "subtotal": "300.00",
+                "serviceId": 1
+              },
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 2,
+                "unitPrice": "45",
+                "subtotal": "90.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "date": "2026-10-06 12:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-002",
+                "description": "Curación Menor y Asepsia",
+                "quantity": 1,
+                "unitPrice": "250",
+                "subtotal": "250.00",
+                "serviceId": 2
+              },
+              {
+                "productId": 3,
+                "isService": false,
+                "code": "CUR-001",
+                "description": "Gasas estériles 10x10",
+                "quantity": 4,
+                "unitPrice": "6.00",
+                "subtotal": "24.00",
+                "unitCost": "3.48",
+                "isIndividualUnits": true
+              },
+              {
+                "productId": 4,
+                "isService": false,
+                "code": "INS-001",
+                "description": "Jeringa 5 ml",
+                "quantity": 1,
+                "unitPrice": "8",
+                "subtotal": "8.00",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "date": "2026-10-07 09:00",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 2,
+                "isService": false,
+                "code": "MED-002",
+                "description": "Amoxicilina 500 mg",
+                "quantity": 1,
+                "unitPrice": "120",
+                "subtotal": "120.00"
+              },
+              {
+                "productId": 5,
+                "isService": false,
+                "code": "MED-003",
+                "description": "Ketorolaco ampolleta 30 mg",
+                "quantity": 2,
+                "unitPrice": "30",
+                "subtotal": "60.00"
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "date": "2026-10-08 11:00",
+            "cancelled": true,
+            "items": [
+              {
+                "productId": 2,
+                "isService": false,
+                "code": "MED-002",
+                "description": "Amoxicilina 500 mg",
+                "quantity": 3,
+                "unitPrice": "120",
+                "subtotal": "360.00",
+                "unitCost": "70",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "date": "2026-10-09 17:45",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "CARGO",
+                "description": "Aplicación de inyección",
+                "quantity": 1,
+                "unitPrice": "50",
+                "subtotal": "50.00"
+              },
+              {
+                "isService": true,
+                "code": "INSUMO",
+                "description": "Venda elástica",
+                "quantity": 1,
+                "unitPrice": "35",
+                "subtotal": "35.00"
+              }
+            ]
+          },
+          {
+            "id": 6,
+            "date": "2026-10-10 13:00",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 99,
+                "isService": false,
+                "code": "OLD-1",
+                "description": "Producto borrado",
+                "quantity": 1,
+                "unitPrice": "15",
+                "subtotal": "15.00"
+              }
+            ]
+          },
+          {
+            "id": 7,
+            "date": "2026-10-12 16:20",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-010",
+                "description": "Consulta de seguimiento",
+                "quantity": 1,
+                "unitPrice": "200",
+                "subtotal": "200.00",
+                "serviceId": 4
+              },
+              {
+                "productId": 3,
+                "isService": false,
+                "code": "CUR-001",
+                "description": "Gasas estériles 10x10",
+                "quantity": 2,
+                "unitPrice": "6.00",
+                "subtotal": "12.00",
+                "unitCost": "3.48",
+                "isIndividualUnits": true
+              },
+              {
+                "productId": 5,
+                "isService": false,
+                "code": "MED-003",
+                "description": "Ketorolaco ampolleta 30 mg",
+                "quantity": 1,
+                "unitPrice": "30",
+                "subtotal": "30.00",
+                "unitCost": "11.83",
+                "isIndividualUnits": true
+              }
+            ]
+          },
+          {
+            "id": 8,
+            "date": "2026-10-31 23:30",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-005",
+                "description": "Certificado Médico Oficial",
+                "quantity": 1,
+                "unitPrice": "200",
+                "subtotal": "200.00",
+                "serviceId": 3
+              },
+              {
+                "isService": true,
+                "code": "SERV-077",
+                "description": "Retiro de puntos",
+                "quantity": 1,
+                "unitPrice": "150",
+                "subtotal": "150.00",
+                "serviceId": 77
+              }
+            ]
+          },
+          {
+            "id": 9,
+            "date": "2026-11-01 00:10",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 1,
+                "unitPrice": "45",
+                "subtotal": "45.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 10,
+            "date": "2026-09-30 18:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-001",
+                "description": "Consulta Médica General",
+                "quantity": 1,
+                "unitPrice": "300",
+                "subtotal": "300.00",
+                "serviceId": 1
+              },
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 1,
+                "unitPrice": "45",
+                "subtotal": "45.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          }
+        ]
+      },
+      "expected": [
+        {
+          "productId": 3,
+          "name": "Gasas estériles 10x10",
+          "type": "Insumos",
+          "isLoosePieces": true,
+          "quantity": 6,
+          "quantityText": "6 piezas sueltas",
+          "sales": "36.00",
+          "cost": "20.88",
+          "profit": "15.12",
+          "hasEstimatedCost": false
+        },
+        {
+          "productId": 1,
+          "name": "Paracetamol 500 mg",
+          "type": "Medicamentos",
+          "isLoosePieces": false,
+          "quantity": 2,
+          "quantityText": "2",
+          "sales": "90.00",
+          "cost": "40.00",
+          "profit": "50.00",
+          "hasEstimatedCost": false
+        }
+      ]
+    },
+    {
+      "name": "productos · empate de cantidad y utilidad: por ventas y luego por nombre es-MX (Á junto a A)",
+      "input": {
+        "check": "products",
+        "ranking": "Quantity",
+        "top": 10,
+        "period": {
+          "from": "2026-10-01",
+          "to": "2026-11-01"
+        },
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-1",
+            "name": "Azitromicina",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "10",
+            "unitCost": "5",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 2,
+            "code": "MED-2",
+            "name": "Ácido fólico",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "10",
+            "unitCost": "5",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 3,
+            "code": "MED-3",
+            "name": "Bromhexina",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "10",
+            "unitCost": "5",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          }
+        ],
+        "services": [],
+        "sales": [
+          {
+            "id": 1,
+            "date": "2026-10-02 10:00",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-1",
+                "description": "Azitromicina",
+                "quantity": 1,
+                "unitPrice": "10",
+                "subtotal": "10.00",
+                "unitCost": "5"
+              },
+              {
+                "productId": 2,
+                "isService": false,
+                "code": "MED-2",
+                "description": "Ácido fólico",
+                "quantity": 1,
+                "unitPrice": "10",
+                "subtotal": "10.00",
+                "unitCost": "5"
+              },
+              {
+                "productId": 3,
+                "isService": false,
+                "code": "MED-3",
+                "description": "Bromhexina",
+                "quantity": 1,
+                "unitPrice": "10",
+                "subtotal": "10.00",
+                "unitCost": "5"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": [
+        {
+          "productId": 2,
+          "name": "Ácido fólico",
+          "type": "Medicamentos",
+          "isLoosePieces": false,
+          "quantity": 1,
+          "quantityText": "1",
+          "sales": "10.00",
+          "cost": "5.00",
+          "profit": "5.00",
+          "hasEstimatedCost": false
+        },
+        {
+          "productId": 1,
+          "name": "Azitromicina",
+          "type": "Medicamentos",
+          "isLoosePieces": false,
+          "quantity": 1,
+          "quantityText": "1",
+          "sales": "10.00",
+          "cost": "5.00",
+          "profit": "5.00",
+          "hasEstimatedCost": false
+        },
+        {
+          "productId": 3,
+          "name": "Bromhexina",
+          "type": "Medicamentos",
+          "isLoosePieces": false,
+          "quantity": 1,
+          "quantityText": "1",
+          "sales": "10.00",
+          "cost": "5.00",
+          "profit": "5.00",
+          "hasEstimatedCost": false
+        }
+      ]
+    },
+    {
+      "name": "servicios · consultas y servicios por veces",
+      "input": {
+        "check": "services",
+        "period": {
+          "from": "2026-10-01",
+          "to": "2026-11-01"
+        },
+        "top": 10,
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "stock": 30,
+            "category": "Medicamentos",
+            "price": "45",
+            "unitCost": "20",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Amoxicilina 500 mg",
+            "stock": 10,
+            "category": "Medicamentos",
+            "price": "120",
+            "unitCost": "70",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 3,
+            "code": "CUR-001",
+            "name": "Gasas estériles 10x10",
+            "stock": 5,
+            "category": "Material de Curación",
+            "price": "60",
+            "unitCost": "30",
+            "costExcludesVat": true,
+            "unitsPerPackage": 10
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Jeringa 5 ml",
+            "stock": 50,
+            "category": "Insumos",
+            "price": "8",
+            "unitCost": "0",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 5,
+            "code": "MED-003",
+            "name": "Ketorolaco ampolleta 30 mg",
+            "stock": 4,
+            "category": "Medicamentos",
+            "price": "90",
+            "unitCost": "35.5",
+            "costExcludesVat": false,
+            "unitsPerPackage": 3
+          },
+          {
+            "id": 6,
+            "code": "ANT-001",
+            "name": "Ácido acético 3 %",
+            "stock": 0,
+            "category": "Antisépticos",
+            "active": false,
+            "price": "40",
+            "unitCost": "12",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          }
+        ],
+        "services": [
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta"
+          },
+          {
+            "id": 2,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones"
+          },
+          {
+            "id": 3,
+            "code": "SERV-005",
+            "name": "Certificado Médico Oficial",
+            "category": "Certificados"
+          },
+          {
+            "id": 4,
+            "code": "SERV-010",
+            "name": "Consulta de seguimiento",
+            "category": "Seguimiento"
+          }
+        ],
+        "sales": [
+          {
+            "id": 1,
+            "date": "2026-10-05 10:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-001",
+                "description": "Consulta Médica General",
+                "quantity": 1,
+                "unitPrice": "300",
+                "subtotal": "300.00",
+                "serviceId": 1
+              },
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 2,
+                "unitPrice": "45",
+                "subtotal": "90.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "date": "2026-10-06 12:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-002",
+                "description": "Curación Menor y Asepsia",
+                "quantity": 1,
+                "unitPrice": "250",
+                "subtotal": "250.00",
+                "serviceId": 2
+              },
+              {
+                "productId": 3,
+                "isService": false,
+                "code": "CUR-001",
+                "description": "Gasas estériles 10x10",
+                "quantity": 4,
+                "unitPrice": "6.00",
+                "subtotal": "24.00",
+                "unitCost": "3.48",
+                "isIndividualUnits": true
+              },
+              {
+                "productId": 4,
+                "isService": false,
+                "code": "INS-001",
+                "description": "Jeringa 5 ml",
+                "quantity": 1,
+                "unitPrice": "8",
+                "subtotal": "8.00",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "date": "2026-10-07 09:00",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 2,
+                "isService": false,
+                "code": "MED-002",
+                "description": "Amoxicilina 500 mg",
+                "quantity": 1,
+                "unitPrice": "120",
+                "subtotal": "120.00"
+              },
+              {
+                "productId": 5,
+                "isService": false,
+                "code": "MED-003",
+                "description": "Ketorolaco ampolleta 30 mg",
+                "quantity": 2,
+                "unitPrice": "30",
+                "subtotal": "60.00"
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "date": "2026-10-08 11:00",
+            "cancelled": true,
+            "items": [
+              {
+                "productId": 2,
+                "isService": false,
+                "code": "MED-002",
+                "description": "Amoxicilina 500 mg",
+                "quantity": 3,
+                "unitPrice": "120",
+                "subtotal": "360.00",
+                "unitCost": "70",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "date": "2026-10-09 17:45",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "CARGO",
+                "description": "Aplicación de inyección",
+                "quantity": 1,
+                "unitPrice": "50",
+                "subtotal": "50.00"
+              },
+              {
+                "isService": true,
+                "code": "INSUMO",
+                "description": "Venda elástica",
+                "quantity": 1,
+                "unitPrice": "35",
+                "subtotal": "35.00"
+              }
+            ]
+          },
+          {
+            "id": 6,
+            "date": "2026-10-10 13:00",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 99,
+                "isService": false,
+                "code": "OLD-1",
+                "description": "Producto borrado",
+                "quantity": 1,
+                "unitPrice": "15",
+                "subtotal": "15.00"
+              }
+            ]
+          },
+          {
+            "id": 7,
+            "date": "2026-10-12 16:20",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-010",
+                "description": "Consulta de seguimiento",
+                "quantity": 1,
+                "unitPrice": "200",
+                "subtotal": "200.00",
+                "serviceId": 4
+              },
+              {
+                "productId": 3,
+                "isService": false,
+                "code": "CUR-001",
+                "description": "Gasas estériles 10x10",
+                "quantity": 2,
+                "unitPrice": "6.00",
+                "subtotal": "12.00",
+                "unitCost": "3.48",
+                "isIndividualUnits": true
+              },
+              {
+                "productId": 5,
+                "isService": false,
+                "code": "MED-003",
+                "description": "Ketorolaco ampolleta 30 mg",
+                "quantity": 1,
+                "unitPrice": "30",
+                "subtotal": "30.00",
+                "unitCost": "11.83",
+                "isIndividualUnits": true
+              }
+            ]
+          },
+          {
+            "id": 8,
+            "date": "2026-10-31 23:30",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-005",
+                "description": "Certificado Médico Oficial",
+                "quantity": 1,
+                "unitPrice": "200",
+                "subtotal": "200.00",
+                "serviceId": 3
+              },
+              {
+                "isService": true,
+                "code": "SERV-077",
+                "description": "Retiro de puntos",
+                "quantity": 1,
+                "unitPrice": "150",
+                "subtotal": "150.00",
+                "serviceId": 77
+              }
+            ]
+          },
+          {
+            "id": 9,
+            "date": "2026-11-01 00:10",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 1,
+                "unitPrice": "45",
+                "subtotal": "45.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 10,
+            "date": "2026-09-30 18:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-001",
+                "description": "Consulta Médica General",
+                "quantity": 1,
+                "unitPrice": "300",
+                "subtotal": "300.00",
+                "serviceId": 1
+              },
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 1,
+                "unitPrice": "45",
+                "subtotal": "45.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          }
+        ]
+      },
+      "expected": [
+        {
+          "serviceId": 1,
+          "name": "Consulta Médica General",
+          "type": "Consultas",
+          "count": 1,
+          "income": "300.00"
+        },
+        {
+          "serviceId": 2,
+          "name": "Curación Menor y Asepsia",
+          "type": "Servicios",
+          "count": 1,
+          "income": "250.00"
+        },
+        {
+          "serviceId": 3,
+          "name": "Certificado Médico Oficial",
+          "type": "Servicios",
+          "count": 1,
+          "income": "200.00"
+        },
+        {
+          "serviceId": 4,
+          "name": "Consulta de seguimiento",
+          "type": "Consultas",
+          "count": 1,
+          "income": "200.00"
+        },
+        {
+          "serviceId": 77,
+          "name": "Retiro de puntos",
+          "type": "Servicios",
+          "count": 1,
+          "income": "150.00"
+        }
+      ]
+    },
+    {
+      "name": "servicios · solo Consultas",
+      "input": {
+        "check": "services",
+        "period": {
+          "from": "2026-09-01",
+          "to": "2026-11-01"
+        },
+        "top": 10,
+        "type": "Consultas",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "stock": 30,
+            "category": "Medicamentos",
+            "price": "45",
+            "unitCost": "20",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Amoxicilina 500 mg",
+            "stock": 10,
+            "category": "Medicamentos",
+            "price": "120",
+            "unitCost": "70",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 3,
+            "code": "CUR-001",
+            "name": "Gasas estériles 10x10",
+            "stock": 5,
+            "category": "Material de Curación",
+            "price": "60",
+            "unitCost": "30",
+            "costExcludesVat": true,
+            "unitsPerPackage": 10
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Jeringa 5 ml",
+            "stock": 50,
+            "category": "Insumos",
+            "price": "8",
+            "unitCost": "0",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 5,
+            "code": "MED-003",
+            "name": "Ketorolaco ampolleta 30 mg",
+            "stock": 4,
+            "category": "Medicamentos",
+            "price": "90",
+            "unitCost": "35.5",
+            "costExcludesVat": false,
+            "unitsPerPackage": 3
+          },
+          {
+            "id": 6,
+            "code": "ANT-001",
+            "name": "Ácido acético 3 %",
+            "stock": 0,
+            "category": "Antisépticos",
+            "active": false,
+            "price": "40",
+            "unitCost": "12",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          }
+        ],
+        "services": [
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta"
+          },
+          {
+            "id": 2,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones"
+          },
+          {
+            "id": 3,
+            "code": "SERV-005",
+            "name": "Certificado Médico Oficial",
+            "category": "Certificados"
+          },
+          {
+            "id": 4,
+            "code": "SERV-010",
+            "name": "Consulta de seguimiento",
+            "category": "Seguimiento"
+          }
+        ],
+        "sales": [
+          {
+            "id": 1,
+            "date": "2026-10-05 10:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-001",
+                "description": "Consulta Médica General",
+                "quantity": 1,
+                "unitPrice": "300",
+                "subtotal": "300.00",
+                "serviceId": 1
+              },
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 2,
+                "unitPrice": "45",
+                "subtotal": "90.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "date": "2026-10-06 12:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-002",
+                "description": "Curación Menor y Asepsia",
+                "quantity": 1,
+                "unitPrice": "250",
+                "subtotal": "250.00",
+                "serviceId": 2
+              },
+              {
+                "productId": 3,
+                "isService": false,
+                "code": "CUR-001",
+                "description": "Gasas estériles 10x10",
+                "quantity": 4,
+                "unitPrice": "6.00",
+                "subtotal": "24.00",
+                "unitCost": "3.48",
+                "isIndividualUnits": true
+              },
+              {
+                "productId": 4,
+                "isService": false,
+                "code": "INS-001",
+                "description": "Jeringa 5 ml",
+                "quantity": 1,
+                "unitPrice": "8",
+                "subtotal": "8.00",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "date": "2026-10-07 09:00",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 2,
+                "isService": false,
+                "code": "MED-002",
+                "description": "Amoxicilina 500 mg",
+                "quantity": 1,
+                "unitPrice": "120",
+                "subtotal": "120.00"
+              },
+              {
+                "productId": 5,
+                "isService": false,
+                "code": "MED-003",
+                "description": "Ketorolaco ampolleta 30 mg",
+                "quantity": 2,
+                "unitPrice": "30",
+                "subtotal": "60.00"
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "date": "2026-10-08 11:00",
+            "cancelled": true,
+            "items": [
+              {
+                "productId": 2,
+                "isService": false,
+                "code": "MED-002",
+                "description": "Amoxicilina 500 mg",
+                "quantity": 3,
+                "unitPrice": "120",
+                "subtotal": "360.00",
+                "unitCost": "70",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "date": "2026-10-09 17:45",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "CARGO",
+                "description": "Aplicación de inyección",
+                "quantity": 1,
+                "unitPrice": "50",
+                "subtotal": "50.00"
+              },
+              {
+                "isService": true,
+                "code": "INSUMO",
+                "description": "Venda elástica",
+                "quantity": 1,
+                "unitPrice": "35",
+                "subtotal": "35.00"
+              }
+            ]
+          },
+          {
+            "id": 6,
+            "date": "2026-10-10 13:00",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 99,
+                "isService": false,
+                "code": "OLD-1",
+                "description": "Producto borrado",
+                "quantity": 1,
+                "unitPrice": "15",
+                "subtotal": "15.00"
+              }
+            ]
+          },
+          {
+            "id": 7,
+            "date": "2026-10-12 16:20",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-010",
+                "description": "Consulta de seguimiento",
+                "quantity": 1,
+                "unitPrice": "200",
+                "subtotal": "200.00",
+                "serviceId": 4
+              },
+              {
+                "productId": 3,
+                "isService": false,
+                "code": "CUR-001",
+                "description": "Gasas estériles 10x10",
+                "quantity": 2,
+                "unitPrice": "6.00",
+                "subtotal": "12.00",
+                "unitCost": "3.48",
+                "isIndividualUnits": true
+              },
+              {
+                "productId": 5,
+                "isService": false,
+                "code": "MED-003",
+                "description": "Ketorolaco ampolleta 30 mg",
+                "quantity": 1,
+                "unitPrice": "30",
+                "subtotal": "30.00",
+                "unitCost": "11.83",
+                "isIndividualUnits": true
+              }
+            ]
+          },
+          {
+            "id": 8,
+            "date": "2026-10-31 23:30",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-005",
+                "description": "Certificado Médico Oficial",
+                "quantity": 1,
+                "unitPrice": "200",
+                "subtotal": "200.00",
+                "serviceId": 3
+              },
+              {
+                "isService": true,
+                "code": "SERV-077",
+                "description": "Retiro de puntos",
+                "quantity": 1,
+                "unitPrice": "150",
+                "subtotal": "150.00",
+                "serviceId": 77
+              }
+            ]
+          },
+          {
+            "id": 9,
+            "date": "2026-11-01 00:10",
+            "cancelled": false,
+            "items": [
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 1,
+                "unitPrice": "45",
+                "subtotal": "45.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          },
+          {
+            "id": 10,
+            "date": "2026-09-30 18:00",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "code": "SERV-001",
+                "description": "Consulta Médica General",
+                "quantity": 1,
+                "unitPrice": "300",
+                "subtotal": "300.00",
+                "serviceId": 1
+              },
+              {
+                "productId": 1,
+                "isService": false,
+                "code": "MED-001",
+                "description": "Paracetamol 500 mg",
+                "quantity": 1,
+                "unitPrice": "45",
+                "subtotal": "45.00",
+                "unitCost": "20",
+                "isIndividualUnits": false
+              }
+            ]
+          }
+        ]
+      },
+      "expected": [
+        {
+          "serviceId": 1,
+          "name": "Consulta Médica General",
+          "type": "Consultas",
+          "count": 2,
+          "income": "600.00"
+        },
+        {
+          "serviceId": 4,
+          "name": "Consulta de seguimiento",
+          "type": "Consultas",
+          "count": 1,
+          "income": "200.00"
+        }
+      ]
+    }
+  ]
+}

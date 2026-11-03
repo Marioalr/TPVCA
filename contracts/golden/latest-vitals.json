@@ -1,0 +1,243 @@
+{
+  "rule": "latest-vitals",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "«Lo esencial» de la ficha (Services/Rules/PatientChartRules.BuildLatestVitals, antes en PatientChartViewModel) a partir de la serie de signos de vitals-evolution.json (de la más vieja a la más nueva). Los valores de entrada son decimales en texto.",
+    "En este orden y solo si alguna medición lo tiene: 'T/A (mmHg)' con la última que tiene sistólica y diastólica (value = BloodPressureText de vitals-evolution.json) y la anterior que las tiene: trend 'antes 120/80' con '↑ ' delante si la sistólica subió o '↓ ' si bajó; isUp si subió. 'Peso (kg)', 'IMC' y 'Glucosa (mg/dL)': el último valor que hay y la diferencia con el anterior que lo tiene ('↑ 1.2', '↓ 0.5' o 'sin cambio'; vacío con una sola medición); isUp si subió.",
+    "Formato invariante: peso e IMC '0.0', glucosa '0' (decimal, redondeo de presentación con el punto medio hacia arriba: 72.25 → 72.3, a diferencia de Math.Round). La diferencia se formatea igual, sin signo."
+  ],
+  "cases": [
+    {
+      "name": "sin mediciones",
+      "input": {
+        "points": []
+      },
+      "expected": []
+    },
+    {
+      "name": "una medición: sin tendencia",
+      "input": {
+        "points": [
+          {
+            "date": "2026-10-01",
+            "weight": "70.0",
+            "systolic": "120",
+            "diastolic": "80",
+            "glucose": "95",
+            "bmi": "24.2"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "label": "T/A (mmHg)",
+          "value": "120/80",
+          "trend": "",
+          "isUp": false
+        },
+        {
+          "label": "Peso (kg)",
+          "value": "70.0",
+          "trend": "",
+          "isUp": false
+        },
+        {
+          "label": "IMC",
+          "value": "24.2",
+          "trend": "",
+          "isUp": false
+        },
+        {
+          "label": "Glucosa (mg/dL)",
+          "value": "95",
+          "trend": "",
+          "isUp": false
+        }
+      ]
+    },
+    {
+      "name": "subió, bajó y sin cambio",
+      "input": {
+        "points": [
+          {
+            "date": "2026-09-01",
+            "weight": "72.40",
+            "systolic": "130",
+            "diastolic": "85",
+            "glucose": "110",
+            "bmi": "25.0"
+          },
+          {
+            "date": "2026-10-01",
+            "weight": "71.2",
+            "systolic": "120",
+            "diastolic": "80",
+            "glucose": "126",
+            "bmi": "25.0"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "label": "T/A (mmHg)",
+          "value": "120/80",
+          "trend": "↓ antes 130/85",
+          "isUp": false
+        },
+        {
+          "label": "Peso (kg)",
+          "value": "71.2",
+          "trend": "↓ 1.2",
+          "isUp": false
+        },
+        {
+          "label": "IMC",
+          "value": "25.0",
+          "trend": "sin cambio",
+          "isUp": false
+        },
+        {
+          "label": "Glucosa (mg/dL)",
+          "value": "126",
+          "trend": "↑ 16",
+          "isUp": true
+        }
+      ]
+    },
+    {
+      "name": "la T/A sube con la sistólica aunque baje la diastólica",
+      "input": {
+        "points": [
+          {
+            "date": "2026-09-01",
+            "systolic": "118",
+            "diastolic": "82"
+          },
+          {
+            "date": "2026-10-01",
+            "systolic": "121",
+            "diastolic": "79"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "label": "T/A (mmHg)",
+          "value": "121/79",
+          "trend": "↑ antes 118/82",
+          "isUp": true
+        }
+      ]
+    },
+    {
+      "name": "la T/A igual: 'antes' sin flecha",
+      "input": {
+        "points": [
+          {
+            "date": "2026-09-01",
+            "systolic": "120",
+            "diastolic": "80"
+          },
+          {
+            "date": "2026-10-01",
+            "systolic": "120",
+            "diastolic": "75"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "label": "T/A (mmHg)",
+          "value": "120/75",
+          "trend": "antes 120/80",
+          "isUp": false
+        }
+      ]
+    },
+    {
+      "name": "cada signo con su última medición, aunque sean de días distintos",
+      "input": {
+        "points": [
+          {
+            "date": "2026-08-01",
+            "weight": "68",
+            "systolic": "125",
+            "diastolic": "85",
+            "glucose": "101"
+          },
+          {
+            "date": "2026-09-01",
+            "weight": "69.5",
+            "systolic": "140"
+          },
+          {
+            "date": "2026-10-01",
+            "glucose": "98"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "label": "T/A (mmHg)",
+          "value": "125/85",
+          "trend": "",
+          "isUp": false
+        },
+        {
+          "label": "Peso (kg)",
+          "value": "69.5",
+          "trend": "↑ 1.5",
+          "isUp": true
+        },
+        {
+          "label": "Glucosa (mg/dL)",
+          "value": "98",
+          "trend": "↓ 3",
+          "isUp": false
+        }
+      ]
+    },
+    {
+      "name": "redondeo de presentación hacia arriba (no al par): 72.25 → 72.3; glucosa 94.5 → 95; diferencias 0.05 → 0.1",
+      "input": {
+        "points": [
+          {
+            "date": "2026-09-01",
+            "weight": "72.20",
+            "glucose": "90",
+            "bmi": "24.15"
+          },
+          {
+            "date": "2026-10-01",
+            "weight": "72.25",
+            "glucose": "94.5",
+            "bmi": "24.25"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "label": "Peso (kg)",
+          "value": "72.3",
+          "trend": "↑ 0.1",
+          "isUp": true
+        },
+        {
+          "label": "IMC",
+          "value": "24.3",
+          "trend": "↑ 0.1",
+          "isUp": true
+        },
+        {
+          "label": "Glucosa (mg/dL)",
+          "value": "95",
+          "trend": "↑ 5",
+          "isUp": true
+        }
+      ]
+    }
+  ]
+}

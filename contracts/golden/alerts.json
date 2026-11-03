@@ -1,0 +1,704 @@
+{
+  "rule": "alerts",
+  "culture": "es-MX",
+  "today": null,
+  "now": "2026-10-12T05:30:00Z",
+  "contract": 20,
+  "notes": [
+    "Services/Rules/StockAlertRules.cs, Services/Rules/StockReviewRules.cs (revisión 20) y ProductBatch.StatusTextOn.",
+    "Revisar inventario (revisión 20; decisión del médico del 2026-10-22: un inventario mal contado nunca impide cobrar, la política de negativos del paso 8.20 adelantada): la venta, «Se surte aquí», los insumos y el consumo en consulta pasan aunque no alcancen las existencias, que quedan en negativo. inventoryReview: los productos activos con CurrentStock < 0, con un lote abierto (closedAtUtc nulo) con Quantity < 0 aunque el total sea positivo, o con lotes abiertos que suman más que CurrentStock (la parte fuera de los lotes, CurrentStock − Σ lotes abiertos, en negativo: por ejemplo −3 sin lote y después una entrada de 5; revisión de la rama); del de menos existencias al de más y, con las mismas, por nombre ordinal. alertLine: '{nombre}: {existencias} · revisar inventario', con ' (lotes {Σ lotes abiertos})' después si esa suma pasa de las existencias y de 0, y con lotes abiertos en negativo, ' (lote {número} {cantidad}, …)' por número ordinal. Los negativos se escriben con el signo menos U+2212 ('−3'). stockBadge (Product.StockBadgeText, con sus lotes): si necesita revisión, '{existencias} · revisar inventario' y ' (lotes {Σ})' si los lotes abiertos suman más que las existencias y que 0; si no, la insignia de siempre ('Existencias: N', 'Stock bajo: N', 'Sin existencias' o con el paquete abierto '(+abiertas/piezas)'). La alerta se va sola cuando un conteo o una entrada dejan todo en 0 o más: nada se compensa solo.",
+    "closeLot (StockLedger.ClosingDeltas, regla «Existencias»): lotDelta = −lotLedger (con su lote, SyncId 'close:'); restDelta (sin lote, SyncId 'close-rest:'; 0 = no se escribe) = −(quitado − lotLedger), con quitado = lotQuantity si el lote está al día (lotLedger = lotQuantity) aunque el producto quede en negativo (revisión 20: un negativo fuera de los lotes se queda, nada se compensa solo; antes se topaba en max(productStock, 0) y lo borraba), o min(lotQuantity, max(productStock, 0)) en un lote de antes de la revisión 11 (lotLedger ≠ lotQuantity). stockAfter = productStock + lotDelta + restDelta.",
+    "shortage (StockReviewRules.Shortage): los paquetes que hacen falta son wholePackages + (si individualUnits > las piezas del paquete abierto, max(0, openedUnitsRemaining)) ⌈(piezas − abiertas) / unitsPerPackage⌉; con unitsPerPackage <= 1 las piezas cuentan como paquetes. Si no pasan de currentStock, null. Si no, en paquetes {available: currentStock, charged: paquetes}; con piezas sueltas en piezas {available: currentStock × unitsPerPackage + max(0, abiertas), charged: wholePackages × unitsPerPackage + piezas, pieces: true}. warning (StockReviewRules.WarningText): 'Existencias insuficientes: ' + cada faltante '{nombre} (quedan {available}, se cobran {charged})' (con ' pzas' después de cada número en piezas) unidos por '; ' + '. Revise el inventario.'; null sin faltantes. Es el aviso al cobrar, que nunca bloquea (checkout.json).",
+    "Stock bajo: activo, MinStock > 0 y CurrentStock <= MinStock; ordenado por CurrentStock (el orden de los empates no está definido).",
+    "Caducidad: cuentan los lotes con piezas, sin marcar como agotados, abiertos (closedAtUtc nulo, desde v1.37.0) y de un producto activo. Vencido: caduca antes de hoy. Por vencer: de hoy a hoy + 30 días, los dos incluidos. Por fecha de caducidad.",
+    "Estado del lote (Inventario): 'Vencido' antes de hoy; 'Vence en N días' de hoy a 60 días; si no, 'Vigente'.",
+    "Hoy es la fecha local del consultorio: el mismo instante da 12/10/2026 en UTC y 11/10/2026 en America/Mexico_City (UTC-6, sin horario de verano desde 2022)."
+  ],
+  "cases": [
+    {
+      "name": "stock bajo",
+      "input": {
+        "kind": "lowStock",
+        "products": [
+          {
+            "code": "P1",
+            "name": "Paracetamol 500 mg",
+            "active": true,
+            "minStock": 10,
+            "currentStock": 4
+          },
+          {
+            "code": "P2",
+            "name": "Ácido fólico 5 mg",
+            "active": true,
+            "minStock": 5,
+            "currentStock": 5
+          },
+          {
+            "code": "P3",
+            "name": "Agua inyectable",
+            "active": true,
+            "minStock": 5,
+            "currentStock": 6
+          },
+          {
+            "code": "P4",
+            "name": "Amoxicilina 500 mg",
+            "active": true,
+            "minStock": 0,
+            "currentStock": 0
+          },
+          {
+            "code": "P5",
+            "name": "Ibuprofeno 400 mg",
+            "active": false,
+            "minStock": 8,
+            "currentStock": 0
+          },
+          {
+            "code": "P6",
+            "name": "Omeprazol 20 mg",
+            "active": true,
+            "minStock": 3,
+            "currentStock": 0
+          }
+        ]
+      },
+      "expected": [
+        "P6",
+        "P1",
+        "P2"
+      ]
+    },
+    {
+      "name": "caducidad en UTC",
+      "input": {
+        "kind": "expiration",
+        "timeZone": "UTC",
+        "now": "2026-10-12T05:30:00Z",
+        "batches": [
+          {
+            "batch": "VENCIDO-AYER",
+            "expiration": "2026-10-10",
+            "quantity": 5,
+            "depleted": false,
+            "closedAtUtc": null,
+            "productActive": true
+          },
+          {
+            "batch": "VENCE-11-OCT",
+            "expiration": "2026-10-11",
+            "quantity": 5,
+            "depleted": false,
+            "closedAtUtc": null,
+            "productActive": true
+          },
+          {
+            "batch": "VENCE-12-OCT",
+            "expiration": "2026-10-12",
+            "quantity": 5,
+            "depleted": false,
+            "closedAtUtc": null,
+            "productActive": true
+          },
+          {
+            "batch": "VENCE-10-NOV",
+            "expiration": "2026-11-10",
+            "quantity": 5,
+            "depleted": false,
+            "closedAtUtc": null,
+            "productActive": true
+          },
+          {
+            "batch": "VENCE-11-NOV",
+            "expiration": "2026-11-11",
+            "quantity": 5,
+            "depleted": false,
+            "closedAtUtc": null,
+            "productActive": true
+          },
+          {
+            "batch": "VENCE-12-NOV",
+            "expiration": "2026-11-12",
+            "quantity": 5,
+            "depleted": false,
+            "closedAtUtc": null,
+            "productActive": true
+          },
+          {
+            "batch": "AGOTADO",
+            "expiration": "2026-10-01",
+            "quantity": 0,
+            "depleted": false,
+            "closedAtUtc": null,
+            "productActive": true
+          },
+          {
+            "batch": "MARCADO-AGOTADO",
+            "expiration": "2026-10-01",
+            "quantity": 3,
+            "depleted": true,
+            "closedAtUtc": null,
+            "productActive": true
+          },
+          {
+            "batch": "DE-INACTIVO",
+            "expiration": "2026-10-01",
+            "quantity": 3,
+            "depleted": false,
+            "closedAtUtc": null,
+            "productActive": false
+          },
+          {
+            "batch": "CERRADO-CON-PIEZAS",
+            "expiration": "2026-10-01",
+            "quantity": 3,
+            "depleted": false,
+            "closedAtUtc": "2026-10-05 12:00:00.0000000",
+            "productActive": true
+          }
+        ]
+      },
+      "expected": {
+        "today": "2026-10-12",
+        "expired": [
+          "VENCIDO-AYER",
+          "VENCE-11-OCT"
+        ],
+        "nearExpiry": [
+          "VENCE-12-OCT",
+          "VENCE-10-NOV",
+          "VENCE-11-NOV"
+        ],
+        "status": {
+          "VENCIDO-AYER": "Vencido",
+          "VENCE-11-OCT": "Vencido",
+          "VENCE-12-OCT": "Vence en 0 días",
+          "VENCE-10-NOV": "Vence en 29 días",
+          "VENCE-11-NOV": "Vence en 30 días",
+          "VENCE-12-NOV": "Vence en 31 días",
+          "AGOTADO": "Vencido",
+          "MARCADO-AGOTADO": "Vencido",
+          "DE-INACTIVO": "Vencido",
+          "CERRADO-CON-PIEZAS": "Vencido"
+        }
+      }
+    },
+    {
+      "name": "caducidad en America/Mexico_City",
+      "input": {
+        "kind": "expiration",
+        "timeZone": "America/Mexico_City",
+        "now": "2026-10-12T05:30:00Z",
+        "batches": [
+          {
+            "batch": "VENCIDO-AYER",
+            "expiration": "2026-10-10",
+            "quantity": 5,
+            "depleted": false,
+            "closedAtUtc": null,
+            "productActive": true
+          },
+          {
+            "batch": "VENCE-11-OCT",
+            "expiration": "2026-10-11",
+            "quantity": 5,
+            "depleted": false,
+            "closedAtUtc": null,
+            "productActive": true
+          },
+          {
+            "batch": "VENCE-12-OCT",
+            "expiration": "2026-10-12",
+            "quantity": 5,
+            "depleted": false,
+            "closedAtUtc": null,
+            "productActive": true
+          },
+          {
+            "batch": "VENCE-10-NOV",
+            "expiration": "2026-11-10",
+            "quantity": 5,
+            "depleted": false,
+            "closedAtUtc": null,
+            "productActive": true
+          },
+          {
+            "batch": "VENCE-11-NOV",
+            "expiration": "2026-11-11",
+            "quantity": 5,
+            "depleted": false,
+            "closedAtUtc": null,
+            "productActive": true
+          },
+          {
+            "batch": "VENCE-12-NOV",
+            "expiration": "2026-11-12",
+            "quantity": 5,
+            "depleted": false,
+            "closedAtUtc": null,
+            "productActive": true
+          },
+          {
+            "batch": "AGOTADO",
+            "expiration": "2026-10-01",
+            "quantity": 0,
+            "depleted": false,
+            "closedAtUtc": null,
+            "productActive": true
+          },
+          {
+            "batch": "MARCADO-AGOTADO",
+            "expiration": "2026-10-01",
+            "quantity": 3,
+            "depleted": true,
+            "closedAtUtc": null,
+            "productActive": true
+          },
+          {
+            "batch": "DE-INACTIVO",
+            "expiration": "2026-10-01",
+            "quantity": 3,
+            "depleted": false,
+            "closedAtUtc": null,
+            "productActive": false
+          },
+          {
+            "batch": "CERRADO-CON-PIEZAS",
+            "expiration": "2026-10-01",
+            "quantity": 3,
+            "depleted": false,
+            "closedAtUtc": "2026-10-05 12:00:00.0000000",
+            "productActive": true
+          }
+        ]
+      },
+      "expected": {
+        "today": "2026-10-11",
+        "expired": [
+          "VENCIDO-AYER"
+        ],
+        "nearExpiry": [
+          "VENCE-11-OCT",
+          "VENCE-12-OCT",
+          "VENCE-10-NOV"
+        ],
+        "status": {
+          "VENCIDO-AYER": "Vencido",
+          "VENCE-11-OCT": "Vence en 0 días",
+          "VENCE-12-OCT": "Vence en 1 días",
+          "VENCE-10-NOV": "Vence en 30 días",
+          "VENCE-11-NOV": "Vence en 31 días",
+          "VENCE-12-NOV": "Vence en 32 días",
+          "AGOTADO": "Vencido",
+          "MARCADO-AGOTADO": "Vencido",
+          "DE-INACTIVO": "Vencido",
+          "CERRADO-CON-PIEZAS": "Vencido"
+        }
+      }
+    },
+    {
+      "name": "revisar inventario (revisión 20)",
+      "input": {
+        "kind": "inventoryReview",
+        "products": [
+          {
+            "id": 1,
+            "code": "R1",
+            "name": "Paracetamol 500 mg",
+            "active": true,
+            "currentStock": -3,
+            "unitsPerPackage": 1,
+            "openedUnitsRemaining": 0
+          },
+          {
+            "id": 2,
+            "code": "R2",
+            "name": "Gasa estéril",
+            "active": true,
+            "currentStock": 4,
+            "unitsPerPackage": 1,
+            "openedUnitsRemaining": 0
+          },
+          {
+            "id": 3,
+            "code": "R3",
+            "name": "Agua inyectable",
+            "active": true,
+            "currentStock": 0,
+            "unitsPerPackage": 1,
+            "openedUnitsRemaining": 0
+          },
+          {
+            "id": 4,
+            "code": "R4",
+            "name": "Ibuprofeno 400 mg",
+            "active": false,
+            "currentStock": -1,
+            "unitsPerPackage": 1,
+            "openedUnitsRemaining": 0
+          },
+          {
+            "id": 5,
+            "code": "R5",
+            "name": "Ácido fólico 5 mg",
+            "active": true,
+            "currentStock": -3,
+            "unitsPerPackage": 1,
+            "openedUnitsRemaining": 0
+          },
+          {
+            "id": 6,
+            "code": "R6",
+            "name": "Jeringa 5 ml",
+            "active": true,
+            "currentStock": 2,
+            "unitsPerPackage": 10,
+            "openedUnitsRemaining": 4
+          },
+          {
+            "id": 7,
+            "code": "R7",
+            "name": "Venda elástica",
+            "active": true,
+            "currentStock": 2,
+            "unitsPerPackage": 1,
+            "openedUnitsRemaining": 0
+          },
+          {
+            "id": 8,
+            "code": "R8",
+            "name": "Guantes",
+            "active": true,
+            "currentStock": 5,
+            "unitsPerPackage": 1,
+            "openedUnitsRemaining": 0
+          }
+        ],
+        "batches": [
+          {
+            "productId": 2,
+            "batch": "L-02",
+            "quantity": -2,
+            "closedAtUtc": null
+          },
+          {
+            "productId": 2,
+            "batch": "L-01",
+            "quantity": 6,
+            "closedAtUtc": null
+          },
+          {
+            "productId": 3,
+            "batch": "CERRADO",
+            "quantity": -1,
+            "closedAtUtc": "2026-10-05 12:00:00.0000000"
+          },
+          {
+            "productId": 1,
+            "batch": "L-09",
+            "quantity": -1,
+            "closedAtUtc": null
+          },
+          {
+            "productId": 7,
+            "batch": "L-07",
+            "quantity": 5,
+            "closedAtUtc": null
+          },
+          {
+            "productId": 8,
+            "batch": "L-08",
+            "quantity": 5,
+            "closedAtUtc": null
+          },
+          {
+            "productId": 8,
+            "batch": "CERRADO-8",
+            "quantity": 4,
+            "closedAtUtc": "2026-10-05 12:00:00.0000000"
+          }
+        ]
+      },
+      "expected": {
+        "review": [
+          {
+            "code": "R1",
+            "alertLine": "Paracetamol 500 mg: −3 · revisar inventario (lote L-09 −1)"
+          },
+          {
+            "code": "R5",
+            "alertLine": "Ácido fólico 5 mg: −3 · revisar inventario"
+          },
+          {
+            "code": "R7",
+            "alertLine": "Venda elástica: 2 · revisar inventario (lotes 5)"
+          },
+          {
+            "code": "R2",
+            "alertLine": "Gasa estéril: 4 · revisar inventario (lote L-02 −2)"
+          }
+        ],
+        "stockBadge": {
+          "R1": "−3 · revisar inventario",
+          "R2": "4 · revisar inventario",
+          "R3": "Sin existencias",
+          "R4": "−1 · revisar inventario",
+          "R5": "−3 · revisar inventario",
+          "R6": "Stock bajo: 2 (+4/10)",
+          "R7": "2 · revisar inventario (lotes 5)",
+          "R8": "Stock bajo: 5"
+        }
+      }
+    },
+    {
+      "name": "faltante al cobrar · alcanza justo",
+      "input": {
+        "kind": "shortage",
+        "product": {
+          "name": "Tempra",
+          "currentStock": 2,
+          "unitsPerPackage": 1,
+          "openedUnitsRemaining": 0
+        },
+        "wholePackages": 2,
+        "individualUnits": 0
+      },
+      "expected": null
+    },
+    {
+      "name": "faltante al cobrar · paquetes de más",
+      "input": {
+        "kind": "shortage",
+        "product": {
+          "name": "Tempra",
+          "currentStock": 2,
+          "unitsPerPackage": 1,
+          "openedUnitsRemaining": 0
+        },
+        "wholePackages": 5,
+        "individualUnits": 0
+      },
+      "expected": {
+        "available": 2,
+        "charged": 5,
+        "pieces": false,
+        "warning": "Existencias insuficientes: Tempra (quedan 2, se cobran 5). Revise el inventario."
+      }
+    },
+    {
+      "name": "faltante al cobrar · ya en negativo",
+      "input": {
+        "kind": "shortage",
+        "product": {
+          "name": "Tempra",
+          "currentStock": -2,
+          "unitsPerPackage": 1,
+          "openedUnitsRemaining": 0
+        },
+        "wholePackages": 1,
+        "individualUnits": 0
+      },
+      "expected": {
+        "available": -2,
+        "charged": 1,
+        "pieces": false,
+        "warning": "Existencias insuficientes: Tempra (quedan −2, se cobran 1). Revise el inventario."
+      }
+    },
+    {
+      "name": "faltante al cobrar · piezas: alcanzan con el paquete abierto",
+      "input": {
+        "kind": "shortage",
+        "product": {
+          "name": "Jeringa",
+          "currentStock": 0,
+          "unitsPerPackage": 10,
+          "openedUnitsRemaining": 4
+        },
+        "wholePackages": 0,
+        "individualUnits": 4
+      },
+      "expected": null
+    },
+    {
+      "name": "faltante al cobrar · piezas: abre un paquete que no hay",
+      "input": {
+        "kind": "shortage",
+        "product": {
+          "name": "Jeringa",
+          "currentStock": 0,
+          "unitsPerPackage": 10,
+          "openedUnitsRemaining": 4
+        },
+        "wholePackages": 0,
+        "individualUnits": 5
+      },
+      "expected": {
+        "available": 4,
+        "charged": 5,
+        "pieces": true,
+        "warning": "Existencias insuficientes: Jeringa (quedan 4 pzas, se cobran 5 pzas). Revise el inventario."
+      }
+    },
+    {
+      "name": "faltante al cobrar · piezas y paquetes juntos",
+      "input": {
+        "kind": "shortage",
+        "product": {
+          "name": "Jeringa",
+          "currentStock": 1,
+          "unitsPerPackage": 10,
+          "openedUnitsRemaining": 3
+        },
+        "wholePackages": 1,
+        "individualUnits": 4
+      },
+      "expected": {
+        "available": 13,
+        "charged": 14,
+        "pieces": true,
+        "warning": "Existencias insuficientes: Jeringa (quedan 13 pzas, se cobran 14 pzas). Revise el inventario."
+      }
+    },
+    {
+      "name": "faltante al cobrar · piezas de un producto de 1 pieza por paquete: cuentan como paquetes",
+      "input": {
+        "kind": "shortage",
+        "product": {
+          "name": "Venda",
+          "currentStock": 1,
+          "unitsPerPackage": 1,
+          "openedUnitsRemaining": 0
+        },
+        "wholePackages": 0,
+        "individualUnits": 2
+      },
+      "expected": {
+        "available": 1,
+        "charged": 2,
+        "pieces": false,
+        "warning": "Existencias insuficientes: Venda (quedan 1, se cobran 2). Revise el inventario."
+      }
+    },
+    {
+      "name": "faltante al cobrar · el aviso de varios",
+      "input": {
+        "kind": "warning",
+        "shortages": [
+          {
+            "name": "Paracetamol",
+            "available": 2,
+            "charged": 5,
+            "pieces": false
+          },
+          {
+            "name": "Jeringa",
+            "available": -6,
+            "charged": 5,
+            "pieces": true
+          }
+        ]
+      },
+      "expected": "Existencias insuficientes: Paracetamol (quedan 2, se cobran 5); Jeringa (quedan −6 pzas, se cobran 5 pzas). Revise el inventario."
+    },
+    {
+      "name": "cerrar un lote · lote al día",
+      "input": {
+        "kind": "closeLot",
+        "lotQuantity": 5,
+        "lotLedger": 5,
+        "productStock": 8
+      },
+      "expected": {
+        "lotDelta": -5,
+        "restDelta": 0,
+        "stockAfter": 3
+      }
+    },
+    {
+      "name": "cerrar un lote · lote al día con un negativo fuera de los lotes: queda en negativo",
+      "input": {
+        "kind": "closeLot",
+        "lotQuantity": 5,
+        "lotLedger": 5,
+        "productStock": 2
+      },
+      "expected": {
+        "lotDelta": -5,
+        "restDelta": 0,
+        "stockAfter": -3
+      }
+    },
+    {
+      "name": "cerrar un lote · lote al día con el producto ya en negativo",
+      "input": {
+        "kind": "closeLot",
+        "lotQuantity": 5,
+        "lotLedger": 5,
+        "productStock": -3
+      },
+      "expected": {
+        "lotDelta": -5,
+        "restDelta": 0,
+        "stockAfter": -8
+      }
+    },
+    {
+      "name": "cerrar un lote · lote al día después de un conteo más bajo",
+      "input": {
+        "kind": "closeLot",
+        "lotQuantity": 10,
+        "lotLedger": 10,
+        "productStock": 8
+      },
+      "expected": {
+        "lotDelta": -10,
+        "restDelta": 0,
+        "stockAfter": -2
+      }
+    },
+    {
+      "name": "cerrar un lote · lote de antes de la revisión 11 (su libro no es su cantidad): el tope de antes",
+      "input": {
+        "kind": "closeLot",
+        "lotQuantity": 5,
+        "lotLedger": 0,
+        "productStock": 3
+      },
+      "expected": {
+        "lotDelta": 0,
+        "restDelta": -3,
+        "stockAfter": 0
+      }
+    },
+    {
+      "name": "cerrar un lote · lote de antes con el producto en negativo: no baja nada sin lote",
+      "input": {
+        "kind": "closeLot",
+        "lotQuantity": 5,
+        "lotLedger": 2,
+        "productStock": -1
+      },
+      "expected": {
+        "lotDelta": -2,
+        "restDelta": 2,
+        "stockAfter": -1
+      }
+    },
+    {
+      "name": "cerrar un lote · lote de antes que alcanza",
+      "input": {
+        "kind": "closeLot",
+        "lotQuantity": 6,
+        "lotLedger": -4,
+        "productStock": 6
+      },
+      "expected": {
+        "lotDelta": 4,
+        "restDelta": -10,
+        "stockAfter": 0
+      }
+    }
+  ]
+}

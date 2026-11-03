@@ -1,0 +1,357 @@
+{
+  "rule": "chart-antecedents",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Las secciones de antecedentes NOM-004 de la ficha (Services/Rules/PatientChartRules.BuildAntecedentSections, antes en PatientChartViewModel). La entrada son los campos de PatientRecord en camelCase ('fullName', 'gender', 'birthDate', 'storedAge', 'familyHistory', 'allergies', 'chronicDiseases', 'surgeries', 'hospitalizations', 'transfusions', 'immunizationSchedule', 'pregnanciesCount', 'cesareansCount', 'abortionsCount', 'menarcheAge', 'periodDuration', 'papSmear', 'sexualOnsetAge', 'isCurrentlyPregnant', 'gestationalWeeks', 'developmentalMilestones', 'occupation', 'diet', 'housingConditions', 'zoonosis', 'religion', 'phone', 'email', 'address', 'emergencyContactName', 'emergencyContactPhone'); 'storedAge' es la edad capturada sin fecha; 'today', el día del consultorio para la edad (patient-identity.json).",
+    "Orden: Heredofamiliares; Patologicos (Alergias con su resumen de allergy-check.json, Enfermedades crónicas, Cirugías, Hospitalizaciones, Transfusiones y, solo si NO es pediátrico, Vacunación); Gineco (solo showsGynecoObstetric: 'Gestas / cesáreas / abortos: G2 C1 A0' si la suma es mayor que 0, 'Menarca: N años', Ciclo, Papanicolaou, 'Inicio de vida sexual' y 'Embarazo actual' o 'Embarazo actual: N semanas'); Desarrollo (solo pediátrico: Desarrollo y Vacunación); NoPatologicos (Ocupación, Alimentación, Vivienda, Animales, Religión); Contacto (Teléfono con el formato de patient-identity.json, Correo, Domicilio y 'Emergencia: nombre teléfono' sin espacios de más).",
+    "Cada dato es 'Etiqueta: valor sin espacios a los lados' y no va si está vacío. detail: los datos unidos por \\n. summary: 'Sin registrar' sin datos; si no, los dos primeros datos sin su etiqueta (lo que sigue al primer ': ', así que 'Embarazo actual: 20 semanas' queda '20 semanas') unidos por ' · '. isEmpty: detail vacío."
+  ],
+  "cases": [
+    {
+      "name": "hombre adulto con todo",
+      "input": {
+        "today": "2026-10-15",
+        "fullName": "José Núñez",
+        "gender": "Masculino",
+        "birthDate": "1980-05-20",
+        "familyHistory": "Madre con diabetes tipo 2\nPadre hipertenso",
+        "allergies": "Penicilina",
+        "chronicDiseases": " Hipertensión arterial ",
+        "surgeries": "Apendicectomía (2001)",
+        "hospitalizations": "",
+        "transfusions": "Negadas",
+        "immunizationSchedule": "Influenza 2025",
+        "occupation": "Contador",
+        "diet": "Alta en sodio",
+        "housingConditions": "Casa con todos los servicios",
+        "zoonosis": "Un perro",
+        "religion": "Católica",
+        "phone": "+52 55 1234 5678",
+        "email": "jose@correo.mx",
+        "address": "Av. Juárez 10, CDMX",
+        "emergencyContactName": " Ana Núñez ",
+        "emergencyContactPhone": "5598765432"
+      },
+      "expected": [
+        {
+          "key": "Heredofamiliares",
+          "title": "Heredofamiliares",
+          "summary": "Madre con diabetes tipo 2\nPadre hipertenso",
+          "detail": "Madre con diabetes tipo 2\nPadre hipertenso",
+          "isEmpty": false
+        },
+        {
+          "key": "Patologicos",
+          "title": "Personales patológicos",
+          "summary": "Penicilina · Hipertensión arterial",
+          "detail": "Alergias: Penicilina\nEnfermedades crónicas: Hipertensión arterial\nCirugías: Apendicectomía (2001)\nTransfusiones: Negadas\nVacunación: Influenza 2025",
+          "isEmpty": false
+        },
+        {
+          "key": "NoPatologicos",
+          "title": "No patológicos",
+          "summary": "Contador · Alta en sodio",
+          "detail": "Ocupación: Contador\nAlimentación: Alta en sodio\nVivienda: Casa con todos los servicios\nAnimales: Un perro\nReligión: Católica",
+          "isEmpty": false
+        },
+        {
+          "key": "Contacto",
+          "title": "Contacto y emergencia",
+          "summary": "551-234-5678 · jose@correo.mx",
+          "detail": "Teléfono: 551-234-5678\nCorreo: jose@correo.mx\nDomicilio: Av. Juárez 10, CDMX\nEmergencia: Ana Núñez 559-876-5432",
+          "isEmpty": false
+        }
+      ]
+    },
+    {
+      "name": "mujer con antecedentes gineco-obstétricos y embarazo actual",
+      "input": {
+        "today": "2026-10-15",
+        "fullName": "Ana López",
+        "gender": "Femenino",
+        "birthDate": "1994-01-10",
+        "allergies": "Negadas",
+        "pregnanciesCount": 2,
+        "cesareansCount": 1,
+        "abortionsCount": 0,
+        "menarcheAge": "12",
+        "periodDuration": "28 x 5 días",
+        "papSmear": "2025, normal",
+        "sexualOnsetAge": "19",
+        "isCurrentlyPregnant": true,
+        "gestationalWeeks": "20",
+        "emergencyContactName": "Luis López"
+      },
+      "expected": [
+        {
+          "key": "Heredofamiliares",
+          "title": "Heredofamiliares",
+          "summary": "Sin registrar",
+          "detail": "",
+          "isEmpty": true
+        },
+        {
+          "key": "Patologicos",
+          "title": "Personales patológicos",
+          "summary": "Negadas",
+          "detail": "Alergias: Negadas",
+          "isEmpty": false
+        },
+        {
+          "key": "Gineco",
+          "title": "Gineco-obstétricos",
+          "summary": "G2 C1 A0 · 12 años",
+          "detail": "Gestas / cesáreas / abortos: G2 C1 A0\nMenarca: 12 años\nCiclo: 28 x 5 días\nPapanicolaou: 2025, normal\nInicio de vida sexual: 19\nEmbarazo actual: 20 semanas",
+          "isEmpty": false
+        },
+        {
+          "key": "NoPatologicos",
+          "title": "No patológicos",
+          "summary": "Sin registrar",
+          "detail": "",
+          "isEmpty": true
+        },
+        {
+          "key": "Contacto",
+          "title": "Contacto y emergencia",
+          "summary": "Luis López",
+          "detail": "Emergencia: Luis López",
+          "isEmpty": false
+        }
+      ]
+    },
+    {
+      "name": "embarazo actual sin semanas y sin gestas: la fórmula no va",
+      "input": {
+        "today": "2026-10-15",
+        "fullName": "Eva Ruiz",
+        "gender": "Femenino",
+        "birthDate": "2000-01-10",
+        "allergies": "",
+        "isCurrentlyPregnant": true
+      },
+      "expected": [
+        {
+          "key": "Heredofamiliares",
+          "title": "Heredofamiliares",
+          "summary": "Sin registrar",
+          "detail": "",
+          "isEmpty": true
+        },
+        {
+          "key": "Patologicos",
+          "title": "Personales patológicos",
+          "summary": "No interrogadas",
+          "detail": "Alergias: No interrogadas",
+          "isEmpty": false
+        },
+        {
+          "key": "Gineco",
+          "title": "Gineco-obstétricos",
+          "summary": "Embarazo actual",
+          "detail": "Embarazo actual",
+          "isEmpty": false
+        },
+        {
+          "key": "NoPatologicos",
+          "title": "No patológicos",
+          "summary": "Sin registrar",
+          "detail": "",
+          "isEmpty": true
+        },
+        {
+          "key": "Contacto",
+          "title": "Contacto y emergencia",
+          "summary": "Sin registrar",
+          "detail": "",
+          "isEmpty": true
+        }
+      ]
+    },
+    {
+      "name": "niña de 9 años: desarrollo y vacunas, sin gineco-obstétricos; la vacunación sale de patológicos",
+      "input": {
+        "today": "2026-10-15",
+        "fullName": "Sofía Peña",
+        "gender": "Femenino",
+        "birthDate": "2017-02-01",
+        "allergies": "Ninguna",
+        "immunizationSchedule": "Completo para la edad",
+        "developmentalMilestones": "Caminó al año\nHabla bien",
+        "menarcheAge": "8"
+      },
+      "expected": [
+        {
+          "key": "Heredofamiliares",
+          "title": "Heredofamiliares",
+          "summary": "Sin registrar",
+          "detail": "",
+          "isEmpty": true
+        },
+        {
+          "key": "Patologicos",
+          "title": "Personales patológicos",
+          "summary": "Negadas",
+          "detail": "Alergias: Negadas",
+          "isEmpty": false
+        },
+        {
+          "key": "Desarrollo",
+          "title": "Desarrollo y vacunas",
+          "summary": "Caminó al año\nHabla bien · Completo para la edad",
+          "detail": "Desarrollo: Caminó al año\nHabla bien\nVacunación: Completo para la edad",
+          "isEmpty": false
+        },
+        {
+          "key": "NoPatologicos",
+          "title": "No patológicos",
+          "summary": "Sin registrar",
+          "detail": "",
+          "isEmpty": true
+        },
+        {
+          "key": "Contacto",
+          "title": "Contacto y emergencia",
+          "summary": "Sin registrar",
+          "detail": "",
+          "isEmpty": true
+        }
+      ]
+    },
+    {
+      "name": "niña de 10 años: ya lleva la sección gineco-obstétrica (vacía) y la de desarrollo",
+      "input": {
+        "today": "2026-10-15",
+        "fullName": "Lucía",
+        "gender": "femenino",
+        "birthDate": "2016-10-15"
+      },
+      "expected": [
+        {
+          "key": "Heredofamiliares",
+          "title": "Heredofamiliares",
+          "summary": "Sin registrar",
+          "detail": "",
+          "isEmpty": true
+        },
+        {
+          "key": "Patologicos",
+          "title": "Personales patológicos",
+          "summary": "No interrogadas",
+          "detail": "Alergias: No interrogadas",
+          "isEmpty": false
+        },
+        {
+          "key": "Gineco",
+          "title": "Gineco-obstétricos",
+          "summary": "Sin registrar",
+          "detail": "",
+          "isEmpty": true
+        },
+        {
+          "key": "Desarrollo",
+          "title": "Desarrollo y vacunas",
+          "summary": "Sin registrar",
+          "detail": "",
+          "isEmpty": true
+        },
+        {
+          "key": "NoPatologicos",
+          "title": "No patológicos",
+          "summary": "Sin registrar",
+          "detail": "",
+          "isEmpty": true
+        },
+        {
+          "key": "Contacto",
+          "title": "Contacto y emergencia",
+          "summary": "Sin registrar",
+          "detail": "",
+          "isEmpty": true
+        }
+      ]
+    },
+    {
+      "name": "expediente vacío sin fecha: las alergias siempre dicen algo",
+      "input": {
+        "today": "2026-10-15",
+        "fullName": "Paciente",
+        "storedAge": 40
+      },
+      "expected": [
+        {
+          "key": "Heredofamiliares",
+          "title": "Heredofamiliares",
+          "summary": "Sin registrar",
+          "detail": "",
+          "isEmpty": true
+        },
+        {
+          "key": "Patologicos",
+          "title": "Personales patológicos",
+          "summary": "No interrogadas",
+          "detail": "Alergias: No interrogadas",
+          "isEmpty": false
+        },
+        {
+          "key": "NoPatologicos",
+          "title": "No patológicos",
+          "summary": "Sin registrar",
+          "detail": "",
+          "isEmpty": true
+        },
+        {
+          "key": "Contacto",
+          "title": "Contacto y emergencia",
+          "summary": "Sin registrar",
+          "detail": "",
+          "isEmpty": true
+        }
+      ]
+    },
+    {
+      "name": "contacto de emergencia sin teléfono",
+      "input": {
+        "today": "2026-10-15",
+        "fullName": "Mario",
+        "gender": "Masculino",
+        "storedAge": 30,
+        "emergencyContactName": "Rosa",
+        "phone": "123"
+      },
+      "expected": [
+        {
+          "key": "Heredofamiliares",
+          "title": "Heredofamiliares",
+          "summary": "Sin registrar",
+          "detail": "",
+          "isEmpty": true
+        },
+        {
+          "key": "Patologicos",
+          "title": "Personales patológicos",
+          "summary": "No interrogadas",
+          "detail": "Alergias: No interrogadas",
+          "isEmpty": false
+        },
+        {
+          "key": "NoPatologicos",
+          "title": "No patológicos",
+          "summary": "Sin registrar",
+          "detail": "",
+          "isEmpty": true
+        },
+        {
+          "key": "Contacto",
+          "title": "Contacto y emergencia",
+          "summary": "123 · Rosa",
+          "detail": "Teléfono: 123\nEmergencia: Rosa",
+          "isEmpty": false
+        }
+      ]
+    }
+  ]
+}

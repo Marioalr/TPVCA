@@ -1,0 +1,152 @@
+{
+  "rule": "cie10-search",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "La búsqueda del diagnóstico (Models/Cie10Diagnosis.Search y Services/Rules/CatalogSearchRules.Cie10Suggestions) sobre cie10-catalog.json. 'expected' son los códigos en orden.",
+    "search: sin texto (vacío o espacios), los primeros 'max' del catálogo; si no, los del catálogo cuyo código, nombre o categoría contiene la consulta normalizada (text-search.json), en el orden del catálogo, 'max' como mucho.",
+    "suggestions (el diagnóstico de la consulta): menos de 2 caracteres sin los espacios de los lados no sugiere nada; si no, search con el texto sin esos espacios y 20 como mucho."
+  ],
+  "cases": [
+    {
+      "name": "búsqueda · sin acentos ni mayúsculas en el nombre",
+      "input": {
+        "check": "search",
+        "query": "nausea",
+        "max": 15
+      },
+      "expected": [
+        "R11"
+      ]
+    },
+    {
+      "name": "búsqueda · con mayúsculas",
+      "input": {
+        "check": "search",
+        "query": "FIEBRE",
+        "max": 15
+      },
+      "expected": [
+        "R50.9"
+      ]
+    },
+    {
+      "name": "búsqueda · por código",
+      "input": {
+        "check": "search",
+        "query": "z0",
+        "max": 15
+      },
+      "expected": [
+        "Z00.0",
+        "Z01.0",
+        "Z02.1"
+      ]
+    },
+    {
+      "name": "búsqueda · por categoría: todos los de la categoría",
+      "input": {
+        "check": "search",
+        "query": "control",
+        "max": 15
+      },
+      "expected": [
+        "Z00.0",
+        "Z01.0",
+        "Z02.1",
+        "Z71.3",
+        "Z34.9"
+      ]
+    },
+    {
+      "name": "búsqueda · en el orden del catálogo y con tope",
+      "input": {
+        "check": "search",
+        "query": "a",
+        "max": 3
+      },
+      "expected": [
+        "A09",
+        "A08.4",
+        "A06.0"
+      ]
+    },
+    {
+      "name": "búsqueda · sin texto: los primeros",
+      "input": {
+        "check": "search",
+        "query": "",
+        "max": 4
+      },
+      "expected": [
+        "A09",
+        "A08.4",
+        "A06.0",
+        "A04.9"
+      ]
+    },
+    {
+      "name": "búsqueda · nada",
+      "input": {
+        "check": "search",
+        "query": "xyz",
+        "max": 15
+      },
+      "expected": []
+    },
+    {
+      "name": "sugerencias de la consulta · una letra: nada",
+      "input": {
+        "check": "suggestions",
+        "text": "a"
+      },
+      "expected": []
+    },
+    {
+      "name": "sugerencias de la consulta · una letra con espacios: nada",
+      "input": {
+        "check": "suggestions",
+        "text": "  a  "
+      },
+      "expected": []
+    },
+    {
+      "name": "sugerencias de la consulta · dos letras",
+      "input": {
+        "check": "suggestions",
+        "text": "ga"
+      },
+      "expected": [
+        "A09",
+        "A08.4",
+        "K21.9",
+        "K29.7",
+        "K29.1",
+        "K25.9",
+        "S93.4",
+        "R53"
+      ]
+    },
+    {
+      "name": "sugerencias de la consulta · se recortan los espacios de los lados",
+      "input": {
+        "check": "suggestions",
+        "text": "  herpes "
+      },
+      "expected": [
+        "B02.9",
+        "B00.9"
+      ]
+    },
+    {
+      "name": "sugerencias de la consulta · vacío",
+      "input": {
+        "check": "suggestions",
+        "text": ""
+      },
+      "expected": []
+    }
+  ]
+}

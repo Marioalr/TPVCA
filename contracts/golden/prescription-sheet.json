@@ -1,0 +1,531 @@
+{
+  "rule": "prescription-sheet",
+  "culture": "es-MX",
+  "today": null,
+  "now": "2026-10-12T05:30:00Z",
+  "contract": 20,
+  "notes": [
+    "Models/PrescriptionSheet.cs: lo que dice la receta (la misma hoja de la impresión, el HTML y la vista previa). La fecha de la receta es hoy en la zona del consultorio (dd/MM/aaaa).",
+    "Edad (PatientRecord.FormatAge): con fecha de nacimiento, meses cumplidos; menos de 1 mes en días, menos de 24 en meses, menos de 6 años en años y meses, después solo años. Sin fecha, la edad guardada en años.",
+    "Signos: los de la consulta si los hay; si no, los del expediente, leídos con el mismo analizador. T/A 'S/D mmHg'; temperatura con 1 decimal; peso hasta 2; talla en cm hasta 1 (la talla en metros × 100); SpO2 hasta 1 y como porcentaje si viene como fracción (0.97 = 97 %). Formato de double de .NET con el punto como separador: un punto medio exacto en binario se redondea hacia arriba (36.25 da 36.3 y 9.125 da 9.13) y uno inexacto según su valor binario.",
+    "Alergias: cuáles; 'Negadas' si las niega (en rojo solo si tiene); 'No interrogadas' si está vacío. Sin medidas generales, el texto de siempre (PrescriptionDefaults.Indications). Un medicamento sin nombre no sale; el detalle es ' · ' + presentación.",
+    "El medicamento sale como está en medicineName (recortado): con o sin el principio activo entre paréntesis (revisión 16: activeIngredient y showActiveIngredient solo dicen de dónde salió y no cambian la hoja), y un renglón de antes de v1.46, con la marca entre paréntesis, tal cual.",
+    "Sin nombre del médico: 'Dr. Titular'. Sin cédula, licenseLine vacío. Todo se recorta de espacios."
+  ],
+  "cases": [
+    {
+      "name": "adulta con alergias, signos completos y presentación (UTC)",
+      "input": {
+        "timeZone": "UTC",
+        "now": "2026-10-12T05:30:00Z",
+        "patient": {
+          "fullName": "  María José Pérez López ",
+          "birthDate": "1990-03-14",
+          "age": null,
+          "allergies": "Penicilina, sulfas",
+          "vitalSigns": "TA: 120/80 mmHg | FC: 76 lpm | Temp: 37.8 °C | Peso: 64.5 kg | Talla: 1.62 m | SpO2: 0.97"
+        },
+        "consultationVitalSigns": null,
+        "items": [
+          {
+            "medicineName": " Paracetamol 500 mg ",
+            "dosage": "1 tableta cada 8 horas por 3 días",
+            "presentation": "Caja con 20 tabletas"
+          },
+          {
+            "medicineName": "Amoxicilina 500 mg",
+            "dosage": " 1 cápsula cada 12 h ",
+            "presentation": null
+          },
+          {
+            "medicineName": "   ",
+            "dosage": "sin nombre: no sale",
+            "presentation": null
+          }
+        ],
+        "profile": {
+          "doctorName": "Dra. María del Cielo Alberto Galicia",
+          "professionalLicense": " 15632243 ",
+          "university": "UNAM",
+          "phone": "55 1234 5678",
+          "address": "Av. Siempre Viva 742, CDMX"
+        },
+        "generalNotes": "Reposo.\r\nLíquidos abundantes."
+      },
+      "expected": {
+        "doctorName": "Dra. María del Cielo Alberto Galicia",
+        "university": "UNAM",
+        "licenseLine": "Cédula Profesional 15632243",
+        "patientName": "María José Pérez López",
+        "age": "36 años",
+        "date": "12/10/2026",
+        "allergies": "Penicilina, sulfas",
+        "hasAllergies": true,
+        "bloodPressure": "120/80 mmHg",
+        "temperature": "37.8 °C",
+        "weight": "64.5 kg",
+        "height": "162 cm",
+        "oxygenSaturation": "97 %",
+        "medicines": [
+          {
+            "medicine": "Paracetamol 500 mg",
+            "detail": " · Caja con 20 tabletas",
+            "posology": "1 tableta cada 8 horas por 3 días"
+          },
+          {
+            "medicine": "Amoxicilina 500 mg",
+            "detail": "",
+            "posology": "1 cápsula cada 12 h"
+          }
+        ],
+        "generalMeasures": "Reposo.\r\nLíquidos abundantes.",
+        "phone": "55 1234 5678",
+        "address": "Av. Siempre Viva 742, CDMX"
+      }
+    },
+    {
+      "name": "adulta con alergias, signos completos y presentación (America/Mexico_City)",
+      "input": {
+        "timeZone": "America/Mexico_City",
+        "now": "2026-10-12T05:30:00Z",
+        "patient": {
+          "fullName": "  María José Pérez López ",
+          "birthDate": "1990-03-14",
+          "age": null,
+          "allergies": "Penicilina, sulfas",
+          "vitalSigns": "TA: 120/80 mmHg | FC: 76 lpm | Temp: 37.8 °C | Peso: 64.5 kg | Talla: 1.62 m | SpO2: 0.97"
+        },
+        "consultationVitalSigns": null,
+        "items": [
+          {
+            "medicineName": " Paracetamol 500 mg ",
+            "dosage": "1 tableta cada 8 horas por 3 días",
+            "presentation": "Caja con 20 tabletas"
+          },
+          {
+            "medicineName": "Amoxicilina 500 mg",
+            "dosage": " 1 cápsula cada 12 h ",
+            "presentation": null
+          },
+          {
+            "medicineName": "   ",
+            "dosage": "sin nombre: no sale",
+            "presentation": null
+          }
+        ],
+        "profile": {
+          "doctorName": "Dra. María del Cielo Alberto Galicia",
+          "professionalLicense": " 15632243 ",
+          "university": "UNAM",
+          "phone": "55 1234 5678",
+          "address": "Av. Siempre Viva 742, CDMX"
+        },
+        "generalNotes": "Reposo.\r\nLíquidos abundantes."
+      },
+      "expected": {
+        "doctorName": "Dra. María del Cielo Alberto Galicia",
+        "university": "UNAM",
+        "licenseLine": "Cédula Profesional 15632243",
+        "patientName": "María José Pérez López",
+        "age": "36 años",
+        "date": "11/10/2026",
+        "allergies": "Penicilina, sulfas",
+        "hasAllergies": true,
+        "bloodPressure": "120/80 mmHg",
+        "temperature": "37.8 °C",
+        "weight": "64.5 kg",
+        "height": "162 cm",
+        "oxygenSaturation": "97 %",
+        "medicines": [
+          {
+            "medicine": "Paracetamol 500 mg",
+            "detail": " · Caja con 20 tabletas",
+            "posology": "1 tableta cada 8 horas por 3 días"
+          },
+          {
+            "medicine": "Amoxicilina 500 mg",
+            "detail": "",
+            "posology": "1 cápsula cada 12 h"
+          }
+        ],
+        "generalMeasures": "Reposo.\r\nLíquidos abundantes.",
+        "phone": "55 1234 5678",
+        "address": "Av. Siempre Viva 742, CDMX"
+      }
+    },
+    {
+      "name": "bebé de 11 o 12 meses según la zona, alergias negadas y signos con punto medio (UTC)",
+      "input": {
+        "timeZone": "UTC",
+        "now": "2026-10-12T05:30:00Z",
+        "patient": {
+          "fullName": "Bebé Prueba",
+          "birthDate": "2025-10-12",
+          "age": null,
+          "allergies": "Negadas",
+          "vitalSigns": ""
+        },
+        "consultationVitalSigns": "TA: 95/60 | Temp: 36.25 | Peso: 9.125 | Talla: 0.745 | SpO2: 96.5",
+        "items": [
+          {
+            "medicineName": "Paracetamol gotas 100 mg/ml",
+            "dosage": "0.6 ml cada 6 horas",
+            "presentation": null
+          }
+        ],
+        "profile": {
+          "doctorName": "",
+          "professionalLicense": "",
+          "university": "",
+          "phone": "",
+          "address": ""
+        },
+        "generalNotes": null
+      },
+      "expected": {
+        "doctorName": "Dr. Titular",
+        "university": "",
+        "licenseLine": "",
+        "patientName": "Bebé Prueba",
+        "age": "12 meses",
+        "date": "12/10/2026",
+        "allergies": "Negadas",
+        "hasAllergies": false,
+        "bloodPressure": "95/60 mmHg",
+        "temperature": "36.3 °C",
+        "weight": "9.13 kg",
+        "height": "74.5 cm",
+        "oxygenSaturation": "96.5 %",
+        "medicines": [
+          {
+            "medicine": "Paracetamol gotas 100 mg/ml",
+            "detail": "",
+            "posology": "0.6 ml cada 6 horas"
+          }
+        ],
+        "generalMeasures": "Consumir abundantes líquidos, mantener reposo relativo, completar el esquema prescrito y acudir de inmediato a valoración médica o urgencias si presenta fiebre persistente, dificultad respiratoria o reacciones adversas.",
+        "phone": "",
+        "address": ""
+      }
+    },
+    {
+      "name": "bebé de 11 o 12 meses según la zona, alergias negadas y signos con punto medio (America/Mexico_City)",
+      "input": {
+        "timeZone": "America/Mexico_City",
+        "now": "2026-10-12T05:30:00Z",
+        "patient": {
+          "fullName": "Bebé Prueba",
+          "birthDate": "2025-10-12",
+          "age": null,
+          "allergies": "Negadas",
+          "vitalSigns": ""
+        },
+        "consultationVitalSigns": "TA: 95/60 | Temp: 36.25 | Peso: 9.125 | Talla: 0.745 | SpO2: 96.5",
+        "items": [
+          {
+            "medicineName": "Paracetamol gotas 100 mg/ml",
+            "dosage": "0.6 ml cada 6 horas",
+            "presentation": null
+          }
+        ],
+        "profile": {
+          "doctorName": "",
+          "professionalLicense": "",
+          "university": "",
+          "phone": "",
+          "address": ""
+        },
+        "generalNotes": null
+      },
+      "expected": {
+        "doctorName": "Dr. Titular",
+        "university": "",
+        "licenseLine": "",
+        "patientName": "Bebé Prueba",
+        "age": "11 meses",
+        "date": "11/10/2026",
+        "allergies": "Negadas",
+        "hasAllergies": false,
+        "bloodPressure": "95/60 mmHg",
+        "temperature": "36.3 °C",
+        "weight": "9.13 kg",
+        "height": "74.5 cm",
+        "oxygenSaturation": "96.5 %",
+        "medicines": [
+          {
+            "medicine": "Paracetamol gotas 100 mg/ml",
+            "detail": "",
+            "posology": "0.6 ml cada 6 horas"
+          }
+        ],
+        "generalMeasures": "Consumir abundantes líquidos, mantener reposo relativo, completar el esquema prescrito y acudir de inmediato a valoración médica o urgencias si presenta fiebre persistente, dificultad respiratoria o reacciones adversas.",
+        "phone": "",
+        "address": ""
+      }
+    },
+    {
+      "name": "medicamentos de marca con y sin el principio activo entre paréntesis, y un renglón de antes de v1.46 (UTC)",
+      "input": {
+        "timeZone": "UTC",
+        "now": "2026-10-12T05:30:00Z",
+        "patient": {
+          "fullName": "Ana López",
+          "birthDate": "1985-06-01",
+          "age": null,
+          "allergies": "Negadas",
+          "vitalSigns": ""
+        },
+        "consultationVitalSigns": null,
+        "items": [
+          {
+            "medicineName": "Tempra 500 mg tabletas (Paracetamol)",
+            "dosage": "1 tableta cada 8 horas por 3 días",
+            "presentation": "Caja con 20 tabletas",
+            "activeIngredient": "Paracetamol",
+            "showActiveIngredient": true
+          },
+          {
+            "medicineName": "Valclan 875/125 mg tabletas",
+            "dosage": "1 tableta cada 12 horas por 7 días",
+            "presentation": "Caja con 14 tabletas",
+            "activeIngredient": "Amoxicilina/Ácido clavulánico",
+            "showActiveIngredient": false
+          },
+          {
+            "medicineName": "Paracetamol 500 mg tabletas",
+            "dosage": "Un genérico, sin paréntesis",
+            "presentation": null
+          },
+          {
+            "medicineName": "Ondansetrón 8 mg solución inyectable (Navontec)",
+            "dosage": "De antes: tal cual",
+            "presentation": "Caja con 3 ampolletas"
+          }
+        ],
+        "profile": {
+          "doctorName": "Dra. Prueba",
+          "professionalLicense": "",
+          "university": "",
+          "phone": "",
+          "address": ""
+        },
+        "generalNotes": null
+      },
+      "expected": {
+        "doctorName": "Dra. Prueba",
+        "university": "",
+        "licenseLine": "",
+        "patientName": "Ana López",
+        "age": "41 años",
+        "date": "12/10/2026",
+        "allergies": "Negadas",
+        "hasAllergies": false,
+        "bloodPressure": "",
+        "temperature": "",
+        "weight": "",
+        "height": "",
+        "oxygenSaturation": "",
+        "medicines": [
+          {
+            "medicine": "Tempra 500 mg tabletas (Paracetamol)",
+            "detail": " · Caja con 20 tabletas",
+            "posology": "1 tableta cada 8 horas por 3 días"
+          },
+          {
+            "medicine": "Valclan 875/125 mg tabletas",
+            "detail": " · Caja con 14 tabletas",
+            "posology": "1 tableta cada 12 horas por 7 días"
+          },
+          {
+            "medicine": "Paracetamol 500 mg tabletas",
+            "detail": "",
+            "posology": "Un genérico, sin paréntesis"
+          },
+          {
+            "medicine": "Ondansetrón 8 mg solución inyectable (Navontec)",
+            "detail": " · Caja con 3 ampolletas",
+            "posology": "De antes: tal cual"
+          }
+        ],
+        "generalMeasures": "Consumir abundantes líquidos, mantener reposo relativo, completar el esquema prescrito y acudir de inmediato a valoración médica o urgencias si presenta fiebre persistente, dificultad respiratoria o reacciones adversas.",
+        "phone": "",
+        "address": ""
+      }
+    },
+    {
+      "name": "medicamentos de marca con y sin el principio activo entre paréntesis, y un renglón de antes de v1.46 (America/Mexico_City)",
+      "input": {
+        "timeZone": "America/Mexico_City",
+        "now": "2026-10-12T05:30:00Z",
+        "patient": {
+          "fullName": "Ana López",
+          "birthDate": "1985-06-01",
+          "age": null,
+          "allergies": "Negadas",
+          "vitalSigns": ""
+        },
+        "consultationVitalSigns": null,
+        "items": [
+          {
+            "medicineName": "Tempra 500 mg tabletas (Paracetamol)",
+            "dosage": "1 tableta cada 8 horas por 3 días",
+            "presentation": "Caja con 20 tabletas",
+            "activeIngredient": "Paracetamol",
+            "showActiveIngredient": true
+          },
+          {
+            "medicineName": "Valclan 875/125 mg tabletas",
+            "dosage": "1 tableta cada 12 horas por 7 días",
+            "presentation": "Caja con 14 tabletas",
+            "activeIngredient": "Amoxicilina/Ácido clavulánico",
+            "showActiveIngredient": false
+          },
+          {
+            "medicineName": "Paracetamol 500 mg tabletas",
+            "dosage": "Un genérico, sin paréntesis",
+            "presentation": null
+          },
+          {
+            "medicineName": "Ondansetrón 8 mg solución inyectable (Navontec)",
+            "dosage": "De antes: tal cual",
+            "presentation": "Caja con 3 ampolletas"
+          }
+        ],
+        "profile": {
+          "doctorName": "Dra. Prueba",
+          "professionalLicense": "",
+          "university": "",
+          "phone": "",
+          "address": ""
+        },
+        "generalNotes": null
+      },
+      "expected": {
+        "doctorName": "Dra. Prueba",
+        "university": "",
+        "licenseLine": "",
+        "patientName": "Ana López",
+        "age": "41 años",
+        "date": "11/10/2026",
+        "allergies": "Negadas",
+        "hasAllergies": false,
+        "bloodPressure": "",
+        "temperature": "",
+        "weight": "",
+        "height": "",
+        "oxygenSaturation": "",
+        "medicines": [
+          {
+            "medicine": "Tempra 500 mg tabletas (Paracetamol)",
+            "detail": " · Caja con 20 tabletas",
+            "posology": "1 tableta cada 8 horas por 3 días"
+          },
+          {
+            "medicine": "Valclan 875/125 mg tabletas",
+            "detail": " · Caja con 14 tabletas",
+            "posology": "1 tableta cada 12 horas por 7 días"
+          },
+          {
+            "medicine": "Paracetamol 500 mg tabletas",
+            "detail": "",
+            "posology": "Un genérico, sin paréntesis"
+          },
+          {
+            "medicine": "Ondansetrón 8 mg solución inyectable (Navontec)",
+            "detail": " · Caja con 3 ampolletas",
+            "posology": "De antes: tal cual"
+          }
+        ],
+        "generalMeasures": "Consumir abundantes líquidos, mantener reposo relativo, completar el esquema prescrito y acudir de inmediato a valoración médica o urgencias si presenta fiebre persistente, dificultad respiratoria o reacciones adversas.",
+        "phone": "",
+        "address": ""
+      }
+    },
+    {
+      "name": "sin fecha de nacimiento, alergias sin interrogar y sin signos (UTC)",
+      "input": {
+        "timeZone": "UTC",
+        "now": "2026-10-12T05:30:00Z",
+        "patient": {
+          "fullName": "Juan Sin Fecha",
+          "birthDate": null,
+          "age": 1,
+          "allergies": "",
+          "vitalSigns": ""
+        },
+        "consultationVitalSigns": null,
+        "items": [],
+        "profile": {
+          "doctorName": "Dr. Prueba",
+          "professionalLicense": "",
+          "university": "",
+          "phone": "",
+          "address": ""
+        },
+        "generalNotes": "  "
+      },
+      "expected": {
+        "doctorName": "Dr. Prueba",
+        "university": "",
+        "licenseLine": "",
+        "patientName": "Juan Sin Fecha",
+        "age": "1 año",
+        "date": "12/10/2026",
+        "allergies": "No interrogadas",
+        "hasAllergies": false,
+        "bloodPressure": "",
+        "temperature": "",
+        "weight": "",
+        "height": "",
+        "oxygenSaturation": "",
+        "medicines": [],
+        "generalMeasures": "Consumir abundantes líquidos, mantener reposo relativo, completar el esquema prescrito y acudir de inmediato a valoración médica o urgencias si presenta fiebre persistente, dificultad respiratoria o reacciones adversas.",
+        "phone": "",
+        "address": ""
+      }
+    },
+    {
+      "name": "sin fecha de nacimiento, alergias sin interrogar y sin signos (America/Mexico_City)",
+      "input": {
+        "timeZone": "America/Mexico_City",
+        "now": "2026-10-12T05:30:00Z",
+        "patient": {
+          "fullName": "Juan Sin Fecha",
+          "birthDate": null,
+          "age": 1,
+          "allergies": "",
+          "vitalSigns": ""
+        },
+        "consultationVitalSigns": null,
+        "items": [],
+        "profile": {
+          "doctorName": "Dr. Prueba",
+          "professionalLicense": "",
+          "university": "",
+          "phone": "",
+          "address": ""
+        },
+        "generalNotes": "  "
+      },
+      "expected": {
+        "doctorName": "Dr. Prueba",
+        "university": "",
+        "licenseLine": "",
+        "patientName": "Juan Sin Fecha",
+        "age": "1 año",
+        "date": "11/10/2026",
+        "allergies": "No interrogadas",
+        "hasAllergies": false,
+        "bloodPressure": "",
+        "temperature": "",
+        "weight": "",
+        "height": "",
+        "oxygenSaturation": "",
+        "medicines": [],
+        "generalMeasures": "Consumir abundantes líquidos, mantener reposo relativo, completar el esquema prescrito y acudir de inmediato a valoración médica o urgencias si presenta fiebre persistente, dificultad respiratoria o reacciones adversas.",
+        "phone": "",
+        "address": ""
+      }
+    }
+  ]
+}

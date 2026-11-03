@@ -1,0 +1,1507 @@
+{
+  "scenario": "patient-merge",
+  "covers": [
+    "8.21",
+    "8.22"
+  ],
+  "contract": 20,
+  "protocol": 3,
+  "generatedBy": "tests/TPVC.Tests/TursoSyncEndToEndTests.Scenarios.cs (TPVC_WRITE_GOLDEN=1 lo regenera)",
+  "notes": [
+    "Por campo (pasos 5 a 9): B cambia las alergias y A, después, el teléfono, sin bajar nada entre una y otra. La nube se queda con la fila de A (LWW por fila); B la combina al bajar (golden/patient-merge.json), sube el resultado una vez y A lo baja: los dos cambios sobreviven en los dos equipos.",
+    "Por renglón (pasos 10 a 15): cada equipo agrega un insumo a la misma hoja sin bajar el del otro. A sube primero; la fila de B es más nueva y la nube se queda con ella (LWW por fila), y B no la combina porque es la suya. A la baja, combina por renglón (los dos insumos: el orden de la hoja ganadora y al final el que solo tenía A) y sube el resultado en esa misma sincronización; B lo baja en la siguiente.",
+    "Quitar contra editar (pasos 16 a 21): A quita un renglón y B, después, cambia su cantidad: la marca del renglón de B es más nueva que la de quitado, así que el renglón sigue vivo con la cantidad de B; la marca de quitado se queda en FieldStampsJson.",
+    "Escritura sin marcas (pasos 22 a 29): A escribe la fila completa sin tocar FieldStampsJson (rawWrite con now+90s, como una PC v1.19–v1.38) con una marca posterior a la edición de B. Su UpdatedAtUtc es mayor que su llave 'UpdatedAtUtc': es una escritura sin marcas y ese UpdatedAtUtc es su piso, que le gana a todo lo marcado antes (el teléfono de B). B la toma tal cual (la combinación da lo mismo que la nube). Cuando B vuelve a editar (paso 27), el piso queda guardado en '#piso' y solo se marca lo que B cambió.",
+    "ActiveSuppliesJson va en su forma canónica (golden/canonical-json.json) y FieldStampsJson en forma canónica con las horas como <time>: las llaves dicen qué campos y renglones tienen marca."
+  ],
+  "devices": [
+    {
+      "name": "A",
+      "deviceId": "device-a",
+      "role": "WindowsDesktop",
+      "engine": "pc"
+    },
+    {
+      "name": "B",
+      "deviceId": "device-b",
+      "role": "AndroidTablet",
+      "engine": "kotlin"
+    }
+  ],
+  "watch": {
+    "Patients": [
+      "FullName",
+      "Phone",
+      "Allergies",
+      "ActiveSuppliesJson",
+      "FieldStampsJson"
+    ]
+  },
+  "steps": [
+    {
+      "n": 1,
+      "device": "A",
+      "op": "create",
+      "table": "Patients",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000901",
+        "RecordNumber": "EXP-2020-007",
+        "FullName": "Juan Pérez Gómez",
+        "Phone": "5511111111",
+        "Allergies": "Ninguna conocida"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5511111111",
+              "Allergies": "Ninguna conocida",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 2,
+      "device": "A",
+      "op": "fullSync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5511111111",
+              "Allergies": "Ninguna conocida",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5511111111",
+              "Allergies": "Ninguna conocida",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 3,
+      "device": "B",
+      "op": "join",
+      "result": {
+        "ok": true
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5511111111",
+              "Allergies": "Ninguna conocida",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5511111111",
+              "Allergies": "Ninguna conocida",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 4,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5511111111",
+              "Allergies": "Ninguna conocida",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5511111111",
+              "Allergies": "Ninguna conocida",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5511111111",
+              "Allergies": "Ninguna conocida",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 5,
+      "device": "B",
+      "op": "edit",
+      "table": "Patients",
+      "syncId": "10000000-0000-4000-8000-000000000901",
+      "set": {
+        "Allergies": "Penicilina (anafilaxia)"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5511111111",
+              "Allergies": "Ninguna conocida",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5511111111",
+              "Allergies": "Ninguna conocida",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5511111111",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"Allergies\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 6,
+      "device": "A",
+      "op": "edit",
+      "table": "Patients",
+      "syncId": "10000000-0000-4000-8000-000000000901",
+      "set": {
+        "Phone": "5599887766"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5511111111",
+              "Allergies": "Ninguna conocida",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Ninguna conocida",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5511111111",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"Allergies\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 7,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Ninguna conocida",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Ninguna conocida",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5511111111",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"Allergies\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 8,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Ninguna conocida",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 9,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 10,
+      "device": "A",
+      "op": "sheetRow",
+      "syncId": "10000000-0000-4000-8000-000000000901",
+      "action": "add",
+      "row": {
+        "RowId": "10000000-0000-4000-8000-000000000911",
+        "SupplyName": "Gasa estéril 10x10",
+        "Quantity": 1
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":1,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 11,
+      "device": "B",
+      "op": "sheetRow",
+      "syncId": "10000000-0000-4000-8000-000000000901",
+      "action": "add",
+      "row": {
+        "RowId": "10000000-0000-4000-8000-000000000912",
+        "SupplyName": "Venda elástica 10 cm",
+        "Quantity": 2
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[]",
+              "FieldStampsJson": "{\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":1,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 12,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":1,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":1,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 13,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":1,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 14,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":1,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":1,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 15,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":1,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":1,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":1,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 16,
+      "device": "A",
+      "op": "sheetRow",
+      "syncId": "10000000-0000-4000-8000-000000000901",
+      "action": "remove",
+      "row": {
+        "RowId": "10000000-0000-4000-8000-000000000911"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":1,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":1,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 17,
+      "device": "B",
+      "op": "sheetRow",
+      "syncId": "10000000-0000-4000-8000-000000000901",
+      "action": "setQuantity",
+      "row": {
+        "RowId": "10000000-0000-4000-8000-000000000911",
+        "Quantity": 3
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":1,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 18,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 19,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 20,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 21,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 22,
+      "device": "B",
+      "op": "edit",
+      "table": "Patients",
+      "syncId": "10000000-0000-4000-8000-000000000901",
+      "set": {
+        "Phone": "5522222222"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5522222222",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 23,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5522222222",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5599887766",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5522222222",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 24,
+      "device": "A",
+      "op": "rawWrite",
+      "table": "Patients",
+      "syncId": "10000000-0000-4000-8000-000000000901",
+      "stamp": "now+90s",
+      "set": {
+        "Phone": "5533333333"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5522222222",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5533333333",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5522222222",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 25,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5533333333",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5533333333",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5522222222",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 26,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5533333333",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5533333333",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5533333333",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 27,
+      "device": "B",
+      "op": "edit",
+      "table": "Patients",
+      "syncId": "10000000-0000-4000-8000-000000000901",
+      "set": {
+        "Allergies": "Penicilina y sulfas"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5533333333",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5533333333",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5533333333",
+              "Allergies": "Penicilina y sulfas",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"#piso\":\"<time>\",\"Allergies\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 28,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5533333333",
+              "Allergies": "Penicilina y sulfas",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"#piso\":\"<time>\",\"Allergies\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5533333333",
+              "Allergies": "Penicilina (anafilaxia)",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"ActiveSuppliesJson\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000911/quitado\":\"<time>\",\"ActiveSuppliesJson/10000000-0000-4000-8000-000000000912\":\"<time>\",\"Allergies\":\"<time>\",\"Phone\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5533333333",
+              "Allergies": "Penicilina y sulfas",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"#piso\":\"<time>\",\"Allergies\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 29,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5533333333",
+              "Allergies": "Penicilina y sulfas",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"#piso\":\"<time>\",\"Allergies\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5533333333",
+              "Allergies": "Penicilina y sulfas",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"#piso\":\"<time>\",\"Allergies\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000901": {
+              "FullName": "Juan Pérez Gómez",
+              "Phone": "5533333333",
+              "Allergies": "Penicilina y sulfas",
+              "ActiveSuppliesJson": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"10000000-0000-4000-8000-000000000912\",\"SupplyName\":\"Venda elástica 10 cm\",\"UnitPrice\":0},{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":3,\"RowId\":\"10000000-0000-4000-8000-000000000911\",\"SupplyName\":\"Gasa estéril 10x10\",\"UnitPrice\":0}]",
+              "FieldStampsJson": "{\"#piso\":\"<time>\",\"Allergies\":\"<time>\",\"UpdatedAtUtc\":\"<time>\"}"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    }
+  ]
+}

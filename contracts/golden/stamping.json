@@ -1,0 +1,86 @@
+{
+  "rule": "local-stamp",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Marca de un cambio local (alta, edición o borrado): max(nowUtc + clockOffsetMs, storedUpdatedAtUtc + 1 ms). Un borrado usa la marca guardada de la fila que se borra.",
+    "clockOffsetMs es el desfase con la hora de la nube (paso 8.7); hasta entonces la PC usa 0.",
+    "Todas las marcas en UTC con el formato del protocolo (yyyy-MM-dd HH:mm:ss.fffffff)."
+  ],
+  "cases": [
+    {
+      "name": "alta: sin marca guardada",
+      "input": {
+        "nowUtc": "2026-10-10 15:00:00.1234567",
+        "storedUpdatedAtUtc": null,
+        "clockOffsetMs": 0
+      },
+      "expected": "2026-10-10 15:00:00.1234567"
+    },
+    {
+      "name": "edición: la marca guardada es anterior",
+      "input": {
+        "nowUtc": "2026-10-10 15:00:00.1234567",
+        "storedUpdatedAtUtc": "2026-10-10 14:59:59.1234567",
+        "clockOffsetMs": 0
+      },
+      "expected": "2026-10-10 15:00:00.1234567"
+    },
+    {
+      "name": "la marca guardada es igual a la hora",
+      "input": {
+        "nowUtc": "2026-10-10 15:00:00.1234567",
+        "storedUpdatedAtUtc": "2026-10-10 15:00:00.1234567",
+        "clockOffsetMs": 0
+      },
+      "expected": "2026-10-10 15:00:00.1244567"
+    },
+    {
+      "name": "la marca guardada está en el futuro (vino de un equipo con el reloj adelantado)",
+      "input": {
+        "nowUtc": "2026-10-10 15:00:00.1234567",
+        "storedUpdatedAtUtc": "2026-10-10 15:05:00.1234567",
+        "clockOffsetMs": 0
+      },
+      "expected": "2026-10-10 15:05:00.1244567"
+    },
+    {
+      "name": "la marca guardada es 1 ms posterior",
+      "input": {
+        "nowUtc": "2026-10-10 15:00:00.1234567",
+        "storedUpdatedAtUtc": "2026-10-10 15:00:00.1244567",
+        "clockOffsetMs": 0
+      },
+      "expected": "2026-10-10 15:00:00.1254567"
+    },
+    {
+      "name": "con desfase de +2 min con la nube (paso 8.7)",
+      "input": {
+        "nowUtc": "2026-10-10 15:00:00.1234567",
+        "storedUpdatedAtUtc": "2026-10-10 15:00:00.1234567",
+        "clockOffsetMs": 120000
+      },
+      "expected": "2026-10-10 15:02:00.1234567"
+    },
+    {
+      "name": "con desfase negativo que deja atrás la marca guardada",
+      "input": {
+        "nowUtc": "2026-10-10 15:00:00.1234567",
+        "storedUpdatedAtUtc": "2026-10-10 14:59:00.1234567",
+        "clockOffsetMs": -30000
+      },
+      "expected": "2026-10-10 14:59:30.1234567"
+    },
+    {
+      "name": "con desfase negativo que no alcanza la marca guardada",
+      "input": {
+        "nowUtc": "2026-10-10 15:00:00.1234567",
+        "storedUpdatedAtUtc": "2026-10-10 15:00:00.1234567",
+        "clockOffsetMs": -60000
+      },
+      "expected": "2026-10-10 15:00:00.1244567"
+    }
+  ]
+}

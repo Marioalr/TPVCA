@@ -1,0 +1,422 @@
+{
+  "rule": "lww",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Marcas en UTC con el formato del protocolo (yyyy-MM-dd HH:mm:ss.fffffff); null = no existe.",
+    "pull-row y pull-tombstone: lo que decide el equipo al bajar (SyncRules.RemoteRowWins y RemoteTombstoneDeletes).",
+    "server-upsert y server-tombstone: lo que hace la nube con el SQL que manda el equipo (TableMap.UpsertSql, SyncSchema.TombstoneUpsertSql y DeleteTombstonedRowSql), ejecutado de verdad sobre SQLite. 'affectedRows' es lo que Turso regresa en affected_row_count.",
+    "Cerca de generación (paso 8.9): el último argumento de las tres instrucciones es la generación del equipo ('deviceGeneration'; null si la nube todavía no tenía). Sin 'cloudGeneration' la nube no tiene la clave. Si no coincide con _tpvc_meta.generation, la nube no escribe nada (0 filas) y el equipo, al leer la generación al final de la petición, se detiene.",
+    "rejected-upsert: si un upsert afecta 0 filas, el equipo vuelve a leer la fila y la lápida de la nube (SyncRules.AfterRejectedUpsert). La PC lo hace desde el paso 8.6; la app de Kotlin desde su primera versión que escribe.",
+    "rejected-upsert-row: con la fila de la nube en mano, se aplica si su marca es igual o más nueva que la local (SyncRules.ServerRowAppliesAfterReject). No se relee en la primera subida completa, donde casi todo afecta 0 filas."
+  ],
+  "cases": [
+    {
+      "name": "bajar fila · sin fila local: se aplica",
+      "input": {
+        "check": "pull-row",
+        "localUpdatedAtUtc": null,
+        "remoteUpdatedAtUtc": "2026-10-10 15:00:00.0000000"
+      },
+      "expected": {
+        "apply": true
+      }
+    },
+    {
+      "name": "bajar fila · la remota es más nueva",
+      "input": {
+        "check": "pull-row",
+        "localUpdatedAtUtc": "2026-10-10 15:00:00.0000000",
+        "remoteUpdatedAtUtc": "2026-10-10 15:00:01.0000000"
+      },
+      "expected": {
+        "apply": true
+      }
+    },
+    {
+      "name": "bajar fila · empate: se conserva la local",
+      "input": {
+        "check": "pull-row",
+        "localUpdatedAtUtc": "2026-10-10 15:00:00.0000000",
+        "remoteUpdatedAtUtc": "2026-10-10 15:00:00.0000000"
+      },
+      "expected": {
+        "apply": false
+      }
+    },
+    {
+      "name": "bajar fila · la local es más nueva",
+      "input": {
+        "check": "pull-row",
+        "localUpdatedAtUtc": "2026-10-10 15:00:01.0000000",
+        "remoteUpdatedAtUtc": "2026-10-10 15:00:00.0000000"
+      },
+      "expected": {
+        "apply": false
+      }
+    },
+    {
+      "name": "bajar fila · la remota gana por un tick (100 ns)",
+      "input": {
+        "check": "pull-row",
+        "localUpdatedAtUtc": "2026-10-10 15:00:00.0000000",
+        "remoteUpdatedAtUtc": "2026-10-10 15:00:00.0000001"
+      },
+      "expected": {
+        "apply": true
+      }
+    },
+    {
+      "name": "bajar lápida · sin fila local: nada que borrar",
+      "input": {
+        "check": "pull-tombstone",
+        "localUpdatedAtUtc": null,
+        "deletedAtUtc": "2026-10-10 15:00:01.0000000"
+      },
+      "expected": {
+        "delete": false
+      }
+    },
+    {
+      "name": "bajar lápida · la local es anterior al borrado",
+      "input": {
+        "check": "pull-tombstone",
+        "localUpdatedAtUtc": "2026-10-10 15:00:00.0000000",
+        "deletedAtUtc": "2026-10-10 15:00:01.0000000"
+      },
+      "expected": {
+        "delete": true
+      }
+    },
+    {
+      "name": "bajar lápida · empate: se borra",
+      "input": {
+        "check": "pull-tombstone",
+        "localUpdatedAtUtc": "2026-10-10 15:00:01.0000000",
+        "deletedAtUtc": "2026-10-10 15:00:01.0000000"
+      },
+      "expected": {
+        "delete": true
+      }
+    },
+    {
+      "name": "bajar lápida · la local se editó después del borrado: se conserva",
+      "input": {
+        "check": "pull-tombstone",
+        "localUpdatedAtUtc": "2026-10-10 15:00:02.0000000",
+        "deletedAtUtc": "2026-10-10 15:00:01.0000000"
+      },
+      "expected": {
+        "delete": false
+      }
+    },
+    {
+      "name": "subir fila (nube) · fila nueva",
+      "input": {
+        "check": "server-upsert",
+        "serverUpdatedAtUtc": null,
+        "serverDeletedAtUtc": null,
+        "incomingUpdatedAtUtc": "2026-10-10 15:00:01.0000000"
+      },
+      "expected": {
+        "affectedRows": 1,
+        "serverUpdatedAtUtcAfter": "2026-10-10 15:00:01.0000000"
+      }
+    },
+    {
+      "name": "subir fila (nube) · más nueva que la de la nube",
+      "input": {
+        "check": "server-upsert",
+        "serverUpdatedAtUtc": "2026-10-10 15:00:01.0000000",
+        "serverDeletedAtUtc": null,
+        "incomingUpdatedAtUtc": "2026-10-10 15:00:02.0000000"
+      },
+      "expected": {
+        "affectedRows": 1,
+        "serverUpdatedAtUtcAfter": "2026-10-10 15:00:02.0000000"
+      }
+    },
+    {
+      "name": "subir fila (nube) · empate: la nube no cambia",
+      "input": {
+        "check": "server-upsert",
+        "serverUpdatedAtUtc": "2026-10-10 15:00:01.0000000",
+        "serverDeletedAtUtc": null,
+        "incomingUpdatedAtUtc": "2026-10-10 15:00:01.0000000"
+      },
+      "expected": {
+        "affectedRows": 0,
+        "serverUpdatedAtUtcAfter": "2026-10-10 15:00:01.0000000"
+      }
+    },
+    {
+      "name": "subir fila (nube) · más vieja que la de la nube",
+      "input": {
+        "check": "server-upsert",
+        "serverUpdatedAtUtc": "2026-10-10 15:00:02.0000000",
+        "serverDeletedAtUtc": null,
+        "incomingUpdatedAtUtc": "2026-10-10 15:00:01.0000000"
+      },
+      "expected": {
+        "affectedRows": 0,
+        "serverUpdatedAtUtcAfter": "2026-10-10 15:00:02.0000000"
+      }
+    },
+    {
+      "name": "subir fila (nube) · borrada con una lápida más nueva: no revive",
+      "input": {
+        "check": "server-upsert",
+        "serverUpdatedAtUtc": null,
+        "serverDeletedAtUtc": "2026-10-10 15:00:02.0000000",
+        "incomingUpdatedAtUtc": "2026-10-10 15:00:01.0000000"
+      },
+      "expected": {
+        "affectedRows": 0,
+        "serverUpdatedAtUtcAfter": null
+      }
+    },
+    {
+      "name": "subir fila (nube) · lápida con la misma marca: no revive",
+      "input": {
+        "check": "server-upsert",
+        "serverUpdatedAtUtc": null,
+        "serverDeletedAtUtc": "2026-10-10 15:00:01.0000000",
+        "incomingUpdatedAtUtc": "2026-10-10 15:00:01.0000000"
+      },
+      "expected": {
+        "affectedRows": 0,
+        "serverUpdatedAtUtcAfter": null
+      }
+    },
+    {
+      "name": "subir fila (nube) · editada después del borrado: revive",
+      "input": {
+        "check": "server-upsert",
+        "serverUpdatedAtUtc": null,
+        "serverDeletedAtUtc": "2026-10-10 15:00:01.0000000",
+        "incomingUpdatedAtUtc": "2026-10-10 15:00:02.0000000"
+      },
+      "expected": {
+        "affectedRows": 1,
+        "serverUpdatedAtUtcAfter": "2026-10-10 15:00:02.0000000"
+      }
+    },
+    {
+      "name": "subir lápida (nube) · borra la fila anterior al borrado",
+      "input": {
+        "check": "server-tombstone",
+        "serverUpdatedAtUtc": "2026-10-10 15:00:01.0000000",
+        "serverDeletedAtUtc": null,
+        "incomingDeletedAtUtc": "2026-10-10 15:00:02.0000000"
+      },
+      "expected": {
+        "serverUpdatedAtUtcAfter": null,
+        "serverDeletedAtUtcAfter": "2026-10-10 15:00:02.0000000"
+      }
+    },
+    {
+      "name": "subir lápida (nube) · empate: borra la fila",
+      "input": {
+        "check": "server-tombstone",
+        "serverUpdatedAtUtc": "2026-10-10 15:00:01.0000000",
+        "serverDeletedAtUtc": null,
+        "incomingDeletedAtUtc": "2026-10-10 15:00:01.0000000"
+      },
+      "expected": {
+        "serverUpdatedAtUtcAfter": null,
+        "serverDeletedAtUtcAfter": "2026-10-10 15:00:01.0000000"
+      }
+    },
+    {
+      "name": "subir lápida (nube) · la fila se editó después del borrado: se conserva",
+      "input": {
+        "check": "server-tombstone",
+        "serverUpdatedAtUtc": "2026-10-10 15:00:02.0000000",
+        "serverDeletedAtUtc": null,
+        "incomingDeletedAtUtc": "2026-10-10 15:00:01.0000000"
+      },
+      "expected": {
+        "serverUpdatedAtUtcAfter": "2026-10-10 15:00:02.0000000",
+        "serverDeletedAtUtcAfter": "2026-10-10 15:00:01.0000000"
+      }
+    },
+    {
+      "name": "subir lápida (nube) · la nube ya tenía un borrado más nuevo: se queda ese",
+      "input": {
+        "check": "server-tombstone",
+        "serverUpdatedAtUtc": null,
+        "serverDeletedAtUtc": "2026-10-10 15:00:03.0000000",
+        "incomingDeletedAtUtc": "2026-10-10 15:00:02.0000000"
+      },
+      "expected": {
+        "serverUpdatedAtUtcAfter": null,
+        "serverDeletedAtUtcAfter": "2026-10-10 15:00:03.0000000"
+      }
+    },
+    {
+      "name": "cerca de generación (nube) · subir fila · misma generación: se escribe",
+      "input": {
+        "check": "server-upsert",
+        "serverUpdatedAtUtc": null,
+        "incomingUpdatedAtUtc": "2026-10-10 15:00:02.0000000",
+        "cloudGeneration": "gen-a",
+        "deviceGeneration": "gen-a"
+      },
+      "expected": {
+        "affectedRows": 1,
+        "serverUpdatedAtUtcAfter": "2026-10-10 15:00:02.0000000",
+        "serverDeletedAtUtcAfter": null
+      }
+    },
+    {
+      "name": "cerca de generación (nube) · subir fila · la nube sin generación y el equipo tampoco: se escribe",
+      "input": {
+        "check": "server-upsert",
+        "serverUpdatedAtUtc": null,
+        "incomingUpdatedAtUtc": "2026-10-10 15:00:02.0000000",
+        "cloudGeneration": null,
+        "deviceGeneration": null
+      },
+      "expected": {
+        "affectedRows": 1,
+        "serverUpdatedAtUtcAfter": "2026-10-10 15:00:02.0000000",
+        "serverDeletedAtUtcAfter": null
+      }
+    },
+    {
+      "name": "cerca de generación (nube) · subir fila · otra generación: no se escribe",
+      "input": {
+        "check": "server-upsert",
+        "serverUpdatedAtUtc": null,
+        "incomingUpdatedAtUtc": "2026-10-10 15:00:02.0000000",
+        "cloudGeneration": "gen-nueva",
+        "deviceGeneration": "gen-vieja"
+      },
+      "expected": {
+        "affectedRows": 0,
+        "serverUpdatedAtUtcAfter": null,
+        "serverDeletedAtUtcAfter": null
+      }
+    },
+    {
+      "name": "cerca de generación (nube) · subir fila · el equipo sin generación y la nube con una: no se escribe",
+      "input": {
+        "check": "server-upsert",
+        "serverUpdatedAtUtc": null,
+        "incomingUpdatedAtUtc": "2026-10-10 15:00:02.0000000",
+        "cloudGeneration": "gen-nueva",
+        "deviceGeneration": null
+      },
+      "expected": {
+        "affectedRows": 0,
+        "serverUpdatedAtUtcAfter": null,
+        "serverDeletedAtUtcAfter": null
+      }
+    },
+    {
+      "name": "cerca de generación (nube) · subir lápida · otra generación: ni lápida ni borrado",
+      "input": {
+        "check": "server-tombstone",
+        "serverUpdatedAtUtc": "2026-10-10 15:00:01.0000000",
+        "incomingDeletedAtUtc": "2026-10-10 15:00:02.0000000",
+        "cloudGeneration": "gen-nueva",
+        "deviceGeneration": "gen-vieja"
+      },
+      "expected": {
+        "affectedRows": 0,
+        "serverUpdatedAtUtcAfter": "2026-10-10 15:00:01.0000000",
+        "serverDeletedAtUtcAfter": null
+      }
+    },
+    {
+      "name": "subida rechazada (desde 8.6) · la nube tiene la fila (más nueva o con la misma marca): se aplica aunque empate",
+      "input": {
+        "check": "rejected-upsert",
+        "serverRowExists": true,
+        "serverTombstoneExists": false
+      },
+      "expected": {
+        "resolution": "ApplyServerRow"
+      }
+    },
+    {
+      "name": "subida rechazada (desde 8.6) · la relectura encuentra lápida: se borra aquí",
+      "input": {
+        "check": "rejected-upsert",
+        "serverRowExists": false,
+        "serverTombstoneExists": true
+      },
+      "expected": {
+        "resolution": "ApplyServerTombstone"
+      }
+    },
+    {
+      "name": "subida rechazada (desde 8.6) · la fila revivió después de su lápida: se aplica la fila",
+      "input": {
+        "check": "rejected-upsert",
+        "serverRowExists": true,
+        "serverTombstoneExists": true
+      },
+      "expected": {
+        "resolution": "ApplyServerRow"
+      }
+    },
+    {
+      "name": "subida rechazada (desde 8.6) · ni fila ni lápida: se reintenta",
+      "input": {
+        "check": "rejected-upsert",
+        "serverRowExists": false,
+        "serverTombstoneExists": false
+      },
+      "expected": {
+        "resolution": "RetryLater"
+      }
+    },
+    {
+      "name": "subida rechazada, aplicar la fila de la nube · empate: se aplica la de la nube",
+      "input": {
+        "check": "rejected-upsert-row",
+        "localUpdatedAtUtc": "2026-10-10 15:00:01.0000000",
+        "serverUpdatedAtUtc": "2026-10-10 15:00:01.0000000"
+      },
+      "expected": {
+        "apply": true
+      }
+    },
+    {
+      "name": "subida rechazada, aplicar la fila de la nube · la de la nube es más nueva",
+      "input": {
+        "check": "rejected-upsert-row",
+        "localUpdatedAtUtc": "2026-10-10 15:00:01.0000000",
+        "serverUpdatedAtUtc": "2026-10-10 15:00:02.0000000"
+      },
+      "expected": {
+        "apply": true
+      }
+    },
+    {
+      "name": "subida rechazada, aplicar la fila de la nube · la local se volvió a editar después de subir: se conserva",
+      "input": {
+        "check": "rejected-upsert-row",
+        "localUpdatedAtUtc": "2026-10-10 15:00:02.0000000",
+        "serverUpdatedAtUtc": "2026-10-10 15:00:01.0000000"
+      },
+      "expected": {
+        "apply": false
+      }
+    },
+    {
+      "name": "subida rechazada, aplicar la fila de la nube · ya no existe aquí: se aplica",
+      "input": {
+        "check": "rejected-upsert-row",
+        "localUpdatedAtUtc": null,
+        "serverUpdatedAtUtc": "2026-10-10 15:00:01.0000000"
+      },
+      "expected": {
+        "apply": true
+      }
+    }
+  ]
+}

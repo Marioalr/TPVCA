@@ -1,0 +1,413 @@
+{
+  "rule": "date-mask",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "La fecha dd/mm/aaaa con las diagonales solas (Helpers/DateMaskText.cs, fase 7): qué queda en el cuadro y dónde queda el cursor al escribir, pegar, borrar con retroceso o suprimir. 'expected' null = la tecla no cambia nada (no entra). La selección se ajusta al texto antes de todo.",
+    "insert: entran dígitos ASCII y '/' ('-' y '.' cuentan como '/'), lo demás se quita; si no queda nada, null. Una '/' sola sobre una que ya está la salta; sin día o mes antes no entra. Lo escrito reemplaza la selección y el texto se acomoda en día/mes/año (2, 2 y 4 dígitos): un dígito que no cabe en el día o el mes empieza la parte siguiente con su diagonal, salvo que esa parte ya esté cerrada por una diagonal posterior (null); una tercera diagonal o un quinto dígito del año dan null. Al completar el día o el mes al final aparece su diagonal y el cursor pasa sobre ella.",
+    "paste: sin espacios a los lados; yyyy-M-d (con - / o .) se acomoda a d/M/yyyy; luego como insert.",
+    "backspace: con selección la borra; al inicio null; justo después de una diagonal precedida de un dígito: si es la última del texto se borran las dos, si no solo el dígito (la diagonal se queda); si no, el carácter anterior. delete: con selección la borra; al final null; sobre una diagonal seguida de un dígito borra ese dígito; si no, el carácter. Al borrar, el texto se acomoda igual que al escribir, pero sin rechazar nada."
+  ],
+  "cases": [
+    {
+      "name": "escribir · primer dígito",
+      "input": {
+        "op": "insert",
+        "text": "",
+        "selectionStart": 0,
+        "selectionLength": 0,
+        "input": "0"
+      },
+      "expected": {
+        "text": "0",
+        "caret": 1
+      }
+    },
+    {
+      "name": "escribir · el día completo pone su diagonal",
+      "input": {
+        "op": "insert",
+        "text": "0",
+        "selectionStart": 1,
+        "selectionLength": 0,
+        "input": "8"
+      },
+      "expected": {
+        "text": "08/",
+        "caret": 3
+      }
+    },
+    {
+      "name": "escribir · el mes completo pone su diagonal",
+      "input": {
+        "op": "insert",
+        "text": "08/0",
+        "selectionStart": 4,
+        "selectionLength": 0,
+        "input": "8"
+      },
+      "expected": {
+        "text": "08/08/",
+        "caret": 6
+      }
+    },
+    {
+      "name": "escribir · el año",
+      "input": {
+        "op": "insert",
+        "text": "08/08/200",
+        "selectionStart": 9,
+        "selectionLength": 0,
+        "input": "8"
+      },
+      "expected": {
+        "text": "08/08/2008",
+        "caret": 10
+      }
+    },
+    {
+      "name": "escribir · un quinto dígito del año no entra",
+      "input": {
+        "op": "insert",
+        "text": "08/08/2008",
+        "selectionStart": 10,
+        "selectionLength": 0,
+        "input": "1"
+      },
+      "expected": null
+    },
+    {
+      "name": "escribir · un día de un dígito y la diagonal",
+      "input": {
+        "op": "insert",
+        "text": "8",
+        "selectionStart": 1,
+        "selectionLength": 0,
+        "input": "/"
+      },
+      "expected": {
+        "text": "8/",
+        "caret": 2
+      }
+    },
+    {
+      "name": "escribir · la diagonal que ya está: solo se pasa",
+      "input": {
+        "op": "insert",
+        "text": "08/",
+        "selectionStart": 2,
+        "selectionLength": 0,
+        "input": "/"
+      },
+      "expected": {
+        "text": "08/",
+        "caret": 3
+      }
+    },
+    {
+      "name": "escribir · la diagonal tras la automática no entra",
+      "input": {
+        "op": "insert",
+        "text": "08/",
+        "selectionStart": 3,
+        "selectionLength": 0,
+        "input": "/"
+      },
+      "expected": null
+    },
+    {
+      "name": "escribir · el guion y el punto cuentan como diagonal",
+      "input": {
+        "op": "insert",
+        "text": "8",
+        "selectionStart": 1,
+        "selectionLength": 0,
+        "input": "-"
+      },
+      "expected": {
+        "text": "8/",
+        "caret": 2
+      }
+    },
+    {
+      "name": "escribir · una tercera diagonal no entra",
+      "input": {
+        "op": "insert",
+        "text": "8/8/2008",
+        "selectionStart": 8,
+        "selectionLength": 0,
+        "input": "/"
+      },
+      "expected": null
+    },
+    {
+      "name": "escribir · letras no entran",
+      "input": {
+        "op": "insert",
+        "text": "08/",
+        "selectionStart": 3,
+        "selectionLength": 0,
+        "input": "a"
+      },
+      "expected": null
+    },
+    {
+      "name": "escribir · un dígito dentro de un día completo y cerrado no entra",
+      "input": {
+        "op": "insert",
+        "text": "08/08/2008",
+        "selectionStart": 1,
+        "selectionLength": 0,
+        "input": "1"
+      },
+      "expected": null
+    },
+    {
+      "name": "escribir · el tercer dígito del día empieza el mes",
+      "input": {
+        "op": "insert",
+        "text": "08",
+        "selectionStart": 2,
+        "selectionLength": 0,
+        "input": "1"
+      },
+      "expected": {
+        "text": "08/1",
+        "caret": 4
+      }
+    },
+    {
+      "name": "escribir · sobre una selección",
+      "input": {
+        "op": "insert",
+        "text": "08/08/2008",
+        "selectionStart": 0,
+        "selectionLength": 2,
+        "input": "1"
+      },
+      "expected": {
+        "text": "1/08/2008",
+        "caret": 1
+      }
+    },
+    {
+      "name": "escribir · cursor fuera del texto se ajusta",
+      "input": {
+        "op": "insert",
+        "text": "08",
+        "selectionStart": 99,
+        "selectionLength": 0,
+        "input": "1"
+      },
+      "expected": {
+        "text": "08/1",
+        "caret": 4
+      }
+    },
+    {
+      "name": "pegar · ocho dígitos",
+      "input": {
+        "op": "paste",
+        "text": "",
+        "selectionStart": 0,
+        "selectionLength": 0,
+        "input": "08082008"
+      },
+      "expected": {
+        "text": "08/08/2008",
+        "caret": 10
+      }
+    },
+    {
+      "name": "pegar · con diagonales",
+      "input": {
+        "op": "paste",
+        "text": "",
+        "selectionStart": 0,
+        "selectionLength": 0,
+        "input": "08/08/2008"
+      },
+      "expected": {
+        "text": "08/08/2008",
+        "caret": 10
+      }
+    },
+    {
+      "name": "pegar · día y mes de un dígito",
+      "input": {
+        "op": "paste",
+        "text": "",
+        "selectionStart": 0,
+        "selectionLength": 0,
+        "input": "8/8/2008"
+      },
+      "expected": {
+        "text": "8/8/2008",
+        "caret": 8
+      }
+    },
+    {
+      "name": "pegar · año-mes-día se acomoda",
+      "input": {
+        "op": "paste",
+        "text": "",
+        "selectionStart": 0,
+        "selectionLength": 0,
+        "input": "2008-08-08"
+      },
+      "expected": {
+        "text": "08/08/2008",
+        "caret": 10
+      }
+    },
+    {
+      "name": "pegar · con espacios",
+      "input": {
+        "op": "paste",
+        "text": "",
+        "selectionStart": 0,
+        "selectionLength": 0,
+        "input": " 14/03/1992 "
+      },
+      "expected": {
+        "text": "14/03/1992",
+        "caret": 10
+      }
+    },
+    {
+      "name": "pegar · no cabe",
+      "input": {
+        "op": "paste",
+        "text": "",
+        "selectionStart": 0,
+        "selectionLength": 0,
+        "input": "080820081"
+      },
+      "expected": null
+    },
+    {
+      "name": "pegar · texto sin dígitos",
+      "input": {
+        "op": "paste",
+        "text": "",
+        "selectionStart": 0,
+        "selectionLength": 0,
+        "input": "ayer"
+      },
+      "expected": null
+    },
+    {
+      "name": "retroceso · la diagonal del final se va con el dígito anterior",
+      "input": {
+        "op": "backspace",
+        "text": "08/",
+        "selectionStart": 3,
+        "selectionLength": 0
+      },
+      "expected": {
+        "text": "0",
+        "caret": 1
+      }
+    },
+    {
+      "name": "retroceso · a media fecha la diagonal se queda",
+      "input": {
+        "op": "backspace",
+        "text": "08/08/2008",
+        "selectionStart": 6,
+        "selectionLength": 0
+      },
+      "expected": {
+        "text": "08/0/2008",
+        "caret": 4
+      }
+    },
+    {
+      "name": "retroceso · un dígito",
+      "input": {
+        "op": "backspace",
+        "text": "08/08/2008",
+        "selectionStart": 10,
+        "selectionLength": 0
+      },
+      "expected": {
+        "text": "08/08/200",
+        "caret": 9
+      }
+    },
+    {
+      "name": "retroceso · al inicio no hay nada",
+      "input": {
+        "op": "backspace",
+        "text": "08/08",
+        "selectionStart": 0,
+        "selectionLength": 0
+      },
+      "expected": null
+    },
+    {
+      "name": "retroceso · una selección",
+      "input": {
+        "op": "backspace",
+        "text": "08/08/2008",
+        "selectionStart": 3,
+        "selectionLength": 3
+      },
+      "expected": {
+        "text": "08/20/08",
+        "caret": 3
+      }
+    },
+    {
+      "name": "suprimir · antes de una diagonal borra el dígito que la sigue",
+      "input": {
+        "op": "delete",
+        "text": "08/08/2008",
+        "selectionStart": 2,
+        "selectionLength": 0
+      },
+      "expected": {
+        "text": "08/8/2008",
+        "caret": 3
+      }
+    },
+    {
+      "name": "suprimir · un dígito y lo de después se acomoda",
+      "input": {
+        "op": "delete",
+        "text": "08/08/2008",
+        "selectionStart": 0,
+        "selectionLength": 0
+      },
+      "expected": {
+        "text": "8/08/2008",
+        "caret": 0
+      }
+    },
+    {
+      "name": "suprimir · al final no hay nada",
+      "input": {
+        "op": "delete",
+        "text": "08/08",
+        "selectionStart": 5,
+        "selectionLength": 0
+      },
+      "expected": null
+    },
+    {
+      "name": "suprimir · la diagonal del final",
+      "input": {
+        "op": "delete",
+        "text": "08/",
+        "selectionStart": 2,
+        "selectionLength": 0
+      },
+      "expected": {
+        "text": "08",
+        "caret": 2
+      }
+    }
+  ]
+}

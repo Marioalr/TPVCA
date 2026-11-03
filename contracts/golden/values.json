@@ -1,0 +1,604 @@
+{
+  "rule": "hrana-values",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "encode: el valor (en 'value', como texto invariante; un BLOB en hexadecimal; null = nulo) se manda a Turso como el argumento Hrana de 'expected'. Un entero, booleano o enum como número JSON hace que Turso rechace la petición con HTTP 400.",
+    "decode: el valor Hrana de una fila se guarda en una columna de 'clrType' (con '?' acepta nulo); 'expected' es su forma canónica: entero en base 10, booleano true/false, decimal con su escala, fecha yyyy-MM-dd HH:mm:ss.fffffff, GUID en minúsculas, enum por su nombre, BLOB en hexadecimal en minúsculas ('' = BLOB vacío), null = nulo.",
+    "BLOB: {\"type\":\"blob\",\"base64\":…}, sin 'value'. Turso manda el base64 estándar (con + y /) sin el relleno '=' y acepta los argumentos con o sin él (libSQL, libsql-hrana/src/proto.rs). Un decodificador que exige el relleno, como Convert.FromBase64String, rechaza lo que manda Turso.",
+    "Los nombres de 'clrType' son los de contracts/sync/schema.json."
+  ],
+  "cases": [
+    {
+      "name": "codificar · entero",
+      "input": {
+        "direction": "encode",
+        "clrType": "int",
+        "value": "42"
+      },
+      "expected": {
+        "type": "integer",
+        "value": "42"
+      }
+    },
+    {
+      "name": "codificar · entero negativo",
+      "input": {
+        "direction": "encode",
+        "clrType": "int",
+        "value": "-7"
+      },
+      "expected": {
+        "type": "integer",
+        "value": "-7"
+      }
+    },
+    {
+      "name": "codificar · long más grande que 2^53 (viaja como texto: un número JSON perdería precisión)",
+      "input": {
+        "direction": "encode",
+        "clrType": "long",
+        "value": "9007199254740993"
+      },
+      "expected": {
+        "type": "integer",
+        "value": "9007199254740993"
+      }
+    },
+    {
+      "name": "codificar · booleano verdadero",
+      "input": {
+        "direction": "encode",
+        "clrType": "bool",
+        "value": "true"
+      },
+      "expected": {
+        "type": "integer",
+        "value": "1"
+      }
+    },
+    {
+      "name": "codificar · booleano falso",
+      "input": {
+        "direction": "encode",
+        "clrType": "bool",
+        "value": "false"
+      },
+      "expected": {
+        "type": "integer",
+        "value": "0"
+      }
+    },
+    {
+      "name": "codificar · enum MovementType.SalidaVenta",
+      "input": {
+        "direction": "encode",
+        "clrType": "enum MovementType",
+        "value": "SalidaVenta"
+      },
+      "expected": {
+        "type": "integer",
+        "value": "6"
+      }
+    },
+    {
+      "name": "codificar · double",
+      "input": {
+        "direction": "encode",
+        "clrType": "double",
+        "value": "1.5"
+      },
+      "expected": {
+        "type": "float",
+        "value": 1.5
+      }
+    },
+    {
+      "name": "codificar · double sin representación binaria exacta",
+      "input": {
+        "direction": "encode",
+        "clrType": "double",
+        "value": "0.1"
+      },
+      "expected": {
+        "type": "float",
+        "value": 0.1
+      }
+    },
+    {
+      "name": "codificar · decimal con su escala (12.50 no es 12.5)",
+      "input": {
+        "direction": "encode",
+        "clrType": "decimal",
+        "value": "12.50"
+      },
+      "expected": {
+        "type": "text",
+        "value": "12.50"
+      }
+    },
+    {
+      "name": "codificar · decimal entero",
+      "input": {
+        "direction": "encode",
+        "clrType": "decimal",
+        "value": "350"
+      },
+      "expected": {
+        "type": "text",
+        "value": "350"
+      }
+    },
+    {
+      "name": "codificar · decimal negativo",
+      "input": {
+        "direction": "encode",
+        "clrType": "decimal",
+        "value": "-0.75"
+      },
+      "expected": {
+        "type": "text",
+        "value": "-0.75"
+      }
+    },
+    {
+      "name": "codificar · decimal con 9 decimales",
+      "input": {
+        "direction": "encode",
+        "clrType": "decimal",
+        "value": "1234567.123456789"
+      },
+      "expected": {
+        "type": "text",
+        "value": "1234567.123456789"
+      }
+    },
+    {
+      "name": "codificar · fecha con siete decimales",
+      "input": {
+        "direction": "encode",
+        "clrType": "DateTime",
+        "value": "2026-10-10 15:04:05.1234567"
+      },
+      "expected": {
+        "type": "text",
+        "value": "2026-10-10 15:04:05.1234567"
+      }
+    },
+    {
+      "name": "codificar · fecha sin hora (dateOnly)",
+      "input": {
+        "direction": "encode",
+        "clrType": "DateTime",
+        "value": "1990-05-01 00:00:00.0000000"
+      },
+      "expected": {
+        "type": "text",
+        "value": "1990-05-01 00:00:00.0000000"
+      }
+    },
+    {
+      "name": "codificar · fecha mínima: el nulo de una fecha obligatoria",
+      "input": {
+        "direction": "encode",
+        "clrType": "DateTime",
+        "value": "0001-01-01 00:00:00.0000000"
+      },
+      "expected": {
+        "type": "text",
+        "value": "0001-01-01 00:00:00.0000000"
+      }
+    },
+    {
+      "name": "codificar · GUID en mayúsculas sale en minúsculas",
+      "input": {
+        "direction": "encode",
+        "clrType": "Guid",
+        "value": "3F2504E0-4F89-11D3-9A0C-0305E82C3301"
+      },
+      "expected": {
+        "type": "text",
+        "value": "3f2504e0-4f89-11d3-9a0c-0305e82c3301"
+      }
+    },
+    {
+      "name": "codificar · texto con acentos, ñ y símbolos",
+      "input": {
+        "direction": "encode",
+        "clrType": "string",
+        "value": "Señora María José Peña — 50 % ✓"
+      },
+      "expected": {
+        "type": "text",
+        "value": "Señora María José Peña — 50 % ✓"
+      }
+    },
+    {
+      "name": "codificar · texto vacío",
+      "input": {
+        "direction": "encode",
+        "clrType": "string",
+        "value": ""
+      },
+      "expected": {
+        "type": "text",
+        "value": ""
+      }
+    },
+    {
+      "name": "codificar · BLOB: sale con relleno '=' (Turso acepta con y sin él)",
+      "input": {
+        "direction": "encode",
+        "clrType": "byte[]",
+        "value": "89504e47"
+      },
+      "expected": {
+        "type": "blob",
+        "base64": "iVBORw=="
+      }
+    },
+    {
+      "name": "codificar · BLOB vacío",
+      "input": {
+        "direction": "encode",
+        "clrType": "byte[]",
+        "value": ""
+      },
+      "expected": {
+        "type": "blob",
+        "base64": ""
+      }
+    },
+    {
+      "name": "codificar · texto nulo",
+      "input": {
+        "direction": "encode",
+        "clrType": "string?",
+        "value": null
+      },
+      "expected": {
+        "type": "null"
+      }
+    },
+    {
+      "name": "codificar · entero opcional nulo",
+      "input": {
+        "direction": "encode",
+        "clrType": "int?",
+        "value": null
+      },
+      "expected": {
+        "type": "null"
+      }
+    },
+    {
+      "name": "decodificar · entero",
+      "input": {
+        "direction": "decode",
+        "clrType": "int",
+        "hrana": {
+          "type": "integer",
+          "value": "42"
+        }
+      },
+      "expected": "42"
+    },
+    {
+      "name": "decodificar · entero como número JSON (lectura tolerante)",
+      "input": {
+        "direction": "decode",
+        "clrType": "int",
+        "hrana": {
+          "type": "integer",
+          "value": 42
+        }
+      },
+      "expected": "42"
+    },
+    {
+      "name": "decodificar · long más grande que 2^53",
+      "input": {
+        "direction": "decode",
+        "clrType": "long",
+        "hrana": {
+          "type": "integer",
+          "value": "9007199254740993"
+        }
+      },
+      "expected": "9007199254740993"
+    },
+    {
+      "name": "decodificar · booleano desde entero 1",
+      "input": {
+        "direction": "decode",
+        "clrType": "bool",
+        "hrana": {
+          "type": "integer",
+          "value": "1"
+        }
+      },
+      "expected": "true"
+    },
+    {
+      "name": "decodificar · booleano desde entero 0",
+      "input": {
+        "direction": "decode",
+        "clrType": "bool",
+        "hrana": {
+          "type": "integer",
+          "value": "0"
+        }
+      },
+      "expected": "false"
+    },
+    {
+      "name": "decodificar · enum desde su número",
+      "input": {
+        "direction": "decode",
+        "clrType": "enum MovementType",
+        "hrana": {
+          "type": "integer",
+          "value": "6"
+        }
+      },
+      "expected": "SalidaVenta"
+    },
+    {
+      "name": "decodificar · double",
+      "input": {
+        "direction": "decode",
+        "clrType": "double",
+        "hrana": {
+          "type": "float",
+          "value": 1.5
+        }
+      },
+      "expected": "1.5"
+    },
+    {
+      "name": "decodificar · decimal desde texto con su escala",
+      "input": {
+        "direction": "decode",
+        "clrType": "decimal",
+        "hrana": {
+          "type": "text",
+          "value": "12.50"
+        }
+      },
+      "expected": "12.50"
+    },
+    {
+      "name": "decodificar · decimal desde float (filas viejas)",
+      "input": {
+        "direction": "decode",
+        "clrType": "decimal",
+        "hrana": {
+          "type": "float",
+          "value": 0.1
+        }
+      },
+      "expected": "0.1"
+    },
+    {
+      "name": "decodificar · decimal desde entero",
+      "input": {
+        "direction": "decode",
+        "clrType": "decimal",
+        "hrana": {
+          "type": "integer",
+          "value": "350"
+        }
+      },
+      "expected": "350"
+    },
+    {
+      "name": "decodificar · fecha del protocolo",
+      "input": {
+        "direction": "decode",
+        "clrType": "DateTime",
+        "hrana": {
+          "type": "text",
+          "value": "2026-10-10 15:04:05.1234567"
+        }
+      },
+      "expected": "2026-10-10 15:04:05.1234567"
+    },
+    {
+      "name": "decodificar · fecha con T y sin fracción",
+      "input": {
+        "direction": "decode",
+        "clrType": "DateTime",
+        "hrana": {
+          "type": "text",
+          "value": "2026-10-10T15:04:05"
+        }
+      },
+      "expected": "2026-10-10 15:04:05.0000000"
+    },
+    {
+      "name": "decodificar · fecha sin hora",
+      "input": {
+        "direction": "decode",
+        "clrType": "DateTime",
+        "hrana": {
+          "type": "text",
+          "value": "2026-10-10"
+        }
+      },
+      "expected": "2026-10-10 00:00:00.0000000"
+    },
+    {
+      "name": "decodificar · GUID en mayúsculas",
+      "input": {
+        "direction": "decode",
+        "clrType": "Guid",
+        "hrana": {
+          "type": "text",
+          "value": "3F2504E0-4F89-11D3-9A0C-0305E82C3301"
+        }
+      },
+      "expected": "3f2504e0-4f89-11d3-9a0c-0305e82c3301"
+    },
+    {
+      "name": "decodificar · BLOB sin relleno, como lo manda Turso (faltan dos '=')",
+      "input": {
+        "direction": "decode",
+        "clrType": "byte[]",
+        "hrana": {
+          "type": "blob",
+          "base64": "iVBORw"
+        }
+      },
+      "expected": "89504e47"
+    },
+    {
+      "name": "decodificar · BLOB sin relleno (falta un '=')",
+      "input": {
+        "direction": "decode",
+        "clrType": "byte[]",
+        "hrana": {
+          "type": "blob",
+          "base64": "iVBORw0"
+        }
+      },
+      "expected": "89504e470d"
+    },
+    {
+      "name": "decodificar · BLOB con relleno (lectura tolerante)",
+      "input": {
+        "direction": "decode",
+        "clrType": "byte[]",
+        "hrana": {
+          "type": "blob",
+          "base64": "iVBORw=="
+        }
+      },
+      "expected": "89504e47"
+    },
+    {
+      "name": "decodificar · BLOB con + y / (base64 estándar, no el de URL)",
+      "input": {
+        "direction": "decode",
+        "clrType": "byte[]",
+        "hrana": {
+          "type": "blob",
+          "base64": "++//"
+        }
+      },
+      "expected": "fbefff"
+    },
+    {
+      "name": "decodificar · BLOB vacío: no es nulo",
+      "input": {
+        "direction": "decode",
+        "clrType": "byte[]",
+        "hrana": {
+          "type": "blob",
+          "base64": ""
+        }
+      },
+      "expected": ""
+    },
+    {
+      "name": "decodificar · nulo en texto obligatorio",
+      "input": {
+        "direction": "decode",
+        "clrType": "string",
+        "hrana": {
+          "type": "null"
+        }
+      },
+      "expected": ""
+    },
+    {
+      "name": "decodificar · nulo en entero obligatorio",
+      "input": {
+        "direction": "decode",
+        "clrType": "int",
+        "hrana": {
+          "type": "null"
+        }
+      },
+      "expected": "0"
+    },
+    {
+      "name": "decodificar · nulo en booleano obligatorio",
+      "input": {
+        "direction": "decode",
+        "clrType": "bool",
+        "hrana": {
+          "type": "null"
+        }
+      },
+      "expected": "false"
+    },
+    {
+      "name": "decodificar · nulo en decimal obligatorio",
+      "input": {
+        "direction": "decode",
+        "clrType": "decimal",
+        "hrana": {
+          "type": "null"
+        }
+      },
+      "expected": "0"
+    },
+    {
+      "name": "decodificar · nulo en fecha obligatoria",
+      "input": {
+        "direction": "decode",
+        "clrType": "DateTime",
+        "hrana": {
+          "type": "null"
+        }
+      },
+      "expected": "0001-01-01 00:00:00.0000000"
+    },
+    {
+      "name": "decodificar · nulo en BLOB obligatorio",
+      "input": {
+        "direction": "decode",
+        "clrType": "byte[]",
+        "hrana": {
+          "type": "null"
+        }
+      },
+      "expected": ""
+    },
+    {
+      "name": "decodificar · nulo en texto opcional",
+      "input": {
+        "direction": "decode",
+        "clrType": "string?",
+        "hrana": {
+          "type": "null"
+        }
+      },
+      "expected": null
+    },
+    {
+      "name": "decodificar · nulo en fecha opcional",
+      "input": {
+        "direction": "decode",
+        "clrType": "DateTime?",
+        "hrana": {
+          "type": "null"
+        }
+      },
+      "expected": null
+    },
+    {
+      "name": "decodificar · nulo en BLOB opcional",
+      "input": {
+        "direction": "decode",
+        "clrType": "byte[]?",
+        "hrana": {
+          "type": "null"
+        }
+      },
+      "expected": null
+    }
+  ]
+}

@@ -1,0 +1,784 @@
+{
+  "rule": "duplicate-patients",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Posibles expedientes duplicados (Services/Rules/DuplicatePatientRules, paso 8.23, H3). No hay CURP: dos expedientes pueden ser el mismo paciente si su nombre normalizado es igual y además tienen la misma BirthDate (solo la fecha) o los mismos últimos 10 dígitos de Phone. 'compare' da el motivo: None, BirthDate, Phone o BirthDateAndPhone.",
+    "name: la normalización de la búsqueda (Services/TextSearch.Normalize: quitar espacios de los extremos, NFD, quitar las marcas sin espacio (categoría Mn: acentos, diéresis, la tilde de la ñ), minúsculas invariantes, NFC) y luego los espacios seguidos como uno (separa todo lo que char.IsWhiteSpace de .NET o Char.isWhitespace() de Kotlin toman por espacio, también el tabulador y el espacio duro U+00A0). Nada más: un guion o un punto siguen contando.",
+    "phone: sin la extensión (revisión 20, decisión del médico del 2026-10-22: con el texto normalizado como text-search.json, se quita desde 'extension', 'ext', 'ext.' o una 'x' que no sigue a una letra a-z, o '#', seguidos de espacios opcionales y un dígito 0-9, hasta el final; expresión (?:(?<![a-z])(?:extension|ext\\.?|x)|#)\\s*[0-9].*$), solo los dígitos ASCII 0-9 (los de ancho completo no cuentan), los últimos 10; con menos de 10, null (no se compara). patient-identity.json formatea el teléfono con estos mismos dígitos.",
+    "Solo cuentan los expedientes con IsActive, sin MergedIntoSyncId y con nombre; nunca el mismo SyncId (uno vacío es un expediente nuevo sin guardar).",
+    "pairs: los pares de posibles duplicados en que está alguno de 'involving' (los SyncId de los expedientes que acaban de bajar), cada par una vez [SyncId menor, SyncId mayor, motivo], ordenados por SyncId en minúsculas (orden ordinal).",
+    "Al crear un expediente: aviso con los parecidos y se puede crear de todos modos. Después de bajar: 'pairs' con los que llegaron, en un aviso (en la PC, el banner de Pacientes). Nunca se une nada solo (la herramienta de unir es el paso opcional 8.A, que escribirá MergedIntoSyncId)."
+  ],
+  "cases": [
+    {
+      "name": "nombre · 'José Pérez Núñez'",
+      "input": {
+        "check": "name",
+        "name": "José Pérez Núñez"
+      },
+      "expected": "jose perez nunez"
+    },
+    {
+      "name": "nombre · '  María   del\tCarmen\u00A0López '",
+      "input": {
+        "check": "name",
+        "name": "  María   del\tCarmen\u00A0López "
+      },
+      "expected": "maria del carmen lopez"
+    },
+    {
+      "name": "nombre · 'Ana Güemes'",
+      "input": {
+        "check": "name",
+        "name": "Ana Güemes"
+      },
+      "expected": "ana guemes"
+    },
+    {
+      "name": "nombre · 'ÑOÑO'",
+      "input": {
+        "check": "name",
+        "name": "ÑOÑO"
+      },
+      "expected": "nono"
+    },
+    {
+      "name": "nombre · 'María-José'",
+      "input": {
+        "check": "name",
+        "name": "María-José"
+      },
+      "expected": "maria-jose"
+    },
+    {
+      "name": "nombre · ''",
+      "input": {
+        "check": "name",
+        "name": ""
+      },
+      "expected": ""
+    },
+    {
+      "name": "teléfono · '+52 (55) 1234-5678'",
+      "input": {
+        "check": "phone",
+        "phone": "+52 (55) 1234-5678"
+      },
+      "expected": "5512345678"
+    },
+    {
+      "name": "teléfono · '044 55 1234 5678'",
+      "input": {
+        "check": "phone",
+        "phone": "044 55 1234 5678"
+      },
+      "expected": "5512345678"
+    },
+    {
+      "name": "teléfono · '55 1234 5678'",
+      "input": {
+        "check": "phone",
+        "phone": "55 1234 5678"
+      },
+      "expected": "5512345678"
+    },
+    {
+      "name": "teléfono · '1234-5678'",
+      "input": {
+        "check": "phone",
+        "phone": "1234-5678"
+      },
+      "expected": null
+    },
+    {
+      "name": "teléfono · ''",
+      "input": {
+        "check": "phone",
+        "phone": ""
+      },
+      "expected": null
+    },
+    {
+      "name": "teléfono · '５５１２３４５６７８'",
+      "input": {
+        "check": "phone",
+        "phone": "５５１２３４５６７８"
+      },
+      "expected": null
+    },
+    {
+      "name": "teléfono · '+52 55 9876 5432 ext 10'",
+      "input": {
+        "check": "phone",
+        "phone": "+52 55 9876 5432 ext 10"
+      },
+      "expected": "5598765432"
+    },
+    {
+      "name": "teléfono · '55 9876 5432 Ext. 123'",
+      "input": {
+        "check": "phone",
+        "phone": "55 9876 5432 Ext. 123"
+      },
+      "expected": "5598765432"
+    },
+    {
+      "name": "teléfono · '55 9876 5432 extensión 7'",
+      "input": {
+        "check": "phone",
+        "phone": "55 9876 5432 extensión 7"
+      },
+      "expected": "5598765432"
+    },
+    {
+      "name": "teléfono · '55 9876 5432 EXTENSION 7'",
+      "input": {
+        "check": "phone",
+        "phone": "55 9876 5432 EXTENSION 7"
+      },
+      "expected": "5598765432"
+    },
+    {
+      "name": "teléfono · '55 9876 5432 x22'",
+      "input": {
+        "check": "phone",
+        "phone": "55 9876 5432 x22"
+      },
+      "expected": "5598765432"
+    },
+    {
+      "name": "teléfono · '55 9876 5432 #4'",
+      "input": {
+        "check": "phone",
+        "phone": "55 9876 5432 #4"
+      },
+      "expected": "5598765432"
+    },
+    {
+      "name": "teléfono · '55 9876 5432 ext'",
+      "input": {
+        "check": "phone",
+        "phone": "55 9876 5432 ext"
+      },
+      "expected": "5598765432"
+    },
+    {
+      "name": "teléfono · '55-9876-5432x 9'",
+      "input": {
+        "check": "phone",
+        "phone": "55-9876-5432x 9"
+      },
+      "expected": "5598765432"
+    },
+    {
+      "name": "par · acentos y mayúsculas, misma fecha de nacimiento",
+      "input": {
+        "check": "compare",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "José Pérez Núñez",
+          "BirthDate": "1990-02-01 00:00:00.0000000",
+          "Phone": null,
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000102",
+          "FullName": "JOSE PEREZ NUNEZ",
+          "BirthDate": "1990-02-01 00:00:00.0000000",
+          "Phone": null,
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        }
+      },
+      "expected": "BirthDate"
+    },
+    {
+      "name": "par · espacios de más, tabulador y espacio duro, mismo teléfono",
+      "input": {
+        "check": "compare",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "  María   del\tCarmen\u00A0López ",
+          "BirthDate": null,
+          "Phone": "5512345678",
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000102",
+          "FullName": "maria del carmen lopez",
+          "BirthDate": null,
+          "Phone": "5512345678",
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        }
+      },
+      "expected": "Phone"
+    },
+    {
+      "name": "par · diéresis: Güemes y Guemes",
+      "input": {
+        "check": "compare",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "Ana Güemes",
+          "BirthDate": "1985-07-20 00:00:00.0000000",
+          "Phone": null,
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000102",
+          "FullName": "Ana Guemes",
+          "BirthDate": "1985-07-20 00:00:00.0000000",
+          "Phone": null,
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        }
+      },
+      "expected": "BirthDate"
+    },
+    {
+      "name": "par · teléfono con lada y formato: '+52 (55) 1234-5678' y '55 1234 5678'",
+      "input": {
+        "check": "compare",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "Luis Rojas",
+          "BirthDate": null,
+          "Phone": "+52 (55) 1234-5678",
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000102",
+          "FullName": "Luis Rojas",
+          "BirthDate": null,
+          "Phone": "55 1234 5678",
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        }
+      },
+      "expected": "Phone"
+    },
+    {
+      "name": "par · teléfono con 044: los últimos 10 dígitos",
+      "input": {
+        "check": "compare",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "Luis Rojas",
+          "BirthDate": null,
+          "Phone": "044 55 1234 5678",
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000102",
+          "FullName": "Luis Rojas",
+          "BirthDate": null,
+          "Phone": "5512345678",
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        }
+      },
+      "expected": "Phone"
+    },
+    {
+      "name": "par · teléfono de 8 dígitos: no se compara",
+      "input": {
+        "check": "compare",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "Luis Rojas",
+          "BirthDate": null,
+          "Phone": "1234-5678",
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000102",
+          "FullName": "Luis Rojas",
+          "BirthDate": null,
+          "Phone": "1234 5678",
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "par · mismo nombre, otra fecha de nacimiento y sin teléfono",
+      "input": {
+        "check": "compare",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "Juan Pérez",
+          "BirthDate": "1990-02-01 00:00:00.0000000",
+          "Phone": null,
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000102",
+          "FullName": "Juan Pérez",
+          "BirthDate": "1991-02-01 00:00:00.0000000",
+          "Phone": null,
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "par · mismo nombre, otra fecha de nacimiento pero el mismo teléfono",
+      "input": {
+        "check": "compare",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "Juan Pérez",
+          "BirthDate": "1990-02-01 00:00:00.0000000",
+          "Phone": "5598765432",
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000102",
+          "FullName": "Juan Pérez",
+          "BirthDate": "1991-02-01 00:00:00.0000000",
+          "Phone": "55-9876-5432",
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        }
+      },
+      "expected": "Phone"
+    },
+    {
+      "name": "par · misma fecha y mismo teléfono",
+      "input": {
+        "check": "compare",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "Juan Pérez",
+          "BirthDate": "1990-02-01 00:00:00.0000000",
+          "Phone": "5598765432",
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000102",
+          "FullName": "juan perez",
+          "BirthDate": "1990-02-01 00:00:00.0000000",
+          "Phone": "+525598765432",
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        }
+      },
+      "expected": "BirthDateAndPhone"
+    },
+    {
+      "name": "par · el mismo teléfono con extensión (revisión 20)",
+      "input": {
+        "check": "compare",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "Juan Pérez",
+          "BirthDate": null,
+          "Phone": "+52 55 9876 5432 ext 10",
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000102",
+          "FullName": "Juan Pérez",
+          "BirthDate": null,
+          "Phone": "5598765432",
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        }
+      },
+      "expected": "Phone"
+    },
+    {
+      "name": "par · uno sin fecha de nacimiento: solo cuenta el teléfono (aquí, otro)",
+      "input": {
+        "check": "compare",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "Juan Pérez",
+          "BirthDate": null,
+          "Phone": "5598765432",
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000102",
+          "FullName": "Juan Pérez",
+          "BirthDate": "1990-02-01 00:00:00.0000000",
+          "Phone": "5511112222",
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "par · otro nombre con la misma fecha y teléfono",
+      "input": {
+        "check": "compare",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "Juan Pérez",
+          "BirthDate": "1990-02-01 00:00:00.0000000",
+          "Phone": "5598765432",
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000102",
+          "FullName": "Juana Pérez",
+          "BirthDate": "1990-02-01 00:00:00.0000000",
+          "Phone": "5598765432",
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "par · un guion cuenta: 'María-José' no es 'María José'",
+      "input": {
+        "check": "compare",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "María-José Ruiz",
+          "BirthDate": "2001-03-03 00:00:00.0000000",
+          "Phone": null,
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000102",
+          "FullName": "María José Ruiz",
+          "BirthDate": "2001-03-03 00:00:00.0000000",
+          "Phone": null,
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "par · un punto cuenta: 'Ma. Elena' no es 'Ma Elena'",
+      "input": {
+        "check": "compare",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "Ma. Elena Soto",
+          "BirthDate": "1970-01-01 00:00:00.0000000",
+          "Phone": null,
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000102",
+          "FullName": "Ma Elena Soto",
+          "BirthDate": "1970-01-01 00:00:00.0000000",
+          "Phone": null,
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "par · uno dado de baja (IsActive falso) no cuenta",
+      "input": {
+        "check": "compare",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "Juan Pérez",
+          "BirthDate": "1990-02-01 00:00:00.0000000",
+          "Phone": null,
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000102",
+          "FullName": "Juan Pérez",
+          "BirthDate": "1990-02-01 00:00:00.0000000",
+          "Phone": null,
+          "IsActive": false,
+          "MergedIntoSyncId": null
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "par · uno unido a otro (MergedIntoSyncId) no cuenta",
+      "input": {
+        "check": "compare",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "Juan Pérez",
+          "BirthDate": "1990-02-01 00:00:00.0000000",
+          "Phone": null,
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000102",
+          "FullName": "Juan Pérez",
+          "BirthDate": "1990-02-01 00:00:00.0000000",
+          "Phone": null,
+          "IsActive": true,
+          "MergedIntoSyncId": "c0000000-0000-4000-8000-000000000101"
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "par · el mismo expediente (mismo SyncId) no es duplicado de sí mismo",
+      "input": {
+        "check": "compare",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "Juan Pérez",
+          "BirthDate": "1990-02-01 00:00:00.0000000",
+          "Phone": null,
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "Juan Pérez",
+          "BirthDate": "1990-02-01 00:00:00.0000000",
+          "Phone": null,
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "par · sin nombre no cuenta",
+      "input": {
+        "check": "compare",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000101",
+          "FullName": "  ",
+          "BirthDate": "1990-02-01 00:00:00.0000000",
+          "Phone": null,
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000102",
+          "FullName": "",
+          "BirthDate": "1990-02-01 00:00:00.0000000",
+          "Phone": null,
+          "IsActive": true,
+          "MergedIntoSyncId": null
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "pares · llegó el 2",
+      "input": {
+        "check": "pairs",
+        "patients": [
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000101",
+            "FullName": "Juan Pérez",
+            "BirthDate": "1990-02-01 00:00:00.0000000",
+            "Phone": null,
+            "IsActive": true,
+            "MergedIntoSyncId": null
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000102",
+            "FullName": "JUAN PEREZ",
+            "BirthDate": "1990-02-01 00:00:00.0000000",
+            "Phone": null,
+            "IsActive": true,
+            "MergedIntoSyncId": null
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000103",
+            "FullName": "Juan Perez",
+            "BirthDate": null,
+            "Phone": "5598765432",
+            "IsActive": true,
+            "MergedIntoSyncId": null
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000104",
+            "FullName": "Juan Pérez",
+            "BirthDate": "1975-05-05 00:00:00.0000000",
+            "Phone": "55 9876 5432",
+            "IsActive": true,
+            "MergedIntoSyncId": null
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000105",
+            "FullName": "Ana López",
+            "BirthDate": "1980-01-01 00:00:00.0000000",
+            "Phone": null,
+            "IsActive": true,
+            "MergedIntoSyncId": null
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000106",
+            "FullName": "Ana Lopez",
+            "BirthDate": "1980-01-01 00:00:00.0000000",
+            "Phone": null,
+            "IsActive": false,
+            "MergedIntoSyncId": null
+          }
+        ],
+        "involving": [
+          "c0000000-0000-4000-8000-000000000102"
+        ]
+      },
+      "expected": [
+        [
+          "c0000000-0000-4000-8000-000000000101",
+          "c0000000-0000-4000-8000-000000000102",
+          "BirthDate"
+        ]
+      ]
+    },
+    {
+      "name": "pares · llegó el 4 (mismo teléfono que el 3)",
+      "input": {
+        "check": "pairs",
+        "patients": [
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000101",
+            "FullName": "Juan Pérez",
+            "BirthDate": "1990-02-01 00:00:00.0000000",
+            "Phone": null,
+            "IsActive": true,
+            "MergedIntoSyncId": null
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000102",
+            "FullName": "JUAN PEREZ",
+            "BirthDate": "1990-02-01 00:00:00.0000000",
+            "Phone": null,
+            "IsActive": true,
+            "MergedIntoSyncId": null
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000103",
+            "FullName": "Juan Perez",
+            "BirthDate": null,
+            "Phone": "5598765432",
+            "IsActive": true,
+            "MergedIntoSyncId": null
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000104",
+            "FullName": "Juan Pérez",
+            "BirthDate": "1975-05-05 00:00:00.0000000",
+            "Phone": "55 9876 5432",
+            "IsActive": true,
+            "MergedIntoSyncId": null
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000105",
+            "FullName": "Ana López",
+            "BirthDate": "1980-01-01 00:00:00.0000000",
+            "Phone": null,
+            "IsActive": true,
+            "MergedIntoSyncId": null
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000106",
+            "FullName": "Ana Lopez",
+            "BirthDate": "1980-01-01 00:00:00.0000000",
+            "Phone": null,
+            "IsActive": false,
+            "MergedIntoSyncId": null
+          }
+        ],
+        "involving": [
+          "c0000000-0000-4000-8000-000000000104"
+        ]
+      },
+      "expected": [
+        [
+          "c0000000-0000-4000-8000-000000000103",
+          "c0000000-0000-4000-8000-000000000104",
+          "Phone"
+        ]
+      ]
+    },
+    {
+      "name": "pares · llegaron el 5 y el 6 (el 6 está dado de baja)",
+      "input": {
+        "check": "pairs",
+        "patients": [
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000101",
+            "FullName": "Juan Pérez",
+            "BirthDate": "1990-02-01 00:00:00.0000000",
+            "Phone": null,
+            "IsActive": true,
+            "MergedIntoSyncId": null
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000102",
+            "FullName": "JUAN PEREZ",
+            "BirthDate": "1990-02-01 00:00:00.0000000",
+            "Phone": null,
+            "IsActive": true,
+            "MergedIntoSyncId": null
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000103",
+            "FullName": "Juan Perez",
+            "BirthDate": null,
+            "Phone": "5598765432",
+            "IsActive": true,
+            "MergedIntoSyncId": null
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000104",
+            "FullName": "Juan Pérez",
+            "BirthDate": "1975-05-05 00:00:00.0000000",
+            "Phone": "55 9876 5432",
+            "IsActive": true,
+            "MergedIntoSyncId": null
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000105",
+            "FullName": "Ana López",
+            "BirthDate": "1980-01-01 00:00:00.0000000",
+            "Phone": null,
+            "IsActive": true,
+            "MergedIntoSyncId": null
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000106",
+            "FullName": "Ana Lopez",
+            "BirthDate": "1980-01-01 00:00:00.0000000",
+            "Phone": null,
+            "IsActive": false,
+            "MergedIntoSyncId": null
+          }
+        ],
+        "involving": [
+          "c0000000-0000-4000-8000-000000000105",
+          "c0000000-0000-4000-8000-000000000106"
+        ]
+      },
+      "expected": []
+    }
+  ]
+}

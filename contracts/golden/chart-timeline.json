@@ -1,0 +1,1022 @@
+{
+  "rule": "chart-timeline",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "El historial de la ficha (Services/Rules/PatientChartRules.BuildTimeline y FilterTimeline, antes en PatientChartViewModel). Fechas en hora local del consultorio (yyyy-MM-dd HH:mm). Una consulta: date, folio, diagnosis, chiefComplaint, vitalSigns, treatmentPlan, notes, systemsReview, physicalExamination, prescriptions (medicineName, presentation, dosage) y labStudies/labIndications (LabOrderJson). Una cita: date, time, reason y status (todas las del paciente, también las canceladas).",
+    "Consulta: title = el diagnóstico sin espacios a los lados, si no el motivo, si no 'Consulta'; side = el folio; lines (en este orden y solo las que tienen texto): 'Motivo' (solo si hay diagnóstico), 'Signos' (con ' | ' cambiado por ' · '), 'Receta' (los nombres sin espacios a los lados, sin vacíos, unidos por ' · '), 'Laboratorio' (los estudios unidos por ' · ') y 'Plan'. El valor de cada línea es su primer renglón no vacío sin espacios a los lados (\\r\\n cuenta como \\n); con más de 160 caracteres, los primeros 157 sin espacios al final y '…'. detail (lo que revisa la búsqueda) une con \\n los que tienen texto de: motivo, interrogatorio, exploración, signos, plan, notas, la receta (un renglón por medicamento: 'nombre presentación indicación'), los estudios (uno por renglón) y las indicaciones del laboratorio.",
+    "Cita: date = su día más la hora de 'time' leída como en patient-summary.json (lo que no se lee, las 10:00); title = el motivo sin espacios a los lados o 'Cita'; detail = 'time · status' (la hora tal cual); side y lines vacíos.",
+    "Orden: por el día (sin la hora) de más nuevo a más viejo; en el mismo día, las consultas antes que las citas; dentro de cada grupo, de la hora más tarde a la más temprana; iguales, en el orden de entrada (las consultas primero en el orden de la lista).",
+    "filter: 'Consultas' o 'Citas' (exacto) deja solo esas, cualquier otro deja todo; search: text-search.json 'matches' con el título y el detail (vacío = todo). La ficha muestra la fecha como 'd MMM' y el año aparte con la cultura es-MX; esos textos dependen de los datos de la cultura del sistema y no van en el vector."
+  ],
+  "cases": [
+    {
+      "name": "historial completo: por día de la más nueva a la más vieja; en un día, las consultas antes que las citas y cada grupo de la hora más tarde a la más temprana",
+      "input": {
+        "consultations": [
+          {
+            "date": "2026-10-12 10:30",
+            "folio": "CNS-20261012-103000",
+            "diagnosis": "Faringitis aguda",
+            "chiefComplaint": "Dolor de garganta",
+            "vitalSigns": "TA: 120/80 mmHg | FC: 76 lpm | Temp: 38.2 °C",
+            "treatmentPlan": "Reposo y líquidos",
+            "notes": "Evolución favorable",
+            "systemsReview": "Sin datos de alarma",
+            "physicalExamination": "Faringe hiperémica",
+            "prescriptions": [
+              {
+                "medicineName": "Paracetamol 500 mg tabletas",
+                "presentation": "Caja con 20 tabletas",
+                "dosage": "1 tableta cada 8 horas por 3 días"
+              },
+              {
+                "medicineName": "  ",
+                "presentation": null,
+                "dosage": ""
+              }
+            ],
+            "labStudies": [
+              "Biometría hemática",
+              "Exudado faríngeo"
+            ],
+            "labIndications": "En ayuno"
+          },
+          {
+            "date": "2026-10-12 08:00",
+            "folio": "CNS-20261012-080000",
+            "diagnosis": "",
+            "chiefComplaint": "  Control de peso  ",
+            "vitalSigns": "Peso: 80 kg",
+            "treatmentPlan": "Reposo relativo. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma.\nSegundo renglón"
+          },
+          {
+            "date": "2026-09-01 09:00",
+            "folio": "CNS-20260901-090000",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "",
+            "treatmentPlan": ""
+          },
+          {
+            "date": "2026-10-14 18:00",
+            "folio": "CNS-20261014-180000",
+            "diagnosis": " Lumbalgia mecánica ",
+            "chiefComplaint": "Dolor lumbar\r\ndesde ayer",
+            "vitalSigns": "",
+            "treatmentPlan": "\n\n  Ibuprofeno  \nCompresas"
+          }
+        ],
+        "appointments": [
+          {
+            "date": "2026-10-12",
+            "time": "09:15",
+            "reason": "Primera vez",
+            "status": "Atendida"
+          },
+          {
+            "date": "2026-10-12",
+            "time": "17:00",
+            "reason": "",
+            "status": "Programada"
+          },
+          {
+            "date": "2026-10-20",
+            "time": "3 PM",
+            "reason": "Revisión de resultados",
+            "status": "Confirmada"
+          },
+          {
+            "date": "2026-09-01",
+            "time": "07:30",
+            "reason": "Control",
+            "status": "Cancelada"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "kind": "cita",
+          "date": "2026-10-20 10:00",
+          "title": "Revisión de resultados",
+          "side": "",
+          "lines": [],
+          "detail": "3 PM · Confirmada"
+        },
+        {
+          "kind": "consulta",
+          "date": "2026-10-14 18:00",
+          "title": "Lumbalgia mecánica",
+          "side": "CNS-20261014-180000",
+          "lines": [
+            {
+              "label": "Motivo",
+              "value": "Dolor lumbar"
+            },
+            {
+              "label": "Plan",
+              "value": "Ibuprofeno"
+            }
+          ],
+          "detail": "Dolor lumbar\r\ndesde ayer\n\n\n  Ibuprofeno  \nCompresas"
+        },
+        {
+          "kind": "consulta",
+          "date": "2026-10-12 10:30",
+          "title": "Faringitis aguda",
+          "side": "CNS-20261012-103000",
+          "lines": [
+            {
+              "label": "Motivo",
+              "value": "Dolor de garganta"
+            },
+            {
+              "label": "Signos",
+              "value": "TA: 120/80 mmHg · FC: 76 lpm · Temp: 38.2 °C"
+            },
+            {
+              "label": "Receta",
+              "value": "Paracetamol 500 mg tabletas"
+            },
+            {
+              "label": "Laboratorio",
+              "value": "Biometría hemática · Exudado faríngeo"
+            },
+            {
+              "label": "Plan",
+              "value": "Reposo y líquidos"
+            }
+          ],
+          "detail": "Dolor de garganta\nSin datos de alarma\nFaringe hiperémica\nTA: 120/80 mmHg | FC: 76 lpm | Temp: 38.2 °C\nReposo y líquidos\nEvolución favorable\nParacetamol 500 mg tabletas Caja con 20 tabletas 1 tableta cada 8 horas por 3 días\n    \nBiometría hemática\nExudado faríngeo\nEn ayuno"
+        },
+        {
+          "kind": "consulta",
+          "date": "2026-10-12 08:00",
+          "title": "Control de peso",
+          "side": "CNS-20261012-080000",
+          "lines": [
+            {
+              "label": "Signos",
+              "value": "Peso: 80 kg"
+            },
+            {
+              "label": "Plan",
+              "value": "Reposo relativo. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de a…"
+            }
+          ],
+          "detail": "  Control de peso  \nPeso: 80 kg\nReposo relativo. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma.\nSegundo renglón"
+        },
+        {
+          "kind": "cita",
+          "date": "2026-10-12 17:00",
+          "title": "Cita",
+          "side": "",
+          "lines": [],
+          "detail": "17:00 · Programada"
+        },
+        {
+          "kind": "cita",
+          "date": "2026-10-12 09:15",
+          "title": "Primera vez",
+          "side": "",
+          "lines": [],
+          "detail": "09:15 · Atendida"
+        },
+        {
+          "kind": "consulta",
+          "date": "2026-09-01 09:00",
+          "title": "Consulta",
+          "side": "CNS-20260901-090000",
+          "lines": [],
+          "detail": ""
+        },
+        {
+          "kind": "cita",
+          "date": "2026-09-01 07:30",
+          "title": "Control",
+          "side": "",
+          "lines": [],
+          "detail": "07:30 · Cancelada"
+        }
+      ]
+    },
+    {
+      "name": "sin nada",
+      "input": {
+        "consultations": [],
+        "appointments": []
+      },
+      "expected": []
+    },
+    {
+      "name": "filtro · solo consultas",
+      "input": {
+        "consultations": [
+          {
+            "date": "2026-10-12 10:30",
+            "folio": "CNS-20261012-103000",
+            "diagnosis": "Faringitis aguda",
+            "chiefComplaint": "Dolor de garganta",
+            "vitalSigns": "TA: 120/80 mmHg | FC: 76 lpm | Temp: 38.2 °C",
+            "treatmentPlan": "Reposo y líquidos",
+            "notes": "Evolución favorable",
+            "systemsReview": "Sin datos de alarma",
+            "physicalExamination": "Faringe hiperémica",
+            "prescriptions": [
+              {
+                "medicineName": "Paracetamol 500 mg tabletas",
+                "presentation": "Caja con 20 tabletas",
+                "dosage": "1 tableta cada 8 horas por 3 días"
+              },
+              {
+                "medicineName": "  ",
+                "presentation": null,
+                "dosage": ""
+              }
+            ],
+            "labStudies": [
+              "Biometría hemática",
+              "Exudado faríngeo"
+            ],
+            "labIndications": "En ayuno"
+          },
+          {
+            "date": "2026-10-12 08:00",
+            "folio": "CNS-20261012-080000",
+            "diagnosis": "",
+            "chiefComplaint": "  Control de peso  ",
+            "vitalSigns": "Peso: 80 kg",
+            "treatmentPlan": "Reposo relativo. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma.\nSegundo renglón"
+          },
+          {
+            "date": "2026-09-01 09:00",
+            "folio": "CNS-20260901-090000",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "",
+            "treatmentPlan": ""
+          },
+          {
+            "date": "2026-10-14 18:00",
+            "folio": "CNS-20261014-180000",
+            "diagnosis": " Lumbalgia mecánica ",
+            "chiefComplaint": "Dolor lumbar\r\ndesde ayer",
+            "vitalSigns": "",
+            "treatmentPlan": "\n\n  Ibuprofeno  \nCompresas"
+          }
+        ],
+        "appointments": [
+          {
+            "date": "2026-10-12",
+            "time": "09:15",
+            "reason": "Primera vez",
+            "status": "Atendida"
+          },
+          {
+            "date": "2026-10-12",
+            "time": "17:00",
+            "reason": "",
+            "status": "Programada"
+          },
+          {
+            "date": "2026-10-20",
+            "time": "3 PM",
+            "reason": "Revisión de resultados",
+            "status": "Confirmada"
+          },
+          {
+            "date": "2026-09-01",
+            "time": "07:30",
+            "reason": "Control",
+            "status": "Cancelada"
+          }
+        ],
+        "filter": "Consultas",
+        "search": ""
+      },
+      "expected": [
+        {
+          "kind": "consulta",
+          "date": "2026-10-14 18:00",
+          "title": "Lumbalgia mecánica",
+          "side": "CNS-20261014-180000",
+          "lines": [
+            {
+              "label": "Motivo",
+              "value": "Dolor lumbar"
+            },
+            {
+              "label": "Plan",
+              "value": "Ibuprofeno"
+            }
+          ],
+          "detail": "Dolor lumbar\r\ndesde ayer\n\n\n  Ibuprofeno  \nCompresas"
+        },
+        {
+          "kind": "consulta",
+          "date": "2026-10-12 10:30",
+          "title": "Faringitis aguda",
+          "side": "CNS-20261012-103000",
+          "lines": [
+            {
+              "label": "Motivo",
+              "value": "Dolor de garganta"
+            },
+            {
+              "label": "Signos",
+              "value": "TA: 120/80 mmHg · FC: 76 lpm · Temp: 38.2 °C"
+            },
+            {
+              "label": "Receta",
+              "value": "Paracetamol 500 mg tabletas"
+            },
+            {
+              "label": "Laboratorio",
+              "value": "Biometría hemática · Exudado faríngeo"
+            },
+            {
+              "label": "Plan",
+              "value": "Reposo y líquidos"
+            }
+          ],
+          "detail": "Dolor de garganta\nSin datos de alarma\nFaringe hiperémica\nTA: 120/80 mmHg | FC: 76 lpm | Temp: 38.2 °C\nReposo y líquidos\nEvolución favorable\nParacetamol 500 mg tabletas Caja con 20 tabletas 1 tableta cada 8 horas por 3 días\n    \nBiometría hemática\nExudado faríngeo\nEn ayuno"
+        },
+        {
+          "kind": "consulta",
+          "date": "2026-10-12 08:00",
+          "title": "Control de peso",
+          "side": "CNS-20261012-080000",
+          "lines": [
+            {
+              "label": "Signos",
+              "value": "Peso: 80 kg"
+            },
+            {
+              "label": "Plan",
+              "value": "Reposo relativo. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de a…"
+            }
+          ],
+          "detail": "  Control de peso  \nPeso: 80 kg\nReposo relativo. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma.\nSegundo renglón"
+        },
+        {
+          "kind": "consulta",
+          "date": "2026-09-01 09:00",
+          "title": "Consulta",
+          "side": "CNS-20260901-090000",
+          "lines": [],
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "name": "filtro · solo citas",
+      "input": {
+        "consultations": [
+          {
+            "date": "2026-10-12 10:30",
+            "folio": "CNS-20261012-103000",
+            "diagnosis": "Faringitis aguda",
+            "chiefComplaint": "Dolor de garganta",
+            "vitalSigns": "TA: 120/80 mmHg | FC: 76 lpm | Temp: 38.2 °C",
+            "treatmentPlan": "Reposo y líquidos",
+            "notes": "Evolución favorable",
+            "systemsReview": "Sin datos de alarma",
+            "physicalExamination": "Faringe hiperémica",
+            "prescriptions": [
+              {
+                "medicineName": "Paracetamol 500 mg tabletas",
+                "presentation": "Caja con 20 tabletas",
+                "dosage": "1 tableta cada 8 horas por 3 días"
+              },
+              {
+                "medicineName": "  ",
+                "presentation": null,
+                "dosage": ""
+              }
+            ],
+            "labStudies": [
+              "Biometría hemática",
+              "Exudado faríngeo"
+            ],
+            "labIndications": "En ayuno"
+          },
+          {
+            "date": "2026-10-12 08:00",
+            "folio": "CNS-20261012-080000",
+            "diagnosis": "",
+            "chiefComplaint": "  Control de peso  ",
+            "vitalSigns": "Peso: 80 kg",
+            "treatmentPlan": "Reposo relativo. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma.\nSegundo renglón"
+          },
+          {
+            "date": "2026-09-01 09:00",
+            "folio": "CNS-20260901-090000",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "",
+            "treatmentPlan": ""
+          },
+          {
+            "date": "2026-10-14 18:00",
+            "folio": "CNS-20261014-180000",
+            "diagnosis": " Lumbalgia mecánica ",
+            "chiefComplaint": "Dolor lumbar\r\ndesde ayer",
+            "vitalSigns": "",
+            "treatmentPlan": "\n\n  Ibuprofeno  \nCompresas"
+          }
+        ],
+        "appointments": [
+          {
+            "date": "2026-10-12",
+            "time": "09:15",
+            "reason": "Primera vez",
+            "status": "Atendida"
+          },
+          {
+            "date": "2026-10-12",
+            "time": "17:00",
+            "reason": "",
+            "status": "Programada"
+          },
+          {
+            "date": "2026-10-20",
+            "time": "3 PM",
+            "reason": "Revisión de resultados",
+            "status": "Confirmada"
+          },
+          {
+            "date": "2026-09-01",
+            "time": "07:30",
+            "reason": "Control",
+            "status": "Cancelada"
+          }
+        ],
+        "filter": "Citas",
+        "search": ""
+      },
+      "expected": [
+        {
+          "kind": "cita",
+          "date": "2026-10-20 10:00",
+          "title": "Revisión de resultados",
+          "side": "",
+          "lines": [],
+          "detail": "3 PM · Confirmada"
+        },
+        {
+          "kind": "cita",
+          "date": "2026-10-12 17:00",
+          "title": "Cita",
+          "side": "",
+          "lines": [],
+          "detail": "17:00 · Programada"
+        },
+        {
+          "kind": "cita",
+          "date": "2026-10-12 09:15",
+          "title": "Primera vez",
+          "side": "",
+          "lines": [],
+          "detail": "09:15 · Atendida"
+        },
+        {
+          "kind": "cita",
+          "date": "2026-09-01 07:30",
+          "title": "Control",
+          "side": "",
+          "lines": [],
+          "detail": "07:30 · Cancelada"
+        }
+      ]
+    },
+    {
+      "name": "filtro · cualquier otro filtro es todo; buscar sin acentos en lo que no se ve en la tarjeta",
+      "input": {
+        "consultations": [
+          {
+            "date": "2026-10-12 10:30",
+            "folio": "CNS-20261012-103000",
+            "diagnosis": "Faringitis aguda",
+            "chiefComplaint": "Dolor de garganta",
+            "vitalSigns": "TA: 120/80 mmHg | FC: 76 lpm | Temp: 38.2 °C",
+            "treatmentPlan": "Reposo y líquidos",
+            "notes": "Evolución favorable",
+            "systemsReview": "Sin datos de alarma",
+            "physicalExamination": "Faringe hiperémica",
+            "prescriptions": [
+              {
+                "medicineName": "Paracetamol 500 mg tabletas",
+                "presentation": "Caja con 20 tabletas",
+                "dosage": "1 tableta cada 8 horas por 3 días"
+              },
+              {
+                "medicineName": "  ",
+                "presentation": null,
+                "dosage": ""
+              }
+            ],
+            "labStudies": [
+              "Biometría hemática",
+              "Exudado faríngeo"
+            ],
+            "labIndications": "En ayuno"
+          },
+          {
+            "date": "2026-10-12 08:00",
+            "folio": "CNS-20261012-080000",
+            "diagnosis": "",
+            "chiefComplaint": "  Control de peso  ",
+            "vitalSigns": "Peso: 80 kg",
+            "treatmentPlan": "Reposo relativo. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma.\nSegundo renglón"
+          },
+          {
+            "date": "2026-09-01 09:00",
+            "folio": "CNS-20260901-090000",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "",
+            "treatmentPlan": ""
+          },
+          {
+            "date": "2026-10-14 18:00",
+            "folio": "CNS-20261014-180000",
+            "diagnosis": " Lumbalgia mecánica ",
+            "chiefComplaint": "Dolor lumbar\r\ndesde ayer",
+            "vitalSigns": "",
+            "treatmentPlan": "\n\n  Ibuprofeno  \nCompresas"
+          }
+        ],
+        "appointments": [
+          {
+            "date": "2026-10-12",
+            "time": "09:15",
+            "reason": "Primera vez",
+            "status": "Atendida"
+          },
+          {
+            "date": "2026-10-12",
+            "time": "17:00",
+            "reason": "",
+            "status": "Programada"
+          },
+          {
+            "date": "2026-10-20",
+            "time": "3 PM",
+            "reason": "Revisión de resultados",
+            "status": "Confirmada"
+          },
+          {
+            "date": "2026-09-01",
+            "time": "07:30",
+            "reason": "Control",
+            "status": "Cancelada"
+          }
+        ],
+        "filter": "Todo",
+        "search": "hiperemica"
+      },
+      "expected": [
+        {
+          "kind": "consulta",
+          "date": "2026-10-12 10:30",
+          "title": "Faringitis aguda",
+          "side": "CNS-20261012-103000",
+          "lines": [
+            {
+              "label": "Motivo",
+              "value": "Dolor de garganta"
+            },
+            {
+              "label": "Signos",
+              "value": "TA: 120/80 mmHg · FC: 76 lpm · Temp: 38.2 °C"
+            },
+            {
+              "label": "Receta",
+              "value": "Paracetamol 500 mg tabletas"
+            },
+            {
+              "label": "Laboratorio",
+              "value": "Biometría hemática · Exudado faríngeo"
+            },
+            {
+              "label": "Plan",
+              "value": "Reposo y líquidos"
+            }
+          ],
+          "detail": "Dolor de garganta\nSin datos de alarma\nFaringe hiperémica\nTA: 120/80 mmHg | FC: 76 lpm | Temp: 38.2 °C\nReposo y líquidos\nEvolución favorable\nParacetamol 500 mg tabletas Caja con 20 tabletas 1 tableta cada 8 horas por 3 días\n    \nBiometría hemática\nExudado faríngeo\nEn ayuno"
+        }
+      ]
+    },
+    {
+      "name": "filtro · buscar en la receta (presentación e indicación)",
+      "input": {
+        "consultations": [
+          {
+            "date": "2026-10-12 10:30",
+            "folio": "CNS-20261012-103000",
+            "diagnosis": "Faringitis aguda",
+            "chiefComplaint": "Dolor de garganta",
+            "vitalSigns": "TA: 120/80 mmHg | FC: 76 lpm | Temp: 38.2 °C",
+            "treatmentPlan": "Reposo y líquidos",
+            "notes": "Evolución favorable",
+            "systemsReview": "Sin datos de alarma",
+            "physicalExamination": "Faringe hiperémica",
+            "prescriptions": [
+              {
+                "medicineName": "Paracetamol 500 mg tabletas",
+                "presentation": "Caja con 20 tabletas",
+                "dosage": "1 tableta cada 8 horas por 3 días"
+              },
+              {
+                "medicineName": "  ",
+                "presentation": null,
+                "dosage": ""
+              }
+            ],
+            "labStudies": [
+              "Biometría hemática",
+              "Exudado faríngeo"
+            ],
+            "labIndications": "En ayuno"
+          },
+          {
+            "date": "2026-10-12 08:00",
+            "folio": "CNS-20261012-080000",
+            "diagnosis": "",
+            "chiefComplaint": "  Control de peso  ",
+            "vitalSigns": "Peso: 80 kg",
+            "treatmentPlan": "Reposo relativo. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma.\nSegundo renglón"
+          },
+          {
+            "date": "2026-09-01 09:00",
+            "folio": "CNS-20260901-090000",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "",
+            "treatmentPlan": ""
+          },
+          {
+            "date": "2026-10-14 18:00",
+            "folio": "CNS-20261014-180000",
+            "diagnosis": " Lumbalgia mecánica ",
+            "chiefComplaint": "Dolor lumbar\r\ndesde ayer",
+            "vitalSigns": "",
+            "treatmentPlan": "\n\n  Ibuprofeno  \nCompresas"
+          }
+        ],
+        "appointments": [
+          {
+            "date": "2026-10-12",
+            "time": "09:15",
+            "reason": "Primera vez",
+            "status": "Atendida"
+          },
+          {
+            "date": "2026-10-12",
+            "time": "17:00",
+            "reason": "",
+            "status": "Programada"
+          },
+          {
+            "date": "2026-10-20",
+            "time": "3 PM",
+            "reason": "Revisión de resultados",
+            "status": "Confirmada"
+          },
+          {
+            "date": "2026-09-01",
+            "time": "07:30",
+            "reason": "Control",
+            "status": "Cancelada"
+          }
+        ],
+        "filter": "Todo",
+        "search": "caja con 20"
+      },
+      "expected": [
+        {
+          "kind": "consulta",
+          "date": "2026-10-12 10:30",
+          "title": "Faringitis aguda",
+          "side": "CNS-20261012-103000",
+          "lines": [
+            {
+              "label": "Motivo",
+              "value": "Dolor de garganta"
+            },
+            {
+              "label": "Signos",
+              "value": "TA: 120/80 mmHg · FC: 76 lpm · Temp: 38.2 °C"
+            },
+            {
+              "label": "Receta",
+              "value": "Paracetamol 500 mg tabletas"
+            },
+            {
+              "label": "Laboratorio",
+              "value": "Biometría hemática · Exudado faríngeo"
+            },
+            {
+              "label": "Plan",
+              "value": "Reposo y líquidos"
+            }
+          ],
+          "detail": "Dolor de garganta\nSin datos de alarma\nFaringe hiperémica\nTA: 120/80 mmHg | FC: 76 lpm | Temp: 38.2 °C\nReposo y líquidos\nEvolución favorable\nParacetamol 500 mg tabletas Caja con 20 tabletas 1 tableta cada 8 horas por 3 días\n    \nBiometría hemática\nExudado faríngeo\nEn ayuno"
+        }
+      ]
+    },
+    {
+      "name": "filtro · buscar en las citas: su hora y su estado",
+      "input": {
+        "consultations": [
+          {
+            "date": "2026-10-12 10:30",
+            "folio": "CNS-20261012-103000",
+            "diagnosis": "Faringitis aguda",
+            "chiefComplaint": "Dolor de garganta",
+            "vitalSigns": "TA: 120/80 mmHg | FC: 76 lpm | Temp: 38.2 °C",
+            "treatmentPlan": "Reposo y líquidos",
+            "notes": "Evolución favorable",
+            "systemsReview": "Sin datos de alarma",
+            "physicalExamination": "Faringe hiperémica",
+            "prescriptions": [
+              {
+                "medicineName": "Paracetamol 500 mg tabletas",
+                "presentation": "Caja con 20 tabletas",
+                "dosage": "1 tableta cada 8 horas por 3 días"
+              },
+              {
+                "medicineName": "  ",
+                "presentation": null,
+                "dosage": ""
+              }
+            ],
+            "labStudies": [
+              "Biometría hemática",
+              "Exudado faríngeo"
+            ],
+            "labIndications": "En ayuno"
+          },
+          {
+            "date": "2026-10-12 08:00",
+            "folio": "CNS-20261012-080000",
+            "diagnosis": "",
+            "chiefComplaint": "  Control de peso  ",
+            "vitalSigns": "Peso: 80 kg",
+            "treatmentPlan": "Reposo relativo. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma.\nSegundo renglón"
+          },
+          {
+            "date": "2026-09-01 09:00",
+            "folio": "CNS-20260901-090000",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "",
+            "treatmentPlan": ""
+          },
+          {
+            "date": "2026-10-14 18:00",
+            "folio": "CNS-20261014-180000",
+            "diagnosis": " Lumbalgia mecánica ",
+            "chiefComplaint": "Dolor lumbar\r\ndesde ayer",
+            "vitalSigns": "",
+            "treatmentPlan": "\n\n  Ibuprofeno  \nCompresas"
+          }
+        ],
+        "appointments": [
+          {
+            "date": "2026-10-12",
+            "time": "09:15",
+            "reason": "Primera vez",
+            "status": "Atendida"
+          },
+          {
+            "date": "2026-10-12",
+            "time": "17:00",
+            "reason": "",
+            "status": "Programada"
+          },
+          {
+            "date": "2026-10-20",
+            "time": "3 PM",
+            "reason": "Revisión de resultados",
+            "status": "Confirmada"
+          },
+          {
+            "date": "2026-09-01",
+            "time": "07:30",
+            "reason": "Control",
+            "status": "Cancelada"
+          }
+        ],
+        "filter": "Citas",
+        "search": "confirmada"
+      },
+      "expected": [
+        {
+          "kind": "cita",
+          "date": "2026-10-20 10:00",
+          "title": "Revisión de resultados",
+          "side": "",
+          "lines": [],
+          "detail": "3 PM · Confirmada"
+        }
+      ]
+    },
+    {
+      "name": "filtro · buscar en el título",
+      "input": {
+        "consultations": [
+          {
+            "date": "2026-10-12 10:30",
+            "folio": "CNS-20261012-103000",
+            "diagnosis": "Faringitis aguda",
+            "chiefComplaint": "Dolor de garganta",
+            "vitalSigns": "TA: 120/80 mmHg | FC: 76 lpm | Temp: 38.2 °C",
+            "treatmentPlan": "Reposo y líquidos",
+            "notes": "Evolución favorable",
+            "systemsReview": "Sin datos de alarma",
+            "physicalExamination": "Faringe hiperémica",
+            "prescriptions": [
+              {
+                "medicineName": "Paracetamol 500 mg tabletas",
+                "presentation": "Caja con 20 tabletas",
+                "dosage": "1 tableta cada 8 horas por 3 días"
+              },
+              {
+                "medicineName": "  ",
+                "presentation": null,
+                "dosage": ""
+              }
+            ],
+            "labStudies": [
+              "Biometría hemática",
+              "Exudado faríngeo"
+            ],
+            "labIndications": "En ayuno"
+          },
+          {
+            "date": "2026-10-12 08:00",
+            "folio": "CNS-20261012-080000",
+            "diagnosis": "",
+            "chiefComplaint": "  Control de peso  ",
+            "vitalSigns": "Peso: 80 kg",
+            "treatmentPlan": "Reposo relativo. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma.\nSegundo renglón"
+          },
+          {
+            "date": "2026-09-01 09:00",
+            "folio": "CNS-20260901-090000",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "",
+            "treatmentPlan": ""
+          },
+          {
+            "date": "2026-10-14 18:00",
+            "folio": "CNS-20261014-180000",
+            "diagnosis": " Lumbalgia mecánica ",
+            "chiefComplaint": "Dolor lumbar\r\ndesde ayer",
+            "vitalSigns": "",
+            "treatmentPlan": "\n\n  Ibuprofeno  \nCompresas"
+          }
+        ],
+        "appointments": [
+          {
+            "date": "2026-10-12",
+            "time": "09:15",
+            "reason": "Primera vez",
+            "status": "Atendida"
+          },
+          {
+            "date": "2026-10-12",
+            "time": "17:00",
+            "reason": "",
+            "status": "Programada"
+          },
+          {
+            "date": "2026-10-20",
+            "time": "3 PM",
+            "reason": "Revisión de resultados",
+            "status": "Confirmada"
+          },
+          {
+            "date": "2026-09-01",
+            "time": "07:30",
+            "reason": "Control",
+            "status": "Cancelada"
+          }
+        ],
+        "filter": "Consultas",
+        "search": "LUMBALGIA"
+      },
+      "expected": [
+        {
+          "kind": "consulta",
+          "date": "2026-10-14 18:00",
+          "title": "Lumbalgia mecánica",
+          "side": "CNS-20261014-180000",
+          "lines": [
+            {
+              "label": "Motivo",
+              "value": "Dolor lumbar"
+            },
+            {
+              "label": "Plan",
+              "value": "Ibuprofeno"
+            }
+          ],
+          "detail": "Dolor lumbar\r\ndesde ayer\n\n\n  Ibuprofeno  \nCompresas"
+        }
+      ]
+    },
+    {
+      "name": "filtro · nada coincide",
+      "input": {
+        "consultations": [
+          {
+            "date": "2026-10-12 10:30",
+            "folio": "CNS-20261012-103000",
+            "diagnosis": "Faringitis aguda",
+            "chiefComplaint": "Dolor de garganta",
+            "vitalSigns": "TA: 120/80 mmHg | FC: 76 lpm | Temp: 38.2 °C",
+            "treatmentPlan": "Reposo y líquidos",
+            "notes": "Evolución favorable",
+            "systemsReview": "Sin datos de alarma",
+            "physicalExamination": "Faringe hiperémica",
+            "prescriptions": [
+              {
+                "medicineName": "Paracetamol 500 mg tabletas",
+                "presentation": "Caja con 20 tabletas",
+                "dosage": "1 tableta cada 8 horas por 3 días"
+              },
+              {
+                "medicineName": "  ",
+                "presentation": null,
+                "dosage": ""
+              }
+            ],
+            "labStudies": [
+              "Biometría hemática",
+              "Exudado faríngeo"
+            ],
+            "labIndications": "En ayuno"
+          },
+          {
+            "date": "2026-10-12 08:00",
+            "folio": "CNS-20261012-080000",
+            "diagnosis": "",
+            "chiefComplaint": "  Control de peso  ",
+            "vitalSigns": "Peso: 80 kg",
+            "treatmentPlan": "Reposo relativo. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma. Hidratación abundante y vigilar datos de alarma.\nSegundo renglón"
+          },
+          {
+            "date": "2026-09-01 09:00",
+            "folio": "CNS-20260901-090000",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "",
+            "treatmentPlan": ""
+          },
+          {
+            "date": "2026-10-14 18:00",
+            "folio": "CNS-20261014-180000",
+            "diagnosis": " Lumbalgia mecánica ",
+            "chiefComplaint": "Dolor lumbar\r\ndesde ayer",
+            "vitalSigns": "",
+            "treatmentPlan": "\n\n  Ibuprofeno  \nCompresas"
+          }
+        ],
+        "appointments": [
+          {
+            "date": "2026-10-12",
+            "time": "09:15",
+            "reason": "Primera vez",
+            "status": "Atendida"
+          },
+          {
+            "date": "2026-10-12",
+            "time": "17:00",
+            "reason": "",
+            "status": "Programada"
+          },
+          {
+            "date": "2026-10-20",
+            "time": "3 PM",
+            "reason": "Revisión de resultados",
+            "status": "Confirmada"
+          },
+          {
+            "date": "2026-09-01",
+            "time": "07:30",
+            "reason": "Control",
+            "status": "Cancelada"
+          }
+        ],
+        "filter": "Todo",
+        "search": "xyz"
+      },
+      "expected": []
+    }
+  ]
+}

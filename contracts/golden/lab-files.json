@@ -1,0 +1,186 @@
+{
+  "rule": "lab-files",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Un archivo se parte en trozos de 'chunkSize' bytes (el último puede ser más chico); 'sha256' es el del archivo completo en hex con minúsculas y es su llave (LabResults.ContentSha256, LabBlobs.Sha256).",
+    "Subir: 'state' y 'existingChunks' en una petición; si no hay fila, revisar el tope con 'usage' y escribir 'register'; subir cada trozo que falta con 'insertChunk', uno por petición, y el último en un batch con BEGIN/COMMIT junto con 'close'. Un archivo con EvictedAtUtc no se vuelve a subir.",
+    "Bajar: 'state' (sin CompletedAtUtc se sigue subiendo; con EvictedAtUtc ya no está en la nube) y 'readChunks' desde 0 de 'chunksPerRead' en 'chunksPerRead'; revisar el tamaño y el SHA-256 antes de usarlo.",
+    "Solo la PC principal corre 'archived', 'evictionCandidates', 'evictChunks', 'evict' (los dos en una transacción) y 'orphans' (los cuatro en una transacción, una vez al día).",
+    "Lo que viaja es el base64 del trozo: 4 × ceil(bytes / 3). El freno de bytes por día cuenta eso; abrir un resultado a pedido no se frena.",
+    "Espacio de toda la base: (page_count − freelist_count) × page_size con 'cloudSpace'; lo mismo que cuenta Turso con dbstat (V20). Arriba de 'cloudSpaceStopBytes' no se sube ningún archivo."
+  ],
+  "cases": [
+    {
+      "name": "trozos · un byte",
+      "input": {
+        "sizeBytes": 1,
+        "content": "byte i = i % 251"
+      },
+      "expected": {
+        "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "chunkSize": 524288,
+        "chunkCount": 1,
+        "chunks": [
+          {
+            "chunkIndex": 0,
+            "size": 1,
+            "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
+          }
+        ]
+      }
+    },
+    {
+      "name": "trozos · justo un trozo",
+      "input": {
+        "sizeBytes": 524288,
+        "content": "byte i = i % 251"
+      },
+      "expected": {
+        "sha256": "61d1d9c5745bdaa4fab39240651bc242a5186b15393fd475082fcf6e84f400ab",
+        "chunkSize": 524288,
+        "chunkCount": 1,
+        "chunks": [
+          {
+            "chunkIndex": 0,
+            "size": 524288,
+            "sha256": "61d1d9c5745bdaa4fab39240651bc242a5186b15393fd475082fcf6e84f400ab"
+          }
+        ]
+      }
+    },
+    {
+      "name": "trozos · un trozo y un byte",
+      "input": {
+        "sizeBytes": 524289,
+        "content": "byte i = i % 251"
+      },
+      "expected": {
+        "sha256": "5584f83643017fcea9b7d65d3d3f890b5219eb1abfcb8896a2d4ef554d4612ec",
+        "chunkSize": 524288,
+        "chunkCount": 2,
+        "chunks": [
+          {
+            "chunkIndex": 0,
+            "size": 524288,
+            "sha256": "61d1d9c5745bdaa4fab39240651bc242a5186b15393fd475082fcf6e84f400ab"
+          },
+          {
+            "chunkIndex": 1,
+            "size": 1,
+            "sha256": "7c5bd2d144fdde498406edcb9fe60ce65b0dfa5f2dd7a7617f505e3d46d68bdb"
+          }
+        ]
+      }
+    },
+    {
+      "name": "trozos · 1.2 MB",
+      "input": {
+        "sizeBytes": 1200000,
+        "content": "byte i = i % 251"
+      },
+      "expected": {
+        "sha256": "7b30b0e3bdc9398dead57d36d66dfa731e362446f95a6cc1280f398bf5df455d",
+        "chunkSize": 524288,
+        "chunkCount": 3,
+        "chunks": [
+          {
+            "chunkIndex": 0,
+            "size": 524288,
+            "sha256": "61d1d9c5745bdaa4fab39240651bc242a5186b15393fd475082fcf6e84f400ab"
+          },
+          {
+            "chunkIndex": 1,
+            "size": 524288,
+            "sha256": "c6edd274fd1dde0ecf8b0440b9c38c91a9989ed002b1f54c9ee7079997012d98"
+          },
+          {
+            "chunkIndex": 2,
+            "size": 151424,
+            "sha256": "2c6c088218e13458997b01463fcca5ce3aa36791898825d59103616ef7e86cb8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "sql",
+      "input": {},
+      "expected": {
+        "register": "INSERT INTO LabBlobs (Sha256, SizeBytes, ChunkSize, ChunkCount, MimeType, CreatedAtUtc, OriginDeviceId) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f','now'), ?) ON CONFLICT(Sha256) DO NOTHING;",
+        "registerArgs": [
+          "Sha256",
+          "SizeBytes",
+          "ChunkSize",
+          "ChunkCount",
+          "MimeType",
+          "OriginDeviceId"
+        ],
+        "state": "SELECT SizeBytes, ChunkSize, ChunkCount, MimeType, OriginDeviceId, CompletedAtUtc, ArchivedAtUtc, EvictedAtUtc FROM LabBlobs WHERE Sha256 = ?;",
+        "existingChunks": "SELECT ChunkIndex FROM LabBlobChunks WHERE Sha256 = ?;",
+        "insertChunk": "INSERT INTO LabBlobChunks (Sha256, ChunkIndex, Data) VALUES (?, ?, ?) ON CONFLICT(Sha256, ChunkIndex) DO NOTHING;",
+        "insertChunkArgs": [
+          "Sha256",
+          "ChunkIndex",
+          "Data (blob)"
+        ],
+        "close": "UPDATE LabBlobs SET CompletedAtUtc = strftime('%Y-%m-%d %H:%M:%f','now') WHERE Sha256 = ? AND CompletedAtUtc IS NULL AND (SELECT COUNT(*) FROM LabBlobChunks WHERE Sha256 = ?) = ChunkCount;",
+        "closeArgs": [
+          "Sha256",
+          "Sha256"
+        ],
+        "readChunks": "SELECT ChunkIndex, Data FROM LabBlobChunks WHERE Sha256 = ? AND ChunkIndex >= ? ORDER BY ChunkIndex LIMIT 4;",
+        "readChunksArgs": [
+          "Sha256",
+          "el primer ChunkIndex que falta"
+        ],
+        "usage": "SELECT COUNT(*) AS Files, ifnull(SUM(SizeBytes), 0) AS Bytes FROM LabBlobs WHERE EvictedAtUtc IS NULL;",
+        "cloudSpace": [
+          "PRAGMA page_count;",
+          "PRAGMA freelist_count;",
+          "PRAGMA page_size;"
+        ],
+        "archived": "UPDATE LabBlobs SET ArchivedAtUtc = strftime('%Y-%m-%d %H:%M:%f','now') WHERE Sha256 = ? AND ArchivedAtUtc IS NULL;",
+        "evictionCandidates": "SELECT b.Sha256, b.SizeBytes, (SELECT min(r.\"ResultDate\") FROM \"LabResults\" AS r WHERE r.\"ContentSha256\" = b.Sha256) AS ResultDate FROM LabBlobs AS b WHERE b.EvictedAtUtc IS NULL AND b.CompletedAtUtc IS NOT NULL ORDER BY 3, b.CreatedAtUtc, b.Sha256;",
+        "evictChunks": "DELETE FROM LabBlobChunks WHERE Sha256 = ?;",
+        "evict": "UPDATE LabBlobs SET EvictedAtUtc = strftime('%Y-%m-%d %H:%M:%f','now') WHERE Sha256 = ? AND EvictedAtUtc IS NULL;",
+        "orphans": [
+          "UPDATE LabBlobs SET OrphanSinceUtc = strftime('%Y-%m-%d %H:%M:%f','now') WHERE OrphanSinceUtc IS NULL AND NOT EXISTS (SELECT 1 FROM \"LabResults\" WHERE \"ContentSha256\" = LabBlobs.Sha256);",
+          "UPDATE LabBlobs SET OrphanSinceUtc = NULL WHERE OrphanSinceUtc IS NOT NULL AND EXISTS (SELECT 1 FROM \"LabResults\" WHERE \"ContentSha256\" = LabBlobs.Sha256);",
+          "DELETE FROM LabBlobChunks WHERE Sha256 IN (SELECT Sha256 FROM LabBlobs WHERE OrphanSinceUtc < strftime('%Y-%m-%d %H:%M:%f','now','-30 days'));",
+          "DELETE FROM LabBlobs WHERE OrphanSinceUtc < strftime('%Y-%m-%d %H:%M:%f','now','-30 days');"
+        ]
+      }
+    },
+    {
+      "name": "topes",
+      "input": {},
+      "expected": {
+        "cloudCapBytes": 2000000000,
+        "warnBytes": 1600000000,
+        "evictTargetBytes": 1800000000,
+        "cloudSpaceStopBytes": 4000000000,
+        "orphanDays": 30,
+        "chunksPerRead": 4,
+        "maxFileBytes": 10485760,
+        "largePdfBytes": 3145728,
+        "maxLongSidePixels": 2000,
+        "jpegQuality": 80,
+        "maxPhotos": 20,
+        "mimeTypes": [
+          "application/pdf",
+          "image/jpeg"
+        ],
+        "androidBytesPerDay": {
+          "down": 300000000,
+          "up": 150000000
+        },
+        "pcBytesPerDay": {
+          "down": 2500000000,
+          "up": 500000000
+        }
+      }
+    }
+  ]
+}

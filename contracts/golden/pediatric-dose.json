@@ -1,0 +1,312 @@
+{
+  "rule": "pediatric-dose",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "La calculadora de dosis pediátrica de la receta (Services/Rules/PediatricDoseRules.cs y Models/PediatricDoseRule, la hoja DOSIS PEDIA del Excel). La regla: medication, doseText, mlPerKg y dropsPerMl (opcionales). El peso es el texto capturado (coma o punto decimal, sin espacios a los lados, cultura invariante; lo que no se lee vale 0).",
+    "ml = Math.Round(peso × mlPerKg, 1) si mlPerKg > 0 y peso > 0 (si no, null); drops = Math.Round(ml × dropsPerMl, 0) si hay ml y dropsPerMl > 0. Math.Round de double de .NET: multiplica por 10^d en double, redondea al par y divide (en Kotlin Math.rint(x * 10.0) / 10.0); así 5.25 → 5.2 y 37.5 → 38.",
+    "result (lo que muestra): '' sin regla; 'Esta regla no tiene fórmula de ml por kg en el Excel.' sin mlPerKg > 0; 'Capture el peso del paciente (kg).' si el peso no se lee o no es mayor que 0; si no '{ml 0.#} ml ({gotas 0} gotas) por dosis' o '{ml 0.#} ml por dosis' (0.# invariante). dosage (lo que copia «Aplicar» a la indicación; si el nombre del medicamento está vacío también lo llena con 'medication'): null si no hay regla, el peso no se lee o no hay ml; si no 'Dar {ml} ml ({gotas} gotas) vía oral cada ___ hrs por ___ días' o sin las gotas. displayName: 'medication • doseText' o solo medication.",
+    "suggest-weight (el peso con que se llena al elegir una regla): con una consulta en curso, lo capturado si es mayor que 0 y menor que 70; si no, el último peso mayor que 0 de las consultas del paciente por fecha; '' si no hay. Con '0.#' invariante (double lo capturado, decimal lo guardado: el punto medio hacia arriba)."
+  ],
+  "cases": [
+    {
+      "name": "calculadora · gotas: ml redondeado a un decimal y gotas de esos ml",
+      "input": {
+        "check": "dose",
+        "rule": {
+          "medication": "Paracetamol gotas 100 mg/ml",
+          "doseText": "15 mg/kg/dosis",
+          "mlPerKg": 0.15,
+          "dropsPerMl": 20
+        },
+        "weight": "12.5"
+      },
+      "expected": {
+        "displayName": "Paracetamol gotas 100 mg/ml • 15 mg/kg/dosis",
+        "ml": 1.9,
+        "drops": 38,
+        "result": "1.9 ml (38 gotas) por dosis",
+        "dosage": "Dar 1.9 ml (38 gotas) vía oral cada ___ hrs por ___ días"
+      }
+    },
+    {
+      "name": "calculadora · coma decimal",
+      "input": {
+        "check": "dose",
+        "rule": {
+          "medication": "Paracetamol suspensión 3.2 g/100 ml",
+          "doseText": "15 mg/kg/dosis",
+          "mlPerKg": 0.46875
+        },
+        "weight": "15,5"
+      },
+      "expected": {
+        "displayName": "Paracetamol suspensión 3.2 g/100 ml • 15 mg/kg/dosis",
+        "ml": 7.3,
+        "drops": null,
+        "result": "7.3 ml por dosis",
+        "dosage": "Dar 7.3 ml vía oral cada ___ hrs por ___ días"
+      }
+    },
+    {
+      "name": "calculadora · Math.Round al par: 5.25 ml → 5.2",
+      "input": {
+        "check": "dose",
+        "rule": {
+          "medication": "Ibuprofeno 100 mg/5 ml",
+          "doseText": "",
+          "mlPerKg": 0.5,
+          "dropsPerMl": 15
+        },
+        "weight": "10.5"
+      },
+      "expected": {
+        "displayName": "Ibuprofeno 100 mg/5 ml",
+        "ml": 5.2,
+        "drops": 78,
+        "result": "5.2 ml (78 gotas) por dosis",
+        "dosage": "Dar 5.2 ml (78 gotas) vía oral cada ___ hrs por ___ días"
+      }
+    },
+    {
+      "name": "calculadora · gotas al par: 2.5 ml × 15 = 37.5 → 38",
+      "input": {
+        "check": "dose",
+        "rule": {
+          "medication": "Ibuprofeno 100 mg/5 ml",
+          "doseText": "",
+          "mlPerKg": 0.5,
+          "dropsPerMl": 15
+        },
+        "weight": "5"
+      },
+      "expected": {
+        "displayName": "Ibuprofeno 100 mg/5 ml",
+        "ml": 2.5,
+        "drops": 38,
+        "result": "2.5 ml (38 gotas) por dosis",
+        "dosage": "Dar 2.5 ml (38 gotas) vía oral cada ___ hrs por ___ días"
+      }
+    },
+    {
+      "name": "calculadora · 2.25 ml → 2.2",
+      "input": {
+        "check": "dose",
+        "rule": {
+          "medication": "Ibuprofeno 100 mg/5 ml",
+          "doseText": "",
+          "mlPerKg": 0.5,
+          "dropsPerMl": 15
+        },
+        "weight": "4.5"
+      },
+      "expected": {
+        "displayName": "Ibuprofeno 100 mg/5 ml",
+        "ml": 2.2,
+        "drops": 33,
+        "result": "2.2 ml (33 gotas) por dosis",
+        "dosage": "Dar 2.2 ml (33 gotas) vía oral cada ___ hrs por ___ días"
+      }
+    },
+    {
+      "name": "calculadora · sin gotas por ml",
+      "input": {
+        "check": "dose",
+        "rule": {
+          "medication": "Paracetamol suspensión 3.2 g/100 ml",
+          "doseText": "15 mg/kg/dosis",
+          "mlPerKg": 0.46875
+        },
+        "weight": "10"
+      },
+      "expected": {
+        "displayName": "Paracetamol suspensión 3.2 g/100 ml • 15 mg/kg/dosis",
+        "ml": 4.7,
+        "drops": null,
+        "result": "4.7 ml por dosis",
+        "dosage": "Dar 4.7 ml vía oral cada ___ hrs por ___ días"
+      }
+    },
+    {
+      "name": "calculadora · sin fórmula",
+      "input": {
+        "check": "dose",
+        "rule": {
+          "medication": "Amoxicilina",
+          "doseText": "Ver tabla"
+        },
+        "weight": "10"
+      },
+      "expected": {
+        "displayName": "Amoxicilina • Ver tabla",
+        "ml": null,
+        "drops": null,
+        "result": "Esta regla no tiene fórmula de ml por kg en el Excel.",
+        "dosage": null
+      }
+    },
+    {
+      "name": "calculadora · sin peso",
+      "input": {
+        "check": "dose",
+        "rule": {
+          "medication": "Paracetamol gotas 100 mg/ml",
+          "doseText": "15 mg/kg/dosis",
+          "mlPerKg": 0.15,
+          "dropsPerMl": 20
+        },
+        "weight": ""
+      },
+      "expected": {
+        "displayName": "Paracetamol gotas 100 mg/ml • 15 mg/kg/dosis",
+        "ml": null,
+        "drops": null,
+        "result": "Capture el peso del paciente (kg).",
+        "dosage": null
+      }
+    },
+    {
+      "name": "calculadora · peso 0",
+      "input": {
+        "check": "dose",
+        "rule": {
+          "medication": "Paracetamol gotas 100 mg/ml",
+          "doseText": "15 mg/kg/dosis",
+          "mlPerKg": 0.15,
+          "dropsPerMl": 20
+        },
+        "weight": "0"
+      },
+      "expected": {
+        "displayName": "Paracetamol gotas 100 mg/ml • 15 mg/kg/dosis",
+        "ml": null,
+        "drops": null,
+        "result": "Capture el peso del paciente (kg).",
+        "dosage": null
+      }
+    },
+    {
+      "name": "calculadora · peso negativo",
+      "input": {
+        "check": "dose",
+        "rule": {
+          "medication": "Paracetamol gotas 100 mg/ml",
+          "doseText": "15 mg/kg/dosis",
+          "mlPerKg": 0.15,
+          "dropsPerMl": 20
+        },
+        "weight": "-3"
+      },
+      "expected": {
+        "displayName": "Paracetamol gotas 100 mg/ml • 15 mg/kg/dosis",
+        "ml": null,
+        "drops": null,
+        "result": "Capture el peso del paciente (kg).",
+        "dosage": null
+      }
+    },
+    {
+      "name": "calculadora · sin regla",
+      "input": {
+        "check": "dose",
+        "rule": null,
+        "weight": "10"
+      },
+      "expected": {
+        "displayName": null,
+        "ml": null,
+        "drops": null,
+        "result": "",
+        "dosage": null
+      }
+    },
+    {
+      "name": "peso sugerido · el de la consulta en curso",
+      "input": {
+        "check": "suggest-weight",
+        "hasActiveConsultation": true,
+        "currentWeight": "18,25",
+        "consultations": [
+          {
+            "date": "2026-09-01 10:00",
+            "weight": "17"
+          }
+        ]
+      },
+      "expected": "18.3"
+    },
+    {
+      "name": "peso sugerido · 70 o más en la consulta: el último de las consultas",
+      "input": {
+        "check": "suggest-weight",
+        "hasActiveConsultation": true,
+        "currentWeight": "70",
+        "consultations": [
+          {
+            "date": "2026-09-01 10:00",
+            "weight": "17"
+          },
+          {
+            "date": "2026-10-01 10:00",
+            "weight": "17.25"
+          },
+          {
+            "date": "2026-08-01 10:00",
+            "weight": "16"
+          }
+        ]
+      },
+      "expected": "17.3"
+    },
+    {
+      "name": "peso sugerido · sin consulta en curso no se mira lo capturado",
+      "input": {
+        "check": "suggest-weight",
+        "hasActiveConsultation": false,
+        "currentWeight": "18",
+        "consultations": [
+          {
+            "date": "2026-09-01 10:00",
+            "weight": "17.04"
+          }
+        ]
+      },
+      "expected": "17"
+    },
+    {
+      "name": "peso sugerido · las consultas sin peso o con 0 no cuentan",
+      "input": {
+        "check": "suggest-weight",
+        "hasActiveConsultation": false,
+        "currentWeight": null,
+        "consultations": [
+          {
+            "date": "2026-09-01 10:00",
+            "weight": "16.5"
+          },
+          {
+            "date": "2026-10-01 10:00",
+            "weight": "0"
+          },
+          {
+            "date": "2026-10-02 10:00",
+            "weight": null
+          }
+        ]
+      },
+      "expected": "16.5"
+    },
+    {
+      "name": "peso sugerido · nada",
+      "input": {
+        "check": "suggest-weight",
+        "hasActiveConsultation": true,
+        "currentWeight": "",
+        "consultations": []
+      },
+      "expected": ""
+    }
+  ]
+}

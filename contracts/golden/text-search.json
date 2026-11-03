@@ -1,0 +1,314 @@
+{
+  "rule": "text-search",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Services/TextSearch.cs. normalize: quita los espacios de los lados, descompone en NFD, quita las marcas que no ocupan espacio (categoría Unicode Mn: acentos, diéresis y la tilde de la ñ, así que ñ queda n), pasa cada carácter a minúscula invariante y recompone en NFC. Sin texto (nulo, vacío o solo espacios) da ''. En Kotlin: java.text.Normalizer NFD, quitar \\p{Mn}, lowercase(Locale.ROOT), NFC.",
+    "matches: 'query' se normaliza primero (la PC lo hace antes de llamar); true si la consulta normalizada está vacía o si algún campo no vacío, normalizado, la contiene (comparación ordinal). Un campo nulo no coincide.",
+    "best-match (FindBestMatchIndex, la lista que salta al escribir y las indicaciones frecuentes): el índice de la primera opción cuyo texto normalizado empieza con lo escrito; si ninguna, la primera con una palabra que empieza así (' ' + texto contiene ' ' + consulta); si ninguna, la primera que lo contiene; -1 si ninguna o sin texto. Una opción nula se lee como ''."
+  ],
+  "cases": [
+    {
+      "name": "normalizar · acentos y mayúsculas",
+      "input": {
+        "check": "normalize",
+        "text": "Ácido Fólico"
+      },
+      "expected": "acido folico"
+    },
+    {
+      "name": "normalizar · la ñ pierde su tilde (es una n con una marca)",
+      "input": {
+        "check": "normalize",
+        "text": "PEÑA Muñoz"
+      },
+      "expected": "pena munoz"
+    },
+    {
+      "name": "normalizar · diéresis",
+      "input": {
+        "check": "normalize",
+        "text": "Güera Müller"
+      },
+      "expected": "guera muller"
+    },
+    {
+      "name": "normalizar · espacios a los lados (los de en medio se quedan)",
+      "input": {
+        "check": "normalize",
+        "text": "  María   José \t"
+      },
+      "expected": "maria   jose"
+    },
+    {
+      "name": "normalizar · una marca suelta (A + acento combinado)",
+      "input": {
+        "check": "normalize",
+        "text": "José Álvarez"
+      },
+      "expected": "jose alvarez"
+    },
+    {
+      "name": "normalizar · signos, dígitos y guiones se quedan",
+      "input": {
+        "check": "normalize",
+        "text": "EXP-2026-0007 / T.A. 120/80"
+      },
+      "expected": "exp-2026-0007 / t.a. 120/80"
+    },
+    {
+      "name": "normalizar · vacío",
+      "input": {
+        "check": "normalize",
+        "text": ""
+      },
+      "expected": ""
+    },
+    {
+      "name": "normalizar · solo espacios",
+      "input": {
+        "check": "normalize",
+        "text": "   "
+      },
+      "expected": ""
+    },
+    {
+      "name": "normalizar · nulo",
+      "input": {
+        "check": "normalize",
+        "text": null
+      },
+      "expected": ""
+    },
+    {
+      "name": "coincide · sin acentos encuentra con acentos",
+      "input": {
+        "check": "matches",
+        "query": "acido",
+        "fields": [
+          "Ácido acetilsalicílico"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "coincide · con acentos encuentra sin acentos",
+      "input": {
+        "check": "matches",
+        "query": "ÁCIDO",
+        "fields": [
+          "acido folico"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "coincide · en cualquier campo",
+      "input": {
+        "check": "matches",
+        "query": "botiquin",
+        "fields": [
+          "Gasa",
+          null,
+          "Botiquín 2"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "coincide · contiene, no solo al inicio",
+      "input": {
+        "check": "matches",
+        "query": "fólico",
+        "fields": [
+          "Ácido fólico 5 mg"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "coincide · pena encuentra Peña",
+      "input": {
+        "check": "matches",
+        "query": "pena",
+        "fields": [
+          "Juana Peña"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "coincide · ningún campo lo contiene",
+      "input": {
+        "check": "matches",
+        "query": "xyz",
+        "fields": [
+          "Paracetamol",
+          ""
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "coincide · sin texto todo coincide",
+      "input": {
+        "check": "matches",
+        "query": "",
+        "fields": [
+          null
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "coincide · solo espacios es sin texto",
+      "input": {
+        "check": "matches",
+        "query": "   ",
+        "fields": [
+          "lo que sea"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "coincide · los espacios de en medio cuentan",
+      "input": {
+        "check": "matches",
+        "query": "acido  folico",
+        "fields": [
+          "Ácido fólico"
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "mejor opción · empieza así gana aunque otra anterior tenga la palabra",
+      "input": {
+        "check": "best-match",
+        "options": [
+          "Tomar 1 tableta cada 8 horas",
+          "Cada 12 horas por 5 días",
+          "Aplicar en la zona afectada",
+          "Ácido acetilsalicílico 100 mg",
+          "Cada 12 horas con alimentos"
+        ],
+        "typed": "cada"
+      },
+      "expected": 1
+    },
+    {
+      "name": "mejor opción · empieza así: la primera de las que empiezan",
+      "input": {
+        "check": "best-match",
+        "options": [
+          "Tomar 1 tableta cada 8 horas",
+          "Cada 12 horas por 5 días",
+          "Aplicar en la zona afectada",
+          "Ácido acetilsalicílico 100 mg",
+          "Cada 12 horas con alimentos"
+        ],
+        "typed": "cada 12"
+      },
+      "expected": 1
+    },
+    {
+      "name": "mejor opción · una palabra que empieza así",
+      "input": {
+        "check": "best-match",
+        "options": [
+          "Tomar 1 tableta cada 8 horas",
+          "Cada 12 horas por 5 días",
+          "Aplicar en la zona afectada",
+          "Ácido acetilsalicílico 100 mg",
+          "Cada 12 horas con alimentos"
+        ],
+        "typed": "tableta"
+      },
+      "expected": 0
+    },
+    {
+      "name": "mejor opción · sin acentos ni mayúsculas",
+      "input": {
+        "check": "best-match",
+        "options": [
+          "Tomar 1 tableta cada 8 horas",
+          "Cada 12 horas por 5 días",
+          "Aplicar en la zona afectada",
+          "Ácido acetilsalicílico 100 mg",
+          "Cada 12 horas con alimentos"
+        ],
+        "typed": "ACIDO"
+      },
+      "expected": 3
+    },
+    {
+      "name": "mejor opción · contiene a media palabra",
+      "input": {
+        "check": "best-match",
+        "options": [
+          "Tomar 1 tableta cada 8 horas",
+          "Cada 12 horas por 5 días",
+          "Aplicar en la zona afectada",
+          "Ácido acetilsalicílico 100 mg",
+          "Cada 12 horas con alimentos"
+        ],
+        "typed": "fectada"
+      },
+      "expected": 2
+    },
+    {
+      "name": "mejor opción · ninguna",
+      "input": {
+        "check": "best-match",
+        "options": [
+          "Tomar 1 tableta cada 8 horas",
+          "Cada 12 horas por 5 días",
+          "Aplicar en la zona afectada",
+          "Ácido acetilsalicílico 100 mg",
+          "Cada 12 horas con alimentos"
+        ],
+        "typed": "xyz"
+      },
+      "expected": -1
+    },
+    {
+      "name": "mejor opción · sin texto: -1",
+      "input": {
+        "check": "best-match",
+        "options": [
+          "Tomar 1 tableta cada 8 horas",
+          "Cada 12 horas por 5 días",
+          "Aplicar en la zona afectada",
+          "Ácido acetilsalicílico 100 mg",
+          "Cada 12 horas con alimentos"
+        ],
+        "typed": "  "
+      },
+      "expected": -1
+    },
+    {
+      "name": "mejor opción · una opción nula no coincide",
+      "input": {
+        "check": "best-match",
+        "options": [
+          null,
+          "Dolor"
+        ],
+        "typed": "dol"
+      },
+      "expected": 1
+    },
+    {
+      "name": "mejor opción · lista vacía",
+      "input": {
+        "check": "best-match",
+        "options": [],
+        "typed": "a"
+      },
+      "expected": -1
+    }
+  ]
+}

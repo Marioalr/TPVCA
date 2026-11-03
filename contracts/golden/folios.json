@@ -1,0 +1,360 @@
+{
+  "rule": "folios",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Serie: EXP-yyyy (año del consultorio) con 3 dígitos; TKT-yyyyMMdd (día) con 4. Más dígitos si el número no cabe.",
+    "Un folio cuenta para su serie solo si es la serie, un guion y dígitos (sin importar mayúsculas ni espacios en los extremos): uno con letra (EXP-2026-T1-004), con -R1 o con otro texto no cuenta.",
+    "Con la nube activa y verificada (clinicId local), el número sale de FolioCounters con la instrucción 'folio.take' de hrana/statements.json, con 2 s de espera; el piso es el mayor número local de la serie, así nunca regresa uno que el equipo ya tiene.",
+    "Sin conexión, sin respuesta en 2 s, con la cuota agotada o con el token rechazado: el folio lleva el código del equipo de DeviceRegistry (P, T o C y su número; X nunca numera) y el número siguiente de esa serie con letra, el mayor entre el último guardado fuera de la base ('savedLast', que no se borra al bajar todo otra vez) y el máximo local. Sin código, no se crea el folio.",
+    "Con la nube apagada o sin verificar: el mayor número local de la serie + 1.",
+    "CNS sale de la hora (yyyyMMdd-HHmmss); sin conexión lleva la letra (CNS-yyyyMMdd-T1-HHmmss) y nunca se regulariza.",
+    "Un folio repetido (de antes del paso 8.16 o tecleado a mano) se conserva: ya no se renombra con -R1.",
+    "Con letra (paso 8.17): EXP-yyyy o TKT-yyyyMMdd, un guion, el código de equipo (P, T o C y su número; sin importar mayúsculas), un guion y dígitos. 'series' es la serie normal que recibe el número al regularizarlo; 'expected' null si no es un folio con letra (CNS nunca se regulariza). La búsqueda compara RecordNumber/Folio y OriginalFolio."
+  ],
+  "cases": [
+    {
+      "name": "serie · expediente",
+      "input": {
+        "kind": "Patient",
+        "date": "2026-10-09"
+      },
+      "expected": "EXP-2026"
+    },
+    {
+      "name": "serie · ticket",
+      "input": {
+        "kind": "Sale",
+        "date": "2026-10-09"
+      },
+      "expected": "TKT-20261009"
+    },
+    {
+      "name": "número en EXP-2026 · 'EXP-2026-007'",
+      "input": {
+        "series": "EXP-2026",
+        "folio": "EXP-2026-007"
+      },
+      "expected": 7
+    },
+    {
+      "name": "número en EXP-2026 · 'exp-2026-012'",
+      "input": {
+        "series": "EXP-2026",
+        "folio": "exp-2026-012"
+      },
+      "expected": 12
+    },
+    {
+      "name": "número en EXP-2026 · ' EXP-2026-003 '",
+      "input": {
+        "series": "EXP-2026",
+        "folio": " EXP-2026-003 "
+      },
+      "expected": 3
+    },
+    {
+      "name": "número en EXP-2026 · 'EXP-2026-P1-004'",
+      "input": {
+        "series": "EXP-2026",
+        "folio": "EXP-2026-P1-004"
+      },
+      "expected": null
+    },
+    {
+      "name": "número en EXP-2026 · 'EXP-2026-005-R1'",
+      "input": {
+        "series": "EXP-2026",
+        "folio": "EXP-2026-005-R1"
+      },
+      "expected": null
+    },
+    {
+      "name": "número en EXP-2026 · 'EXP-2026-'",
+      "input": {
+        "series": "EXP-2026",
+        "folio": "EXP-2026-"
+      },
+      "expected": null
+    },
+    {
+      "name": "número en EXP-2026 · 'EXP-20261'",
+      "input": {
+        "series": "EXP-2026",
+        "folio": "EXP-20261"
+      },
+      "expected": null
+    },
+    {
+      "name": "número en EXP-2026 · 'EXP-2025-099'",
+      "input": {
+        "series": "EXP-2026",
+        "folio": "EXP-2025-099"
+      },
+      "expected": null
+    },
+    {
+      "name": "número en EXP-2026 · 'EXP-2026-1000'",
+      "input": {
+        "series": "EXP-2026",
+        "folio": "EXP-2026-1000"
+      },
+      "expected": 1000
+    },
+    {
+      "name": "nube apagada · expediente",
+      "input": {
+        "kind": "Patient",
+        "date": "2026-10-09",
+        "existing": [
+          "EXP-2026-001",
+          "EXP-2026-004",
+          "EXP-2026-P1-009",
+          "EXP-2026-002-R1"
+        ]
+      },
+      "expected": "EXP-2026-005"
+    },
+    {
+      "name": "nube apagada · primer ticket del día",
+      "input": {
+        "kind": "Sale",
+        "date": "2026-10-09",
+        "existing": []
+      },
+      "expected": "TKT-20261009-0001"
+    },
+    {
+      "name": "con conexión · expediente",
+      "input": {
+        "kind": "Patient",
+        "date": "2026-10-09",
+        "taken": 5
+      },
+      "expected": "EXP-2026-005"
+    },
+    {
+      "name": "con conexión · ticket",
+      "input": {
+        "kind": "Sale",
+        "date": "2026-10-09",
+        "taken": 12
+      },
+      "expected": "TKT-20261009-0012"
+    },
+    {
+      "name": "con conexión · más dígitos de los previstos",
+      "input": {
+        "kind": "Patient",
+        "date": "2026-10-09",
+        "taken": 1000
+      },
+      "expected": "EXP-2026-1000"
+    },
+    {
+      "name": "sin conexión · primero de la tablet",
+      "input": {
+        "kind": "Patient",
+        "date": "2026-10-09",
+        "deviceCode": "T1",
+        "existing": [],
+        "savedLast": 0
+      },
+      "expected": {
+        "folio": "EXP-2026-T1-001",
+        "letteredSeries": "EXP-2026-T1",
+        "number": 1
+      }
+    },
+    {
+      "name": "sin conexión · el guardado fuera de la base manda (se restauró un respaldo)",
+      "input": {
+        "kind": "Patient",
+        "date": "2026-10-09",
+        "deviceCode": "T1",
+        "existing": [
+          "EXP-2026-T1-001"
+        ],
+        "savedLast": 3
+      },
+      "expected": {
+        "folio": "EXP-2026-T1-004",
+        "letteredSeries": "EXP-2026-T1",
+        "number": 4
+      }
+    },
+    {
+      "name": "sin conexión · el local manda",
+      "input": {
+        "kind": "Patient",
+        "date": "2026-10-09",
+        "deviceCode": "P1",
+        "existing": [
+          "EXP-2026-P1-006",
+          "EXP-2026-007"
+        ],
+        "savedLast": 2
+      },
+      "expected": {
+        "folio": "EXP-2026-P1-007",
+        "letteredSeries": "EXP-2026-P1",
+        "number": 7
+      }
+    },
+    {
+      "name": "sin conexión · ticket del celular",
+      "input": {
+        "kind": "Sale",
+        "date": "2026-10-09",
+        "deviceCode": "C2",
+        "existing": [
+          "TKT-20261009-0040"
+        ],
+        "savedLast": 0
+      },
+      "expected": {
+        "folio": "TKT-20261009-C2-0001",
+        "letteredSeries": "TKT-20261009-C2",
+        "number": 1
+      }
+    },
+    {
+      "name": "código de equipo · 'P1'",
+      "input": {
+        "code": "P1"
+      },
+      "expected": true
+    },
+    {
+      "name": "código de equipo · 'T12'",
+      "input": {
+        "code": "T12"
+      },
+      "expected": true
+    },
+    {
+      "name": "código de equipo · 'C3'",
+      "input": {
+        "code": "C3"
+      },
+      "expected": true
+    },
+    {
+      "name": "código de equipo · 'X1'",
+      "input": {
+        "code": "X1"
+      },
+      "expected": false
+    },
+    {
+      "name": "código de equipo · 'p1'",
+      "input": {
+        "code": "p1"
+      },
+      "expected": false
+    },
+    {
+      "name": "código de equipo · 'T'",
+      "input": {
+        "code": "T"
+      },
+      "expected": false
+    },
+    {
+      "name": "código de equipo · ''",
+      "input": {
+        "code": ""
+      },
+      "expected": false
+    },
+    {
+      "name": "con letra · 'EXP-2026-T1-004'",
+      "input": {
+        "folio": "EXP-2026-T1-004"
+      },
+      "expected": {
+        "kind": "Patient",
+        "series": "EXP-2026",
+        "deviceCode": "T1",
+        "number": 4
+      }
+    },
+    {
+      "name": "con letra · 'tkt-20261009-p1-0012'",
+      "input": {
+        "folio": "tkt-20261009-p1-0012"
+      },
+      "expected": {
+        "kind": "Sale",
+        "series": "TKT-20261009",
+        "deviceCode": "P1",
+        "number": 12
+      }
+    },
+    {
+      "name": "con letra · 'EXP-2026-C2-001'",
+      "input": {
+        "folio": "EXP-2026-C2-001"
+      },
+      "expected": {
+        "kind": "Patient",
+        "series": "EXP-2026",
+        "deviceCode": "C2",
+        "number": 1
+      }
+    },
+    {
+      "name": "con letra · 'EXP-2026-004'",
+      "input": {
+        "folio": "EXP-2026-004"
+      },
+      "expected": null
+    },
+    {
+      "name": "con letra · 'EXP-2026-005-R1'",
+      "input": {
+        "folio": "EXP-2026-005-R1"
+      },
+      "expected": null
+    },
+    {
+      "name": "con letra · 'EXP-2026-X1-001'",
+      "input": {
+        "folio": "EXP-2026-X1-001"
+      },
+      "expected": null
+    },
+    {
+      "name": "con letra · 'CNS-20261009-T1-103015'",
+      "input": {
+        "folio": "CNS-20261009-T1-103015"
+      },
+      "expected": null
+    },
+    {
+      "name": "con letra · 'TKT-2026-T1-0001'",
+      "input": {
+        "folio": "TKT-2026-T1-0001"
+      },
+      "expected": null
+    },
+    {
+      "name": "CNS · con conexión",
+      "input": {
+        "now": "2026-10-09 10:30:15",
+        "offlineDeviceCode": null
+      },
+      "expected": "CNS-20261009-103015"
+    },
+    {
+      "name": "CNS · sin conexión",
+      "input": {
+        "now": "2026-10-09 10:30:15",
+        "offlineDeviceCode": "T1"
+      },
+      "expected": "CNS-20261009-T1-103015"
+    }
+  ]
+}

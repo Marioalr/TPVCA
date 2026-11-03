@@ -1,0 +1,533 @@
+{
+  "rule": "cie10-catalog",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Models/Cie10Diagnosis.cs: los diagnósticos que sugiere la consulta, en el orden en que se buscan. Kotlin copia esta lista tal cual (código, nombre y categoría). El texto que se escribe en el diagnóstico al elegir uno es 'Código - Nombre' (DisplayText)."
+  ],
+  "cases": [
+    {
+      "name": "el catálogo completo, en su orden",
+      "input": {},
+      "expected": [
+        {
+          "code": "A09",
+          "name": "Diarrea y gastroenteritis de presunto origen infeccioso",
+          "category": "Infecciosas"
+        },
+        {
+          "code": "A08.4",
+          "name": "Gastroenteritis viral, no especificada",
+          "category": "Infecciosas"
+        },
+        {
+          "code": "A06.0",
+          "name": "Disentería amebiana aguda (Amebiasis)",
+          "category": "Infecciosas"
+        },
+        {
+          "code": "A04.9",
+          "name": "Infección bacteriana intestinal, no especificada",
+          "category": "Infecciosas"
+        },
+        {
+          "code": "B82.9",
+          "name": "Parasitosis intestinal, sin otra especificación",
+          "category": "Infecciosas"
+        },
+        {
+          "code": "B01.9",
+          "name": "Varicela sin complicaciones",
+          "category": "Infecciosas"
+        },
+        {
+          "code": "B02.9",
+          "name": "Herpes zóster sin complicaciones",
+          "category": "Infecciosas"
+        },
+        {
+          "code": "B00.9",
+          "name": "Infección por virus del herpes, no especificada (Herpes simple)",
+          "category": "Infecciosas"
+        },
+        {
+          "code": "B34.9",
+          "name": "Infección viral, no especificada",
+          "category": "Infecciosas"
+        },
+        {
+          "code": "B35.9",
+          "name": "Dermatofitosis (Tiña / Micosis), no especificada",
+          "category": "Infecciosas"
+        },
+        {
+          "code": "B37.9",
+          "name": "Candidiasis, no especificada",
+          "category": "Infecciosas"
+        },
+        {
+          "code": "B37.3",
+          "name": "Candidiasis de la vulva y de la vagina",
+          "category": "Infecciosas"
+        },
+        {
+          "code": "J00",
+          "name": "Rinofaringitis aguda (Resfriado común)",
+          "category": "Respiratorio"
+        },
+        {
+          "code": "J01.9",
+          "name": "Sinusitis aguda, no especificada",
+          "category": "Respiratorio"
+        },
+        {
+          "code": "J02.9",
+          "name": "Faringitis aguda, no especificada",
+          "category": "Respiratorio"
+        },
+        {
+          "code": "J03.9",
+          "name": "Amigdalitis aguda, no especificada",
+          "category": "Respiratorio"
+        },
+        {
+          "code": "J04.0",
+          "name": "Laringitis aguda",
+          "category": "Respiratorio"
+        },
+        {
+          "code": "J06.9",
+          "name": "Infección respiratoria aguda de vías superiores (IRAS), no especificada",
+          "category": "Respiratorio"
+        },
+        {
+          "code": "J11.1",
+          "name": "Influenza con otras manifestaciones respiratorias",
+          "category": "Respiratorio"
+        },
+        {
+          "code": "J12.8",
+          "name": "Neumonía por otros virus (incluye COVID-19 confirmado)",
+          "category": "Respiratorio"
+        },
+        {
+          "code": "J18.9",
+          "name": "Neumonía, no especificada",
+          "category": "Respiratorio"
+        },
+        {
+          "code": "J20.9",
+          "name": "Bronquitis aguda, no especificada",
+          "category": "Respiratorio"
+        },
+        {
+          "code": "J45.9",
+          "name": "Asma, no especificada (Crisis asmática / Broncoespasmo)",
+          "category": "Respiratorio"
+        },
+        {
+          "code": "J44.9",
+          "name": "Enfermedad pulmonar obstructiva crónica (EPOC), no especificada",
+          "category": "Respiratorio"
+        },
+        {
+          "code": "J30.4",
+          "name": "Rinitis alérgica, no especificada",
+          "category": "Respiratorio"
+        },
+        {
+          "code": "R05",
+          "name": "Tos persistente en estudio",
+          "category": "Respiratorio"
+        },
+        {
+          "code": "I10",
+          "name": "Hipertensión arterial esencial (primaria)",
+          "category": "Cardiovascular"
+        },
+        {
+          "code": "I11.9",
+          "name": "Enfermedad cardíaca hipertensiva sin insuficiencia cardíaca",
+          "category": "Cardiovascular"
+        },
+        {
+          "code": "I20.9",
+          "name": "Angina de pecho, no especificada",
+          "category": "Cardiovascular"
+        },
+        {
+          "code": "I25.9",
+          "name": "Cardiopatía isquémica crónica, no especificada",
+          "category": "Cardiovascular"
+        },
+        {
+          "code": "I50.9",
+          "name": "Insuficiencia cardíaca, no especificada",
+          "category": "Cardiovascular"
+        },
+        {
+          "code": "I83.9",
+          "name": "Venas varicosas de los miembros inferiores (Várices)",
+          "category": "Cardiovascular"
+        },
+        {
+          "code": "I84.9",
+          "name": "Hemorroides, no especificadas",
+          "category": "Cardiovascular"
+        },
+        {
+          "code": "I95.9",
+          "name": "Hipotensión arterial, no especificada",
+          "category": "Cardiovascular"
+        },
+        {
+          "code": "E11.9",
+          "name": "Diabetes mellitus tipo 2 sin mención de complicación",
+          "category": "Endocrino"
+        },
+        {
+          "code": "E11.6",
+          "name": "Diabetes mellitus tipo 2 con otras complicaciones especificadas",
+          "category": "Endocrino"
+        },
+        {
+          "code": "E10.9",
+          "name": "Diabetes mellitus tipo 1 sin complicaciones",
+          "category": "Endocrino"
+        },
+        {
+          "code": "E66.9",
+          "name": "Obesidad, no especificada",
+          "category": "Endocrino"
+        },
+        {
+          "code": "E66.0",
+          "name": "Obesidad debida a exceso de calorías",
+          "category": "Endocrino"
+        },
+        {
+          "code": "E78.5",
+          "name": "Hiperlipidemia, no especificada (Dislipidemia)",
+          "category": "Endocrino"
+        },
+        {
+          "code": "E78.0",
+          "name": "Hipercolesterolemia pura",
+          "category": "Endocrino"
+        },
+        {
+          "code": "E78.1",
+          "name": "Hipertrigliceridemia pura",
+          "category": "Endocrino"
+        },
+        {
+          "code": "E03.9",
+          "name": "Hipotiroidismo, no especificado",
+          "category": "Endocrino"
+        },
+        {
+          "code": "E05.9",
+          "name": "Tirotoxicosis / Hipertiroidismo, no especificado",
+          "category": "Endocrino"
+        },
+        {
+          "code": "E79.0",
+          "name": "Hiperuricemia sin signos de artritis / Gota",
+          "category": "Endocrino"
+        },
+        {
+          "code": "M10.9",
+          "name": "Gota, no especificada",
+          "category": "Endocrino"
+        },
+        {
+          "code": "K21.9",
+          "name": "Enfermedad por reflujo gastroesofágico (ERGE) sin esofagitis",
+          "category": "Digestivo"
+        },
+        {
+          "code": "K29.7",
+          "name": "Gastritis, no especificada",
+          "category": "Digestivo"
+        },
+        {
+          "code": "K29.1",
+          "name": "Otras gastritis agudas (Gastropatía erosiva)",
+          "category": "Digestivo"
+        },
+        {
+          "code": "K25.9",
+          "name": "Úlcera gástrica, no especificada como aguda ni crónica",
+          "category": "Digestivo"
+        },
+        {
+          "code": "K30",
+          "name": "Dispepsia funcional",
+          "category": "Digestivo"
+        },
+        {
+          "code": "K58.9",
+          "name": "Síndrome del colon irritable (Colitis) sin diarrea",
+          "category": "Digestivo"
+        },
+        {
+          "code": "K58.0",
+          "name": "Síndrome del colon irritable con diarrea",
+          "category": "Digestivo"
+        },
+        {
+          "code": "K59.0",
+          "name": "Constipación / Estreñimiento crónico",
+          "category": "Digestivo"
+        },
+        {
+          "code": "K80.2",
+          "name": "Cálculo de la vesícula biliar sin colecistitis (Colelitiasis)",
+          "category": "Digestivo"
+        },
+        {
+          "code": "K81.9",
+          "name": "Colecistitis, no especificada",
+          "category": "Digestivo"
+        },
+        {
+          "code": "K35.8",
+          "name": "Apendicitis aguda, otra y la no especificada",
+          "category": "Digestivo"
+        },
+        {
+          "code": "K02.9",
+          "name": "Caries dental, no especificada / Odontalgia",
+          "category": "Digestivo"
+        },
+        {
+          "code": "N39.0",
+          "name": "Infección del tracto urinario (IVU), sitio no especificado",
+          "category": "Genitourinario"
+        },
+        {
+          "code": "N30.9",
+          "name": "Cistitis, no especificada",
+          "category": "Genitourinario"
+        },
+        {
+          "code": "N20.9",
+          "name": "Cálculo urinario, no especificado (Urolitiasis / Litiasis renal)",
+          "category": "Genitourinario"
+        },
+        {
+          "code": "N23",
+          "name": "Cólico renal, no especificado",
+          "category": "Genitourinario"
+        },
+        {
+          "code": "N40",
+          "name": "Hiperplasia prostática benigna (HPB)",
+          "category": "Genitourinario"
+        },
+        {
+          "code": "N76.0",
+          "name": "Vaginitis aguda / Cervicovaginitis",
+          "category": "Genitourinario"
+        },
+        {
+          "code": "N94.6",
+          "name": "Dismenorrea, no especificada",
+          "category": "Genitourinario"
+        },
+        {
+          "code": "N92.6",
+          "name": "Menstruación irregular, no especificada",
+          "category": "Genitourinario"
+        },
+        {
+          "code": "N95.1",
+          "name": "Estados menopáusicos y climatéricos",
+          "category": "Genitourinario"
+        },
+        {
+          "code": "M54.5",
+          "name": "Lumbago no especificado (Lumbalgia mecánica)",
+          "category": "Músculo-esquelético"
+        },
+        {
+          "code": "M54.2",
+          "name": "Cervicalgia",
+          "category": "Músculo-esquelético"
+        },
+        {
+          "code": "M79.1",
+          "name": "Mialgia / Contractura muscular",
+          "category": "Músculo-esquelético"
+        },
+        {
+          "code": "M19.9",
+          "name": "Osteoartrosis (Artrosis), sitio no especificado",
+          "category": "Músculo-esquelético"
+        },
+        {
+          "code": "M17.9",
+          "name": "Gonartrosis (Artrosis de rodilla), no especificada",
+          "category": "Músculo-esquelético"
+        },
+        {
+          "code": "M06.9",
+          "name": "Artritis reumatoide, no especificada",
+          "category": "Músculo-esquelético"
+        },
+        {
+          "code": "M77.9",
+          "name": "Entesopatía / Tendinitis, no especificada",
+          "category": "Músculo-esquelético"
+        },
+        {
+          "code": "S93.4",
+          "name": "Esguince y desgarro del tobillo",
+          "category": "Músculo-esquelético"
+        },
+        {
+          "code": "S63.5",
+          "name": "Esguince de la muñeca",
+          "category": "Músculo-esquelético"
+        },
+        {
+          "code": "T14.0",
+          "name": "Traumatismo superficial / Contusión, no especificada",
+          "category": "Músculo-esquelético"
+        },
+        {
+          "code": "L20.9",
+          "name": "Dermatitis atópica, no especificada",
+          "category": "Dermatología"
+        },
+        {
+          "code": "L23.9",
+          "name": "Dermatitis alérgica de contacto, causa no especificada",
+          "category": "Dermatología"
+        },
+        {
+          "code": "L50.9",
+          "name": "Urticaria, no especificada",
+          "category": "Dermatología"
+        },
+        {
+          "code": "L70.9",
+          "name": "Acné, no especificado",
+          "category": "Dermatología"
+        },
+        {
+          "code": "L03.9",
+          "name": "Celulitis de sitio no especificado (Infección de tejidos blandos)",
+          "category": "Dermatología"
+        },
+        {
+          "code": "L02.9",
+          "name": "Absceso cutáneo, forúnculo y ántrax",
+          "category": "Dermatología"
+        },
+        {
+          "code": "L01.0",
+          "name": "Impétigo [cualquier sitio]",
+          "category": "Dermatología"
+        },
+        {
+          "code": "L60.0",
+          "name": "Uña encarnada (Onicocriptosis)",
+          "category": "Dermatología"
+        },
+        {
+          "code": "B35.1",
+          "name": "Tiña de las uñas (Onicomicosis)",
+          "category": "Dermatología"
+        },
+        {
+          "code": "G43.9",
+          "name": "Migraña, no especificada",
+          "category": "Neurología"
+        },
+        {
+          "code": "G44.2",
+          "name": "Cefalea tensional",
+          "category": "Neurología"
+        },
+        {
+          "code": "R51",
+          "name": "Cefalea (Dolor de cabeza no especificado)",
+          "category": "Neurología"
+        },
+        {
+          "code": "R42",
+          "name": "Mareo y desvanecimiento (Vértigo periférico)",
+          "category": "Neurología"
+        },
+        {
+          "code": "F41.9",
+          "name": "Trastorno de ansiedad, no especificado (Crisis de ansiedad)",
+          "category": "Salud Mental"
+        },
+        {
+          "code": "F41.1",
+          "name": "Trastorno de ansiedad generalizada",
+          "category": "Salud Mental"
+        },
+        {
+          "code": "F32.9",
+          "name": "Episodio depresivo, no especificado",
+          "category": "Salud Mental"
+        },
+        {
+          "code": "G47.0",
+          "name": "Trastornos del inicio y del mantenimiento del sueño (Insomnio)",
+          "category": "Salud Mental"
+        },
+        {
+          "code": "R50.9",
+          "name": "Fiebre, no especificada (Síndrome febril)",
+          "category": "Síntomas Generales"
+        },
+        {
+          "code": "R53",
+          "name": "Malestar y fatiga / Astenia y adinamia",
+          "category": "Síntomas Generales"
+        },
+        {
+          "code": "R10.4",
+          "name": "Otros dolores abdominales y los no especificados",
+          "category": "Síntomas Generales"
+        },
+        {
+          "code": "R11",
+          "name": "Náusea y vómito",
+          "category": "Síntomas Generales"
+        },
+        {
+          "code": "Z00.0",
+          "name": "Examen médico general (Check-up / Control de salud)",
+          "category": "Control Preventivo"
+        },
+        {
+          "code": "Z01.0",
+          "name": "Examen de ojos y de la visión",
+          "category": "Control Preventivo"
+        },
+        {
+          "code": "Z02.1",
+          "name": "Examen médico para admisión preempleo / Certificado médico",
+          "category": "Control Preventivo"
+        },
+        {
+          "code": "Z71.3",
+          "name": "Consulta para asesoramiento y supervisión dietética",
+          "category": "Control Preventivo"
+        },
+        {
+          "code": "Z34.9",
+          "name": "Supervisión de embarazo normal, no especificado (Control prenatal)",
+          "category": "Control Preventivo"
+        }
+      ]
+    }
+  ]
+}

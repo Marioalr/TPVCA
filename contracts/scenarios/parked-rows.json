@@ -1,0 +1,972 @@
+{
+  "scenario": "parked-rows",
+  "covers": [
+    "8.4"
+  ],
+  "contract": 20,
+  "protocol": 3,
+  "generatedBy": "tests/TPVC.Tests/TursoSyncEndToEndTests.Scenarios.cs (TPVC_WRITE_GOLDEN=1 lo regenera)",
+  "notes": [
+    "La nube esconde el expediente y el lote (cloudHold: como si todavía no llegaran) y B baja todo: la nota sin su expediente (referencia obligatoria) y el movimiento con un lote que B no tiene (referencia opcional con un SyncId desconocido) se apartan (parked 2) en lugar de perderse o guardarse sin lote.",
+    "Al volver las filas (cloudRelease, con un SyncedAtUtc nuevo), la siguiente sincronización las baja y aplica lo apartado al final de la descarga: el contador vuelve a 0 y el movimiento queda con su lote."
+  ],
+  "devices": [
+    {
+      "name": "A",
+      "deviceId": "device-a",
+      "role": "WindowsDesktop",
+      "engine": "pc"
+    },
+    {
+      "name": "B",
+      "deviceId": "device-b",
+      "role": "AndroidTablet",
+      "engine": "kotlin"
+    }
+  ],
+  "watch": {
+    "Patients": [
+      "FullName"
+    ],
+    "PatientConsultations": [
+      "PatientRecordSyncId",
+      "Diagnosis"
+    ],
+    "ProductBatches": [
+      "ProductSyncId",
+      "BatchNumber",
+      "Quantity"
+    ],
+    "InventoryMovements": [
+      "ProductSyncId",
+      "BatchSyncId",
+      "MovementType",
+      "Quantity",
+      "Delta"
+    ]
+  },
+  "steps": [
+    {
+      "n": 1,
+      "device": "A",
+      "op": "create",
+      "table": "Categories",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000301",
+        "Name": "Analgésicos",
+        "Icon": "Pill"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 2,
+      "device": "A",
+      "op": "create",
+      "table": "Products",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000302",
+        "Code": "PARA-500",
+        "Name": "Paracetamol 500 mg",
+        "CategorySyncId": "10000000-0000-4000-8000-000000000301",
+        "Price": "35.5",
+        "CurrentStock": "10"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "pending": 2,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 3,
+      "device": "A",
+      "op": "create",
+      "table": "ProductBatches",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000303",
+        "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+        "BatchNumber": "L-2026-01",
+        "Quantity": "10"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000303": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10"
+            }
+          },
+          "InventoryMovements": {},
+          "pending": 3,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 4,
+      "device": "A",
+      "op": "create",
+      "table": "InventoryMovements",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000304",
+        "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+        "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+        "MovementType": "0",
+        "Quantity": "10",
+        "Delta": "10",
+        "StockBefore": "0",
+        "StockAfter": "10"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000303": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 4,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 5,
+      "device": "A",
+      "op": "create",
+      "table": "Patients",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000305",
+        "RecordNumber": "EXP-2020-003",
+        "FullName": "Paciente Apartado"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000305": {
+              "FullName": "Paciente Apartado"
+            }
+          },
+          "PatientConsultations": {},
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000303": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 5,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 6,
+      "device": "A",
+      "op": "create",
+      "table": "PatientConsultations",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000306",
+        "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+        "Diagnosis": "Cefalea tensional (G44.2)"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000305": {
+              "FullName": "Paciente Apartado"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000306": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+              "Diagnosis": "Cefalea tensional (G44.2)"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000303": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 6,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 7,
+      "device": "A",
+      "op": "fullSync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000305": {
+              "FullName": "Paciente Apartado"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000306": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+              "Diagnosis": "Cefalea tensional (G44.2)"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000303": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000305": {
+              "FullName": "Paciente Apartado"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000306": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+              "Diagnosis": "Cefalea tensional (G44.2)"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000303": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 8,
+      "op": "cloudHold",
+      "table": "Patients",
+      "syncId": "10000000-0000-4000-8000-000000000305",
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000306": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+              "Diagnosis": "Cefalea tensional (G44.2)"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000303": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000305": {
+              "FullName": "Paciente Apartado"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000306": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+              "Diagnosis": "Cefalea tensional (G44.2)"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000303": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 9,
+      "op": "cloudHold",
+      "table": "ProductBatches",
+      "syncId": "10000000-0000-4000-8000-000000000303",
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000306": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+              "Diagnosis": "Cefalea tensional (G44.2)"
+            }
+          },
+          "ProductBatches": {},
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000305": {
+              "FullName": "Paciente Apartado"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000306": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+              "Diagnosis": "Cefalea tensional (G44.2)"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000303": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 10,
+      "device": "B",
+      "op": "join",
+      "result": {
+        "ok": true
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000306": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+              "Diagnosis": "Cefalea tensional (G44.2)"
+            }
+          },
+          "ProductBatches": {},
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000305": {
+              "FullName": "Paciente Apartado"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000306": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+              "Diagnosis": "Cefalea tensional (G44.2)"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000303": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 11,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 2
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000306": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+              "Diagnosis": "Cefalea tensional (G44.2)"
+            }
+          },
+          "ProductBatches": {},
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000305": {
+              "FullName": "Paciente Apartado"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000306": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+              "Diagnosis": "Cefalea tensional (G44.2)"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000303": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 2,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 12,
+      "op": "cloudRelease",
+      "table": "Patients",
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000305": {
+              "FullName": "Paciente Apartado"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000306": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+              "Diagnosis": "Cefalea tensional (G44.2)"
+            }
+          },
+          "ProductBatches": {},
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000305": {
+              "FullName": "Paciente Apartado"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000306": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+              "Diagnosis": "Cefalea tensional (G44.2)"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000303": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 2,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 13,
+      "op": "cloudRelease",
+      "table": "ProductBatches",
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000305": {
+              "FullName": "Paciente Apartado"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000306": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+              "Diagnosis": "Cefalea tensional (G44.2)"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000303": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000305": {
+              "FullName": "Paciente Apartado"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000306": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+              "Diagnosis": "Cefalea tensional (G44.2)"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000303": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "ProductBatches": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 2,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 14,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000305": {
+              "FullName": "Paciente Apartado"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000306": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+              "Diagnosis": "Cefalea tensional (G44.2)"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000303": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000305": {
+              "FullName": "Paciente Apartado"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000306": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+              "Diagnosis": "Cefalea tensional (G44.2)"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000303": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000305": {
+              "FullName": "Paciente Apartado"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000306": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000305",
+              "Diagnosis": "Cefalea tensional (G44.2)"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000303": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000304": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000302",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000303",
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    }
+  ]
+}

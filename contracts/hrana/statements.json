@@ -1,0 +1,447 @@
+{
+  "contract": 20,
+  "protocol": 3,
+  "generatedBy": "tests/TPVC.Tests/TursoSyncEndToEndTests.HranaStatements.cs (TPVC_WRITE_GOLDEN=1 lo regenera)",
+  "notes": [
+    "Las instrucciones de lectura que repite Kotlin, literales: escribirlas de otra forma puede hacer que SQLite recorra la tabla completa (cada fila recorrida cuenta como leída en Turso).",
+    "Los argumentos van con la codificación de golden/values.json; las fechas como texto 'yyyy-MM-dd HH:mm:ss.fffffff'.",
+    "Los intercambios completos están en los .jsonl de esta carpeta. Lo de escribir (upsert, lápidas y cerca de generación) está en golden/lww.json; lo de los resultados de laboratorio, en golden/lab-files.json; el perfil y el membrete (asset.exists, asset.writeChunk, asset.writeMeta y profile.write, revisión 19), aquí."
+  ],
+  "statements": [
+    {
+      "name": "meta.schema",
+      "sql": "SELECT \"Value\" FROM \"_tpvc_meta\" WHERE \"Key\" = 'schema';",
+      "args": [],
+      "when": "Antes de sincronizar: sin huella, la PC todavía no creó el esquema («Sincronice primero la PC») y Kotlin no hace nada."
+    },
+    {
+      "name": "handshake",
+      "sql": "SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS now, strftime('%Y-%m-%d %H:%M:%f','now','-5 seconds') AS wm, (SELECT \"Value\" FROM \"_tpvc_meta\" WHERE \"Key\" = 'clinicId') AS \"clinicId\", (SELECT \"Value\" FROM \"_tpvc_meta\" WHERE \"Key\" = 'generation') AS \"generation\", (SELECT \"Value\" FROM \"_tpvc_meta\" WHERE \"Key\" = 'generationReady') AS \"generationReady\", (SELECT \"Value\" FROM \"_tpvc_meta\" WHERE \"Key\" = 'generationPrevious') AS \"generationPrevious\", (SELECT \"Value\" FROM \"_tpvc_meta\" WHERE \"Key\" = 'protocol') AS \"protocol\", (SELECT \"Value\" FROM \"_tpvc_meta\" WHERE \"Key\" = 'minClientProtocol') AS \"minClientProtocol\", (SELECT \"Value\" FROM \"_tpvc_meta\" WHERE \"Key\" = 'fullUploadAtUtc') AS \"fullUploadAtUtc\", (SELECT \"Value\" FROM \"_tpvc_meta\" WHERE \"Key\" = 'stampsRepairedAtUtc') AS \"stampsRepairedAtUtc\";",
+      "args": [],
+      "when": "Primera instrucción de cada sincronización: la hora del servidor, la marca de agua (5 s antes) y las claves de _tpvc_meta (identidad, generación y protocolo)."
+    },
+    {
+      "name": "generation",
+      "sql": "SELECT \"Value\" AS \"generation\" FROM \"_tpvc_meta\" WHERE \"Key\" = 'generation';",
+      "args": [],
+      "when": "Última instrucción de cada petición de la subida y de cada página de la bajada: si no es la generación del equipo, se detiene sin avanzar cursores."
+    },
+    {
+      "name": "profile",
+      "sql": "SELECT * FROM ClinicProfiles WHERE Id = 1;",
+      "args": [],
+      "when": "El perfil del consultorio, en la misma petición que la bajada; gana el UpdatedAtUtc más nuevo. Si cambió el hash de una imagen, se baja con asset.*."
+    },
+    {
+      "name": "page.Categories",
+      "sql": "SELECT * FROM \"Categories\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) AND (\"OriginDeviceId\" IS NULL OR \"OriginDeviceId\" <> ?) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "args": [
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncId del cursor",
+        "DeviceId de este equipo"
+      ],
+      "when": "Una página de la bajada. El cursor empieza en '' y '' y es (SyncedAtUtc, SyncId) de la última fila aplicada, sin pasar de la marca de agua. Una página que no se llena termina la tabla.",
+      "sqlWithoutOwnFilter": "SELECT * FROM \"Categories\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "whenWithoutOwnFilter": "La primera descarga después de unirse o de un cambio de generación: también baja lo que subió este equipo (sin el último argumento).",
+      "pageSize": 500
+    },
+    {
+      "name": "page.ClinicalServices",
+      "sql": "SELECT * FROM \"ClinicalServices\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) AND (\"OriginDeviceId\" IS NULL OR \"OriginDeviceId\" <> ?) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "args": [
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncId del cursor",
+        "DeviceId de este equipo"
+      ],
+      "when": "Una página de la bajada. El cursor empieza en '' y '' y es (SyncedAtUtc, SyncId) de la última fila aplicada, sin pasar de la marca de agua. Una página que no se llena termina la tabla.",
+      "sqlWithoutOwnFilter": "SELECT * FROM \"ClinicalServices\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "whenWithoutOwnFilter": "La primera descarga después de unirse o de un cambio de generación: también baja lo que subió este equipo (sin el último argumento).",
+      "pageSize": 500
+    },
+    {
+      "name": "page.Patients",
+      "sql": "SELECT * FROM \"Patients\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) AND (\"OriginDeviceId\" IS NULL OR \"OriginDeviceId\" <> ?) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 100;",
+      "args": [
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncId del cursor",
+        "DeviceId de este equipo"
+      ],
+      "when": "Una página de la bajada. El cursor empieza en '' y '' y es (SyncedAtUtc, SyncId) de la última fila aplicada, sin pasar de la marca de agua. Una página que no se llena termina la tabla.",
+      "sqlWithoutOwnFilter": "SELECT * FROM \"Patients\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 100;",
+      "whenWithoutOwnFilter": "La primera descarga después de unirse o de un cambio de generación: también baja lo que subió este equipo (sin el último argumento).",
+      "pageSize": 100
+    },
+    {
+      "name": "page.Appointments",
+      "sql": "SELECT * FROM \"Appointments\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) AND (\"OriginDeviceId\" IS NULL OR \"OriginDeviceId\" <> ?) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "args": [
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncId del cursor",
+        "DeviceId de este equipo"
+      ],
+      "when": "Una página de la bajada. El cursor empieza en '' y '' y es (SyncedAtUtc, SyncId) de la última fila aplicada, sin pasar de la marca de agua. Una página que no se llena termina la tabla.",
+      "sqlWithoutOwnFilter": "SELECT * FROM \"Appointments\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "whenWithoutOwnFilter": "La primera descarga después de unirse o de un cambio de generación: también baja lo que subió este equipo (sin el último argumento).",
+      "pageSize": 500
+    },
+    {
+      "name": "page.PatientConsultations",
+      "sql": "SELECT * FROM \"PatientConsultations\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) AND (\"OriginDeviceId\" IS NULL OR \"OriginDeviceId\" <> ?) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 100;",
+      "args": [
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncId del cursor",
+        "DeviceId de este equipo"
+      ],
+      "when": "Una página de la bajada. El cursor empieza en '' y '' y es (SyncedAtUtc, SyncId) de la última fila aplicada, sin pasar de la marca de agua. Una página que no se llena termina la tabla.",
+      "sqlWithoutOwnFilter": "SELECT * FROM \"PatientConsultations\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 100;",
+      "whenWithoutOwnFilter": "La primera descarga después de unirse o de un cambio de generación: también baja lo que subió este equipo (sin el último argumento).",
+      "pageSize": 100
+    },
+    {
+      "name": "page.LabResults",
+      "sql": "SELECT * FROM \"LabResults\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) AND (\"OriginDeviceId\" IS NULL OR \"OriginDeviceId\" <> ?) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "args": [
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncId del cursor",
+        "DeviceId de este equipo"
+      ],
+      "when": "Una página de la bajada. El cursor empieza en '' y '' y es (SyncedAtUtc, SyncId) de la última fila aplicada, sin pasar de la marca de agua. Una página que no se llena termina la tabla.",
+      "sqlWithoutOwnFilter": "SELECT * FROM \"LabResults\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "whenWithoutOwnFilter": "La primera descarga después de unirse o de un cambio de generación: también baja lo que subió este equipo (sin el último argumento).",
+      "pageSize": 500
+    },
+    {
+      "name": "page.PediatricDoseRules",
+      "sql": "SELECT * FROM \"PediatricDoseRules\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) AND (\"OriginDeviceId\" IS NULL OR \"OriginDeviceId\" <> ?) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "args": [
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncId del cursor",
+        "DeviceId de este equipo"
+      ],
+      "when": "Una página de la bajada. El cursor empieza en '' y '' y es (SyncedAtUtc, SyncId) de la última fila aplicada, sin pasar de la marca de agua. Una página que no se llena termina la tabla.",
+      "sqlWithoutOwnFilter": "SELECT * FROM \"PediatricDoseRules\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "whenWithoutOwnFilter": "La primera descarga después de unirse o de un cambio de generación: también baja lo que subió este equipo (sin el último argumento).",
+      "pageSize": 500
+    },
+    {
+      "name": "page.PrescriptionTemplates",
+      "sql": "SELECT * FROM \"PrescriptionTemplates\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) AND (\"OriginDeviceId\" IS NULL OR \"OriginDeviceId\" <> ?) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "args": [
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncId del cursor",
+        "DeviceId de este equipo"
+      ],
+      "when": "Una página de la bajada. El cursor empieza en '' y '' y es (SyncedAtUtc, SyncId) de la última fila aplicada, sin pasar de la marca de agua. Una página que no se llena termina la tabla.",
+      "sqlWithoutOwnFilter": "SELECT * FROM \"PrescriptionTemplates\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "whenWithoutOwnFilter": "La primera descarga después de unirse o de un cambio de generación: también baja lo que subió este equipo (sin el último argumento).",
+      "pageSize": 500
+    },
+    {
+      "name": "page.Products",
+      "sql": "SELECT * FROM \"Products\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) AND (\"OriginDeviceId\" IS NULL OR \"OriginDeviceId\" <> ?) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "args": [
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncId del cursor",
+        "DeviceId de este equipo"
+      ],
+      "when": "Una página de la bajada. El cursor empieza en '' y '' y es (SyncedAtUtc, SyncId) de la última fila aplicada, sin pasar de la marca de agua. Una página que no se llena termina la tabla.",
+      "sqlWithoutOwnFilter": "SELECT * FROM \"Products\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "whenWithoutOwnFilter": "La primera descarga después de unirse o de un cambio de generación: también baja lo que subió este equipo (sin el último argumento).",
+      "pageSize": 500
+    },
+    {
+      "name": "page.ProductBatches",
+      "sql": "SELECT * FROM \"ProductBatches\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) AND (\"OriginDeviceId\" IS NULL OR \"OriginDeviceId\" <> ?) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "args": [
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncId del cursor",
+        "DeviceId de este equipo"
+      ],
+      "when": "Una página de la bajada. El cursor empieza en '' y '' y es (SyncedAtUtc, SyncId) de la última fila aplicada, sin pasar de la marca de agua. Una página que no se llena termina la tabla.",
+      "sqlWithoutOwnFilter": "SELECT * FROM \"ProductBatches\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "whenWithoutOwnFilter": "La primera descarga después de unirse o de un cambio de generación: también baja lo que subió este equipo (sin el último argumento).",
+      "pageSize": 500
+    },
+    {
+      "name": "page.Sales",
+      "sql": "SELECT * FROM \"Sales\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) AND (\"OriginDeviceId\" IS NULL OR \"OriginDeviceId\" <> ?) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "args": [
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncId del cursor",
+        "DeviceId de este equipo"
+      ],
+      "when": "Una página de la bajada. El cursor empieza en '' y '' y es (SyncedAtUtc, SyncId) de la última fila aplicada, sin pasar de la marca de agua. Una página que no se llena termina la tabla.",
+      "sqlWithoutOwnFilter": "SELECT * FROM \"Sales\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "whenWithoutOwnFilter": "La primera descarga después de unirse o de un cambio de generación: también baja lo que subió este equipo (sin el último argumento).",
+      "pageSize": 500
+    },
+    {
+      "name": "page.SaleItems",
+      "sql": "SELECT * FROM \"SaleItems\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) AND (\"OriginDeviceId\" IS NULL OR \"OriginDeviceId\" <> ?) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "args": [
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncId del cursor",
+        "DeviceId de este equipo"
+      ],
+      "when": "Una página de la bajada. El cursor empieza en '' y '' y es (SyncedAtUtc, SyncId) de la última fila aplicada, sin pasar de la marca de agua. Una página que no se llena termina la tabla.",
+      "sqlWithoutOwnFilter": "SELECT * FROM \"SaleItems\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "whenWithoutOwnFilter": "La primera descarga después de unirse o de un cambio de generación: también baja lo que subió este equipo (sin el último argumento).",
+      "pageSize": 500
+    },
+    {
+      "name": "page.InventoryMovements",
+      "sql": "SELECT * FROM \"InventoryMovements\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) AND (\"OriginDeviceId\" IS NULL OR \"OriginDeviceId\" <> ?) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "args": [
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncId del cursor",
+        "DeviceId de este equipo"
+      ],
+      "when": "Una página de la bajada. El cursor empieza en '' y '' y es (SyncedAtUtc, SyncId) de la última fila aplicada, sin pasar de la marca de agua. Una página que no se llena termina la tabla.",
+      "sqlWithoutOwnFilter": "SELECT * FROM \"InventoryMovements\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "whenWithoutOwnFilter": "La primera descarga después de unirse o de un cambio de generación: también baja lo que subió este equipo (sin el último argumento).",
+      "pageSize": 500
+    },
+    {
+      "name": "page.ServiceDefaultProducts",
+      "sql": "SELECT * FROM \"ServiceDefaultProducts\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) AND (\"OriginDeviceId\" IS NULL OR \"OriginDeviceId\" <> ?) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "args": [
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncId del cursor",
+        "DeviceId de este equipo"
+      ],
+      "when": "Una página de la bajada. El cursor empieza en '' y '' y es (SyncedAtUtc, SyncId) de la última fila aplicada, sin pasar de la marca de agua. Una página que no se llena termina la tabla.",
+      "sqlWithoutOwnFilter": "SELECT * FROM \"ServiceDefaultProducts\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "whenWithoutOwnFilter": "La primera descarga después de unirse o de un cambio de generación: también baja lo que subió este equipo (sin el último argumento).",
+      "pageSize": 500
+    },
+    {
+      "name": "page.SyncTombstones",
+      "sql": "SELECT * FROM \"SyncTombstones\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) AND (\"OriginDeviceId\" IS NULL OR \"OriginDeviceId\" <> ?) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "args": [
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncedAtUtc del cursor",
+        "SyncId del cursor",
+        "DeviceId de este equipo"
+      ],
+      "when": "Una página de la bajada. El cursor empieza en '' y '' y es (SyncedAtUtc, SyncId) de la última fila aplicada, sin pasar de la marca de agua. Una página que no se llena termina la tabla.",
+      "sqlWithoutOwnFilter": "SELECT * FROM \"SyncTombstones\" WHERE \"SyncedAtUtc\" >= ? AND (\"SyncedAtUtc\" > ? OR (\"SyncedAtUtc\" = ? AND \"SyncId\" > ?)) ORDER BY \"SyncedAtUtc\", \"SyncId\" LIMIT 500;",
+      "whenWithoutOwnFilter": "La primera descarga después de unirse o de un cambio de generación: también baja lo que subió este equipo (sin el último argumento).",
+      "pageSize": 500
+    },
+    {
+      "name": "heartbeat.readNonce",
+      "sql": "SELECT InstanceNonce FROM RegisteredDevices WHERE DeviceId = ?;",
+      "args": [
+        "DeviceId"
+      ],
+      "when": "Antes de escribir el latido, en la misma petición: si trae un InstanceNonce ajeno después de haber escrito el suyo, otra instalación usa el mismo DeviceId."
+    },
+    {
+      "name": "heartbeat.write",
+      "sql": "INSERT INTO RegisteredDevices (DeviceId, DeviceName, DeviceRole, AppVersion, Platform, SyncProtocol, HandoffProtocol, ContractRevision, PendingCount, OldestPendingUtc, InstanceNonce, LastSeenUtc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f','now')) ON CONFLICT(DeviceId) DO UPDATE SET DeviceName = excluded.DeviceName, DeviceRole = excluded.DeviceRole, AppVersion = excluded.AppVersion, Platform = excluded.Platform, SyncProtocol = excluded.SyncProtocol, HandoffProtocol = excluded.HandoffProtocol, ContractRevision = excluded.ContractRevision, PendingCount = excluded.PendingCount, OldestPendingUtc = excluded.OldestPendingUtc, InstanceNonce = excluded.InstanceNonce, LastSeenUtc = excluded.LastSeenUtc;",
+      "args": [
+        "DeviceId",
+        "DeviceName",
+        "DeviceRole",
+        "AppVersion",
+        "Platform ('Android')",
+        "SyncProtocol",
+        "HandoffProtocol",
+        "ContractRevision",
+        "PendingCount",
+        "OldestPendingUtc",
+        "InstanceNonce"
+      ],
+      "when": "El latido (cada 60 s con la app al frente); LastSeenUtc lo pone la nube."
+    },
+    {
+      "name": "heartbeat.writeAfterPush",
+      "sql": "INSERT INTO RegisteredDevices (DeviceId, DeviceName, DeviceRole, AppVersion, Platform, SyncProtocol, HandoffProtocol, ContractRevision, PendingCount, OldestPendingUtc, InstanceNonce, LastSeenUtc, LastPushUtc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f','now'), strftime('%Y-%m-%d %H:%M:%f','now')) ON CONFLICT(DeviceId) DO UPDATE SET DeviceName = excluded.DeviceName, DeviceRole = excluded.DeviceRole, AppVersion = excluded.AppVersion, Platform = excluded.Platform, SyncProtocol = excluded.SyncProtocol, HandoffProtocol = excluded.HandoffProtocol, ContractRevision = excluded.ContractRevision, PendingCount = excluded.PendingCount, OldestPendingUtc = excluded.OldestPendingUtc, InstanceNonce = excluded.InstanceNonce, LastSeenUtc = excluded.LastSeenUtc, LastPushUtc = excluded.LastPushUtc;",
+      "args": [
+        "DeviceId",
+        "DeviceName",
+        "DeviceRole",
+        "AppVersion",
+        "Platform ('Android')",
+        "SyncProtocol",
+        "HandoffProtocol",
+        "ContractRevision",
+        "PendingCount",
+        "OldestPendingUtc",
+        "InstanceNonce"
+      ],
+      "when": "Al final de una subida que mandó algo: también LastPushUtc con la hora de la nube."
+    },
+    {
+      "name": "registry.own",
+      "sql": "SELECT DeviceCode, RevokedAtUtc, RevokedReason FROM DeviceRegistry WHERE DeviceId = ?;",
+      "args": [
+        "DeviceId"
+      ],
+      "when": "El rol, el código y la revocación de este equipo. Sin fila (todavía no aprobado por la PC) o revocado, no baja datos."
+    },
+    {
+      "name": "registry.primary",
+      "sql": "SELECT p.\"Value\" AS PrimaryDeviceId, g.DisplayName AS PrimaryName, d.DeviceName AS PrimaryHeartbeatName, d.LastSeenUtc AS PrimaryLastSeenUtc FROM \"_tpvc_meta\" AS p LEFT JOIN DeviceRegistry AS g ON g.DeviceId = p.\"Value\" LEFT JOIN RegisteredDevices AS d ON d.DeviceId = p.\"Value\" WHERE p.\"Key\" = 'primaryDeviceId';",
+      "args": [],
+      "when": "La PC principal, con su nombre y su último latido."
+    },
+    {
+      "name": "asset.meta",
+      "sql": "SELECT ByteCount, ChunkCount FROM ClinicAssets WHERE Hash = ?;",
+      "args": [
+        "Hash"
+      ],
+      "when": "Una imagen del membrete cuyo hash cambió: sin fila, todavía no está completa."
+    },
+    {
+      "name": "asset.chunk",
+      "sql": "SELECT Content FROM ClinicAssetChunks WHERE Hash = ? AND Part = ?;",
+      "args": [
+        "Hash",
+        "Part"
+      ],
+      "when": "Cada trozo, cuatro por petición; se revisan el tamaño y el SHA-256."
+    },
+    {
+      "name": "asset.exists",
+      "sql": "SELECT Hash FROM ClinicAssets WHERE Hash = ?;",
+      "args": [
+        "Hash"
+      ],
+      "when": "Revisión 19: antes de subir una imagen del membrete (PC y tablet): si ya tiene su fila, ya está completa y no se sube."
+    },
+    {
+      "name": "asset.writeChunk",
+      "sql": "INSERT INTO ClinicAssetChunks (Hash, Part, Content) VALUES (?, ?, ?) ON CONFLICT(Hash, Part) DO NOTHING;",
+      "args": [
+        "Hash",
+        "Part (integer)",
+        "Content (blob)"
+      ],
+      "when": "Revisión 19: cada trozo de 512 KiB de una imagen nueva, uno por petición; nunca se reescribe."
+    },
+    {
+      "name": "asset.writeMeta",
+      "sql": "INSERT INTO ClinicAssets (Hash, Kind, MimeType, ByteCount, ChunkCount, UpdatedAtUtc) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f','now')) ON CONFLICT(Hash) DO NOTHING;",
+      "args": [
+        "Hash",
+        "Kind ('crest' o 'header')",
+        "MimeType",
+        "ByteCount (integer)",
+        "ChunkCount (integer)"
+      ],
+      "when": "Revisión 19: al final, cuando ya están todos los trozos: sin esta fila la imagen no está completa. Solo la PC borra imágenes."
+    },
+    {
+      "name": "profile.write",
+      "sql": "INSERT INTO ClinicProfiles (Id, DoctorName, ProfessionalLicense, Specialty, University, ClinicName, Address, Phone, Email, TaxId, AdditionalNotes, UpdatedAtUtc, CrestImageHash, HeaderImageHash) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(Id) DO UPDATE SET DoctorName = excluded.DoctorName, ProfessionalLicense = excluded.ProfessionalLicense, Specialty = excluded.Specialty, University = excluded.University, ClinicName = excluded.ClinicName, Address = excluded.Address, Phone = excluded.Phone, Email = excluded.Email, TaxId = excluded.TaxId, AdditionalNotes = excluded.AdditionalNotes, UpdatedAtUtc = excluded.UpdatedAtUtc, CrestImageHash = excluded.CrestImageHash, HeaderImageHash = excluded.HeaderImageHash;",
+      "args": [
+        "DoctorName",
+        "ProfessionalLicense",
+        "Specialty",
+        "University",
+        "ClinicName",
+        "Address",
+        "Phone",
+        "Email",
+        "TaxId",
+        "AdditionalNotes",
+        "UpdatedAtUtc",
+        "CrestImageHash",
+        "HeaderImageHash"
+      ],
+      "when": "Revisión 19: el perfil del consultorio (PC y tablet). Se escribe solo si este equipo tiene su perfil configurado y su UpdatedAtUtc (la marca de cuando se guardó aquí, que va tal cual como argumento) es más nuevo que el de la nube leído con 'profile' en la misma sincronización, o si la nube no tiene fila; el upsert no compara marcas. Cada hash: el de la imagen que tiene este equipo, después de subirla con asset.* (si no se pudo leer para subirla, el de la nube); '' si se quitó aquí; sin imagen aquí y sin tocarla aquí, el de la nube (un equipo recién instalado no le quita el escudo a los demás). Si un hash quedó distinto del de la nube, la PC borra después las imágenes que el perfil ya no nombra; la tablet nunca borra."
+    },
+    {
+      "name": "folio.take",
+      "sql": "INSERT INTO FolioCounters (Series, LastNumber) VALUES (?, ? + 1) ON CONFLICT(Series) DO UPDATE SET LastNumber = max(LastNumber, ?) + 1 RETURNING LastNumber;",
+      "args": [
+        "Series ('EXP-2026' o 'TKT-20261009')",
+        "Piso (integer)",
+        "Piso (integer)"
+      ],
+      "when": "Paso 8.16: al guardar un expediente o un ticket, con 2 s de espera; el piso es el mayor número de esa serie en la base del equipo (los folios con letra no cuentan). Sin respuesta, el folio lleva la letra del equipo (golden/folios.json)."
+    },
+    {
+      "name": "check.incoming",
+      "sql": "SELECT Id, FromDeviceId, FromDeviceName, ToDeviceId, ToDeviceName, PatientSyncId, PatientName, Folio, Payload, PayloadVersion, State, AcceptToken, CreatedAtUtc FROM ConsultationHandoffs WHERE ToDeviceId = ? AND (State = 'enviada' OR (State = 'aceptada' AND Payload <> '')) ORDER BY CreatedAtUtc DESC LIMIT 10",
+      "args": [
+        "DeviceId de este equipo"
+      ],
+      "when": "Paso 8.24: la revisión, cada 4 s en pacientes y consulta con un compañero o un envío pendiente (si no, 30 s): las consultas dirigidas a este equipo, enviadas o aceptadas aquí con su copia. Con este WHERE exacto SQLite usa el índice parcial IX_ConsultationHandoffs_Pending."
+    },
+    {
+      "name": "check.outgoing",
+      "sql": "SELECT State FROM ConsultationHandoffs WHERE Id = ?",
+      "args": [
+        "Id del envío pendiente"
+      ],
+      "when": "Paso 8.24: en la misma petición de la revisión, solo si este equipo tiene un envío pendiente: su estado."
+    },
+    {
+      "name": "check.peerPush",
+      "sql": "SELECT DeviceId, LastPushUtc FROM RegisteredDevices WHERE DeviceId <> ? AND LastPushUtc IS NOT NULL;",
+      "args": [
+        "DeviceId de este equipo"
+      ],
+      "when": "Paso 8.24: en la misma petición de la revisión, la marca de cambios: la última subida de cada uno de los otros equipos. Si alguna es posterior a la hora de la nube de la última bajada (marca de agua + 5 s), se sincroniza; cada valor dispara a lo más una sincronización."
+    },
+    {
+      "name": "check.peers.serverNow",
+      "sql": "SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS ServerNow;",
+      "args": [],
+      "when": "Paso 8.24: cada 10 min, en la misma petición de la revisión, la lista de compañeros: la hora de la nube…"
+    },
+    {
+      "name": "check.peers.devices",
+      "sql": "SELECT DeviceId, DeviceName, DeviceRole, AppVersion, LastSeenUtc, Platform, HandoffProtocol, ContractRevision, PendingCount, OldestPendingUtc FROM RegisteredDevices;",
+      "args": [],
+      "when": "…los latidos (un compañero puede recibir consultas: HandoffProtocol >= 1, visto en los últimos 30 días)…"
+    },
+    {
+      "name": "check.peers.registry",
+      "sql": "SELECT DeviceId, DeviceCode, Role, DisplayName, RevokedAtUtc, RevokedReason FROM DeviceRegistry;",
+      "args": [],
+      "when": "…y DeviceRegistry (rol, aprobado y sin quitar). Sin compañeros ni envío pendiente, la revisión va cada 30 s también en pacientes."
+    },
+    {
+      "name": "folio.raise",
+      "sql": "INSERT INTO FolioCounters (Series, LastNumber) VALUES (?, ?) ON CONFLICT(Series) DO UPDATE SET LastNumber = max(LastNumber, excluded.LastNumber);",
+      "args": [
+        "Series",
+        "Número (integer)"
+      ],
+      "when": "Paso 8.16: un folio tecleado a mano mayor que el contador lo sube. La PC principal además siembra el año y el día al empezar cada sesión; la tablet y el celular no."
+    }
+  ]
+}

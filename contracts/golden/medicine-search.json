@@ -1,0 +1,1844 @@
+{
+  "rule": "medicine-search",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Services/Rules/MedicineSearchRules.cs (pedido del 2026-10-14): el orden de los medicamentos al recetar. 'expected' son los id en orden. Los productos, como en rank-products.json.",
+    "rank: con q = el texto normalizado (text-search.json), grupo (MatchTier) 0 si el código normalizado no vacío es igual a q, 1 si el nombre empieza con q, 2 si el genérico empieza con q, 3 si una palabra del nombre o del genérico empieza con q, 4 si el nombre, el genérico o el código (y la presentación con includePresentation) lo contienen; sin texto todos son 0. Orden: primero los que hay en existencia (activo y stock > 0), luego el grupo, luego el nombre normalizado en orden ordinal (por código de carácter, no Collator), luego el nombre tal cual (ordinal), luego el código (ordinal) y al final el orden de la lista. Como mucho 'limit' (20 si no viene; 0 o menos = ninguno).",
+    "prescription (las sugerencias de la hoja de receta): rank con los productos que son medicamento (catalog-matching.json), 20 como mucho. browser (el catálogo de medicamentos de la consulta): rank de los medicamentos sin tope y con includePresentation."
+  ],
+  "cases": [
+    {
+      "name": "orden · con existencias primero aunque coincida peor; el código igual gana dentro de su grupo",
+      "input": {
+        "check": "rank",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml suspensión",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Ácido fólico 5 mg",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 4,
+            "code": "MED-004",
+            "name": "acido acetilsalicílico 100 mg",
+            "genericName": "Ácido acetilsalicílico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 5,
+            "code": "MED-005",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 6,
+            "code": "MED-006",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos",
+            "active": false
+          },
+          {
+            "id": 7,
+            "code": "MED-007",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 8,
+            "code": "PARA",
+            "name": "Dolo-Neurobión",
+            "genericName": "Diclofenaco/Complejo B",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 2,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 9,
+            "code": "INS-001",
+            "name": "Paracetamol de prueba (insumo)",
+            "genericName": "Paracetamol",
+            "presentation": "Sobre",
+            "stock": 50,
+            "category": "Insumos"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Ibuprofeno 400 mg",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 20,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 11,
+            "code": "MED-011",
+            "name": "ACIDO FOLICO 5 MG",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 4,
+            "category": "Medicamentos"
+          }
+        ],
+        "text": "para"
+      },
+      "expected": [
+        8,
+        1,
+        9,
+        2
+      ]
+    },
+    {
+      "name": "orden · activo y con piezas: un inactivo con existencias va con los que no tienen",
+      "input": {
+        "check": "rank",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml suspensión",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Ácido fólico 5 mg",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 4,
+            "code": "MED-004",
+            "name": "acido acetilsalicílico 100 mg",
+            "genericName": "Ácido acetilsalicílico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 5,
+            "code": "MED-005",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 6,
+            "code": "MED-006",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos",
+            "active": false
+          },
+          {
+            "id": 7,
+            "code": "MED-007",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 8,
+            "code": "PARA",
+            "name": "Dolo-Neurobión",
+            "genericName": "Diclofenaco/Complejo B",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 2,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 9,
+            "code": "INS-001",
+            "name": "Paracetamol de prueba (insumo)",
+            "genericName": "Paracetamol",
+            "presentation": "Sobre",
+            "stock": 50,
+            "category": "Insumos"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Ibuprofeno 400 mg",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 20,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 11,
+            "code": "MED-011",
+            "name": "ACIDO FOLICO 5 MG",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 4,
+            "category": "Medicamentos"
+          }
+        ],
+        "text": "amoxicilina"
+      },
+      "expected": [
+        7,
+        5,
+        6
+      ]
+    },
+    {
+      "name": "orden · desempate: nombre sin acentos (ordinal), nombre tal cual, código y orden de llegada",
+      "input": {
+        "check": "rank",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml suspensión",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Ácido fólico 5 mg",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 4,
+            "code": "MED-004",
+            "name": "acido acetilsalicílico 100 mg",
+            "genericName": "Ácido acetilsalicílico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 5,
+            "code": "MED-005",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 6,
+            "code": "MED-006",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos",
+            "active": false
+          },
+          {
+            "id": 7,
+            "code": "MED-007",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 8,
+            "code": "PARA",
+            "name": "Dolo-Neurobión",
+            "genericName": "Diclofenaco/Complejo B",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 2,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 9,
+            "code": "INS-001",
+            "name": "Paracetamol de prueba (insumo)",
+            "genericName": "Paracetamol",
+            "presentation": "Sobre",
+            "stock": 50,
+            "category": "Insumos"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Ibuprofeno 400 mg",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 20,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 11,
+            "code": "MED-011",
+            "name": "ACIDO FOLICO 5 MG",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 4,
+            "category": "Medicamentos"
+          }
+        ],
+        "text": "acido"
+      },
+      "expected": [
+        4,
+        11,
+        3
+      ]
+    },
+    {
+      "name": "orden · el genérico que empieza así",
+      "input": {
+        "check": "rank",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml suspensión",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Ácido fólico 5 mg",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 4,
+            "code": "MED-004",
+            "name": "acido acetilsalicílico 100 mg",
+            "genericName": "Ácido acetilsalicílico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 5,
+            "code": "MED-005",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 6,
+            "code": "MED-006",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos",
+            "active": false
+          },
+          {
+            "id": 7,
+            "code": "MED-007",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 8,
+            "code": "PARA",
+            "name": "Dolo-Neurobión",
+            "genericName": "Diclofenaco/Complejo B",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 2,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 9,
+            "code": "INS-001",
+            "name": "Paracetamol de prueba (insumo)",
+            "genericName": "Paracetamol",
+            "presentation": "Sobre",
+            "stock": 50,
+            "category": "Insumos"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Ibuprofeno 400 mg",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 20,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 11,
+            "code": "MED-011",
+            "name": "ACIDO FOLICO 5 MG",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 4,
+            "category": "Medicamentos"
+          }
+        ],
+        "text": "paracetamol"
+      },
+      "expected": [
+        1,
+        9,
+        2
+      ]
+    },
+    {
+      "name": "orden · una palabra del nombre",
+      "input": {
+        "check": "rank",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml suspensión",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Ácido fólico 5 mg",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 4,
+            "code": "MED-004",
+            "name": "acido acetilsalicílico 100 mg",
+            "genericName": "Ácido acetilsalicílico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 5,
+            "code": "MED-005",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 6,
+            "code": "MED-006",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos",
+            "active": false
+          },
+          {
+            "id": 7,
+            "code": "MED-007",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 8,
+            "code": "PARA",
+            "name": "Dolo-Neurobión",
+            "genericName": "Diclofenaco/Complejo B",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 2,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 9,
+            "code": "INS-001",
+            "name": "Paracetamol de prueba (insumo)",
+            "genericName": "Paracetamol",
+            "presentation": "Sobre",
+            "stock": 50,
+            "category": "Insumos"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Ibuprofeno 400 mg",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 20,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 11,
+            "code": "MED-011",
+            "name": "ACIDO FOLICO 5 MG",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 4,
+            "category": "Medicamentos"
+          }
+        ],
+        "text": "500"
+      },
+      "expected": [
+        7,
+        1,
+        5,
+        6
+      ]
+    },
+    {
+      "name": "orden · contiene a media palabra",
+      "input": {
+        "check": "rank",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml suspensión",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Ácido fólico 5 mg",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 4,
+            "code": "MED-004",
+            "name": "acido acetilsalicílico 100 mg",
+            "genericName": "Ácido acetilsalicílico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 5,
+            "code": "MED-005",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 6,
+            "code": "MED-006",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos",
+            "active": false
+          },
+          {
+            "id": 7,
+            "code": "MED-007",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 8,
+            "code": "PARA",
+            "name": "Dolo-Neurobión",
+            "genericName": "Diclofenaco/Complejo B",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 2,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 9,
+            "code": "INS-001",
+            "name": "Paracetamol de prueba (insumo)",
+            "genericName": "Paracetamol",
+            "presentation": "Sobre",
+            "stock": 50,
+            "category": "Insumos"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Ibuprofeno 400 mg",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 20,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 11,
+            "code": "MED-011",
+            "name": "ACIDO FOLICO 5 MG",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 4,
+            "category": "Medicamentos"
+          }
+        ],
+        "text": "olico"
+      },
+      "expected": [
+        11,
+        3
+      ]
+    },
+    {
+      "name": "orden · la presentación no cuenta en las sugerencias",
+      "input": {
+        "check": "rank",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml suspensión",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Ácido fólico 5 mg",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 4,
+            "code": "MED-004",
+            "name": "acido acetilsalicílico 100 mg",
+            "genericName": "Ácido acetilsalicílico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 5,
+            "code": "MED-005",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 6,
+            "code": "MED-006",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos",
+            "active": false
+          },
+          {
+            "id": 7,
+            "code": "MED-007",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 8,
+            "code": "PARA",
+            "name": "Dolo-Neurobión",
+            "genericName": "Diclofenaco/Complejo B",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 2,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 9,
+            "code": "INS-001",
+            "name": "Paracetamol de prueba (insumo)",
+            "genericName": "Paracetamol",
+            "presentation": "Sobre",
+            "stock": 50,
+            "category": "Insumos"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Ibuprofeno 400 mg",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 20,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 11,
+            "code": "MED-011",
+            "name": "ACIDO FOLICO 5 MG",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 4,
+            "category": "Medicamentos"
+          }
+        ],
+        "text": "suspension"
+      },
+      "expected": []
+    },
+    {
+      "name": "orden · la presentación cuenta en el catálogo",
+      "input": {
+        "check": "rank",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml suspensión",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Ácido fólico 5 mg",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 4,
+            "code": "MED-004",
+            "name": "acido acetilsalicílico 100 mg",
+            "genericName": "Ácido acetilsalicílico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 5,
+            "code": "MED-005",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 6,
+            "code": "MED-006",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos",
+            "active": false
+          },
+          {
+            "id": 7,
+            "code": "MED-007",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 8,
+            "code": "PARA",
+            "name": "Dolo-Neurobión",
+            "genericName": "Diclofenaco/Complejo B",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 2,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 9,
+            "code": "INS-001",
+            "name": "Paracetamol de prueba (insumo)",
+            "genericName": "Paracetamol",
+            "presentation": "Sobre",
+            "stock": 50,
+            "category": "Insumos"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Ibuprofeno 400 mg",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 20,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 11,
+            "code": "MED-011",
+            "name": "ACIDO FOLICO 5 MG",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 4,
+            "category": "Medicamentos"
+          }
+        ],
+        "text": "suspension",
+        "includePresentation": true
+      },
+      "expected": [
+        2
+      ]
+    },
+    {
+      "name": "orden · sin texto: todos, con existencias primero y por nombre",
+      "input": {
+        "check": "rank",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml suspensión",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Ácido fólico 5 mg",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 4,
+            "code": "MED-004",
+            "name": "acido acetilsalicílico 100 mg",
+            "genericName": "Ácido acetilsalicílico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 5,
+            "code": "MED-005",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 6,
+            "code": "MED-006",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos",
+            "active": false
+          },
+          {
+            "id": 7,
+            "code": "MED-007",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 8,
+            "code": "PARA",
+            "name": "Dolo-Neurobión",
+            "genericName": "Diclofenaco/Complejo B",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 2,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 9,
+            "code": "INS-001",
+            "name": "Paracetamol de prueba (insumo)",
+            "genericName": "Paracetamol",
+            "presentation": "Sobre",
+            "stock": 50,
+            "category": "Insumos"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Ibuprofeno 400 mg",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 20,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 11,
+            "code": "MED-011",
+            "name": "ACIDO FOLICO 5 MG",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 4,
+            "category": "Medicamentos"
+          }
+        ],
+        "text": ""
+      },
+      "expected": [
+        4,
+        11,
+        3,
+        7,
+        8,
+        10,
+        1,
+        9,
+        5,
+        6,
+        2
+      ]
+    },
+    {
+      "name": "orden · el tope",
+      "input": {
+        "check": "rank",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml suspensión",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Ácido fólico 5 mg",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 4,
+            "code": "MED-004",
+            "name": "acido acetilsalicílico 100 mg",
+            "genericName": "Ácido acetilsalicílico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 5,
+            "code": "MED-005",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 6,
+            "code": "MED-006",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos",
+            "active": false
+          },
+          {
+            "id": 7,
+            "code": "MED-007",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 8,
+            "code": "PARA",
+            "name": "Dolo-Neurobión",
+            "genericName": "Diclofenaco/Complejo B",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 2,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 9,
+            "code": "INS-001",
+            "name": "Paracetamol de prueba (insumo)",
+            "genericName": "Paracetamol",
+            "presentation": "Sobre",
+            "stock": 50,
+            "category": "Insumos"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Ibuprofeno 400 mg",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 20,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 11,
+            "code": "MED-011",
+            "name": "ACIDO FOLICO 5 MG",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 4,
+            "category": "Medicamentos"
+          }
+        ],
+        "text": "a",
+        "limit": 2
+      },
+      "expected": [
+        4,
+        11
+      ]
+    },
+    {
+      "name": "orden · tope 0",
+      "input": {
+        "check": "rank",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml suspensión",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Ácido fólico 5 mg",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 4,
+            "code": "MED-004",
+            "name": "acido acetilsalicílico 100 mg",
+            "genericName": "Ácido acetilsalicílico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 5,
+            "code": "MED-005",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 6,
+            "code": "MED-006",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos",
+            "active": false
+          },
+          {
+            "id": 7,
+            "code": "MED-007",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 8,
+            "code": "PARA",
+            "name": "Dolo-Neurobión",
+            "genericName": "Diclofenaco/Complejo B",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 2,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 9,
+            "code": "INS-001",
+            "name": "Paracetamol de prueba (insumo)",
+            "genericName": "Paracetamol",
+            "presentation": "Sobre",
+            "stock": 50,
+            "category": "Insumos"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Ibuprofeno 400 mg",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 20,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 11,
+            "code": "MED-011",
+            "name": "ACIDO FOLICO 5 MG",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 4,
+            "category": "Medicamentos"
+          }
+        ],
+        "text": "a",
+        "limit": 0
+      },
+      "expected": []
+    },
+    {
+      "name": "orden · nada coincide",
+      "input": {
+        "check": "rank",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml suspensión",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Ácido fólico 5 mg",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 4,
+            "code": "MED-004",
+            "name": "acido acetilsalicílico 100 mg",
+            "genericName": "Ácido acetilsalicílico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 5,
+            "code": "MED-005",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 6,
+            "code": "MED-006",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos",
+            "active": false
+          },
+          {
+            "id": 7,
+            "code": "MED-007",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 8,
+            "code": "PARA",
+            "name": "Dolo-Neurobión",
+            "genericName": "Diclofenaco/Complejo B",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 2,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 9,
+            "code": "INS-001",
+            "name": "Paracetamol de prueba (insumo)",
+            "genericName": "Paracetamol",
+            "presentation": "Sobre",
+            "stock": 50,
+            "category": "Insumos"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Ibuprofeno 400 mg",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 20,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 11,
+            "code": "MED-011",
+            "name": "ACIDO FOLICO 5 MG",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 4,
+            "category": "Medicamentos"
+          }
+        ],
+        "text": "xyz"
+      },
+      "expected": []
+    },
+    {
+      "name": "sugerencias de la receta · solo medicamentos (el insumo no)",
+      "input": {
+        "check": "prescription",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml suspensión",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Ácido fólico 5 mg",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 4,
+            "code": "MED-004",
+            "name": "acido acetilsalicílico 100 mg",
+            "genericName": "Ácido acetilsalicílico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 5,
+            "code": "MED-005",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 6,
+            "code": "MED-006",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos",
+            "active": false
+          },
+          {
+            "id": 7,
+            "code": "MED-007",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 8,
+            "code": "PARA",
+            "name": "Dolo-Neurobión",
+            "genericName": "Diclofenaco/Complejo B",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 2,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 9,
+            "code": "INS-001",
+            "name": "Paracetamol de prueba (insumo)",
+            "genericName": "Paracetamol",
+            "presentation": "Sobre",
+            "stock": 50,
+            "category": "Insumos"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Ibuprofeno 400 mg",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 20,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 11,
+            "code": "MED-011",
+            "name": "ACIDO FOLICO 5 MG",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 4,
+            "category": "Medicamentos"
+          }
+        ],
+        "text": "paracetamol"
+      },
+      "expected": [
+        1,
+        2
+      ]
+    },
+    {
+      "name": "sugerencias de la receta · sin texto",
+      "input": {
+        "check": "prescription",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml suspensión",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Ácido fólico 5 mg",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 4,
+            "code": "MED-004",
+            "name": "acido acetilsalicílico 100 mg",
+            "genericName": "Ácido acetilsalicílico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 5,
+            "code": "MED-005",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 6,
+            "code": "MED-006",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos",
+            "active": false
+          },
+          {
+            "id": 7,
+            "code": "MED-007",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 8,
+            "code": "PARA",
+            "name": "Dolo-Neurobión",
+            "genericName": "Diclofenaco/Complejo B",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 2,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 9,
+            "code": "INS-001",
+            "name": "Paracetamol de prueba (insumo)",
+            "genericName": "Paracetamol",
+            "presentation": "Sobre",
+            "stock": 50,
+            "category": "Insumos"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Ibuprofeno 400 mg",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 20,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 11,
+            "code": "MED-011",
+            "name": "ACIDO FOLICO 5 MG",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 4,
+            "category": "Medicamentos"
+          }
+        ],
+        "text": null
+      },
+      "expected": [
+        4,
+        11,
+        3,
+        7,
+        8,
+        10,
+        1,
+        5,
+        6,
+        2
+      ]
+    },
+    {
+      "name": "catálogo de medicamentos · también por presentación y sin tope",
+      "input": {
+        "check": "browser",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml suspensión",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Ácido fólico 5 mg",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 4,
+            "code": "MED-004",
+            "name": "acido acetilsalicílico 100 mg",
+            "genericName": "Ácido acetilsalicílico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 5,
+            "code": "MED-005",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 6,
+            "code": "MED-006",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos",
+            "active": false
+          },
+          {
+            "id": 7,
+            "code": "MED-007",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 8,
+            "code": "PARA",
+            "name": "Dolo-Neurobión",
+            "genericName": "Diclofenaco/Complejo B",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 2,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 9,
+            "code": "INS-001",
+            "name": "Paracetamol de prueba (insumo)",
+            "genericName": "Paracetamol",
+            "presentation": "Sobre",
+            "stock": 50,
+            "category": "Insumos"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Ibuprofeno 400 mg",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 20,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 11,
+            "code": "MED-011",
+            "name": "ACIDO FOLICO 5 MG",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 4,
+            "category": "Medicamentos"
+          }
+        ],
+        "text": "tabletas"
+      },
+      "expected": [
+        4,
+        11,
+        3,
+        8,
+        10,
+        1
+      ]
+    },
+    {
+      "name": "catálogo de medicamentos · con mayúsculas y acentos",
+      "input": {
+        "check": "browser",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml suspensión",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Ácido fólico 5 mg",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 4,
+            "code": "MED-004",
+            "name": "acido acetilsalicílico 100 mg",
+            "genericName": "Ácido acetilsalicílico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 10,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 5,
+            "code": "MED-005",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 0,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 6,
+            "code": "MED-006",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos",
+            "active": false
+          },
+          {
+            "id": 7,
+            "code": "MED-007",
+            "name": "Amoxicilina 500 mg",
+            "genericName": "Amoxicilina",
+            "presentation": "Caja con 12 cápsulas",
+            "stock": 5,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 8,
+            "code": "PARA",
+            "name": "Dolo-Neurobión",
+            "genericName": "Diclofenaco/Complejo B",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 2,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 9,
+            "code": "INS-001",
+            "name": "Paracetamol de prueba (insumo)",
+            "genericName": "Paracetamol",
+            "presentation": "Sobre",
+            "stock": 50,
+            "category": "Insumos"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Ibuprofeno 400 mg",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 20,
+            "category": "Medicamentos"
+          },
+          {
+            "id": 11,
+            "code": "MED-011",
+            "name": "ACIDO FOLICO 5 MG",
+            "genericName": "Ácido fólico",
+            "presentation": "Caja con 30 tabletas",
+            "stock": 4,
+            "category": "Medicamentos"
+          }
+        ],
+        "text": "ÁCIDO"
+      },
+      "expected": [
+        4,
+        11,
+        3
+      ]
+    }
+  ]
+}

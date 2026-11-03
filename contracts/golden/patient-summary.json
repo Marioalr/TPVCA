@@ -1,0 +1,571 @@
+{
+  "rule": "patient-summary",
+  "culture": "es-MX",
+  "today": "2026-10-11",
+  "now": "2026-10-12T05:30:00.0000000+00:00",
+  "contract": 20,
+  "notes": [
+    "El resumen derivado del expediente (Services/Rules/PatientSummaryRules, paso 8.22): NextAppointmentDate, NextAppointmentTime, NextAppointmentReason, NextAppointmentNotes y LastVisit son columnas derivadas. Cada equipo las calcula después de cada guardado y de cada bajada (y la PC, completo al abrir), suben como información y nunca se aplican al bajar, salvo al crear la fila. Agendar ya no escribe el expediente.",
+    "next-appointment: de las citas del expediente que no están 'Cancelada' ni 'Atendida' y caen 'today' (el día del consultorio) o después, la primera por fecha, luego por hora ('time', abajo) y luego por SyncId en minúsculas (orden ordinal). La fecha va sin hora (dateOnly) y la hora, el motivo y las notas tal como están en la cita. Sin ninguna: fecha nula y textos ''. 'today' es el día de VectorNow en cada zona: 11/10 en la Ciudad de México, 12/10 en UTC.",
+    "last-visit: la fecha (clinicLocal, con hora) de la consulta más reciente del expediente; sin consultas no hay nada que calcular (null) y se queda la que tenía.",
+    "time: H:mm o HH:mm, con :ss opcional, y opcionalmente AM o PM (también a.m., p. m., sin distinguir mayúsculas ni espacios); lo que no se puede leer cuenta como las 10:00. Solo sirve para ordenar."
+  ],
+  "cases": [
+    {
+      "name": "UTC · próxima cita · la primera pendiente por fecha y hora, no la última que se guardó",
+      "input": {
+        "check": "next-appointment",
+        "zone": "UTC",
+        "today": "2026-10-12",
+        "appointments": [
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000001",
+            "date": "2026-10-21",
+            "time": "09:00",
+            "status": "Programada",
+            "reason": "Control",
+            "notes": "Nota 1"
+          },
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000002",
+            "date": "2026-10-14",
+            "time": "12:00",
+            "status": "Confirmada",
+            "reason": "Estudios",
+            "notes": "Nota 2"
+          },
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000003",
+            "date": "2026-10-14",
+            "time": "10:30",
+            "status": "Programada",
+            "reason": "Revisión",
+            "notes": "Nota 3"
+          }
+        ]
+      },
+      "expected": {
+        "NextAppointmentDate": "2026-10-14 00:00:00.0000000",
+        "NextAppointmentTime": "10:30",
+        "NextAppointmentReason": "Revisión",
+        "NextAppointmentNotes": "Nota 3"
+      }
+    },
+    {
+      "name": "UTC · próxima cita · las atendidas y las canceladas no cuentan",
+      "input": {
+        "check": "next-appointment",
+        "zone": "UTC",
+        "today": "2026-10-12",
+        "appointments": [
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000004",
+            "date": "2026-10-12",
+            "time": "08:00",
+            "status": "Atendida",
+            "reason": "Curación",
+            "notes": "Nota 4"
+          },
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000005",
+            "date": "2026-10-13",
+            "time": "08:00",
+            "status": "Cancelada",
+            "reason": "Cancelada",
+            "notes": "Nota 5"
+          },
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000006",
+            "date": "2026-10-20",
+            "time": "08:00",
+            "status": "Programada",
+            "reason": "Control",
+            "notes": "Nota 6"
+          }
+        ]
+      },
+      "expected": {
+        "NextAppointmentDate": "2026-10-20 00:00:00.0000000",
+        "NextAppointmentTime": "08:00",
+        "NextAppointmentReason": "Control",
+        "NextAppointmentNotes": "Nota 6"
+      }
+    },
+    {
+      "name": "UTC · próxima cita · hoy cuenta; ayer no (11/10 en la Ciudad de México y 12/10 en UTC)",
+      "input": {
+        "check": "next-appointment",
+        "zone": "UTC",
+        "today": "2026-10-12",
+        "appointments": [
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000007",
+            "date": "2026-10-11",
+            "time": "18:00",
+            "status": "Programada",
+            "reason": "Del 11",
+            "notes": "Nota 7"
+          },
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000008",
+            "date": "2026-10-12",
+            "time": "07:00",
+            "status": "Programada",
+            "reason": "Del 12",
+            "notes": "Nota 8"
+          },
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000009",
+            "date": "2026-10-30",
+            "time": "07:00",
+            "status": "Programada",
+            "reason": "Después",
+            "notes": "Nota 9"
+          }
+        ]
+      },
+      "expected": {
+        "NextAppointmentDate": "2026-10-12 00:00:00.0000000",
+        "NextAppointmentTime": "07:00",
+        "NextAppointmentReason": "Del 12",
+        "NextAppointmentNotes": "Nota 8"
+      }
+    },
+    {
+      "name": "UTC · próxima cita · misma fecha y hora: por SyncId en minúsculas",
+      "input": {
+        "check": "next-appointment",
+        "zone": "UTC",
+        "today": "2026-10-12",
+        "appointments": [
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000011",
+            "date": "2026-10-15",
+            "time": "09:00",
+            "status": "Programada",
+            "reason": "Segunda",
+            "notes": "Nota 11"
+          },
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000010",
+            "date": "2026-10-15",
+            "time": "09:00",
+            "status": "Programada",
+            "reason": "Primera",
+            "notes": "Nota 10"
+          }
+        ]
+      },
+      "expected": {
+        "NextAppointmentDate": "2026-10-15 00:00:00.0000000",
+        "NextAppointmentTime": "09:00",
+        "NextAppointmentReason": "Primera",
+        "NextAppointmentNotes": "Nota 10"
+      }
+    },
+    {
+      "name": "UTC · próxima cita · hora con AM/PM y una que no se puede leer (cuenta como las 10:00)",
+      "input": {
+        "check": "next-appointment",
+        "zone": "UTC",
+        "today": "2026-10-12",
+        "appointments": [
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000012",
+            "date": "2026-10-16",
+            "time": "9:30 p. m.",
+            "status": "Programada",
+            "reason": "Noche",
+            "notes": "Nota 12"
+          },
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000013",
+            "date": "2026-10-16",
+            "time": "mediodía",
+            "status": "Programada",
+            "reason": "Sin hora",
+            "notes": "Nota 13"
+          },
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000014",
+            "date": "2026-10-16",
+            "time": "09:15 AM",
+            "status": "Programada",
+            "reason": "Mañana",
+            "notes": "Nota 14"
+          }
+        ]
+      },
+      "expected": {
+        "NextAppointmentDate": "2026-10-16 00:00:00.0000000",
+        "NextAppointmentTime": "09:15 AM",
+        "NextAppointmentReason": "Mañana",
+        "NextAppointmentNotes": "Nota 14"
+      }
+    },
+    {
+      "name": "UTC · próxima cita · sin citas pendientes: sin próxima cita",
+      "input": {
+        "check": "next-appointment",
+        "zone": "UTC",
+        "today": "2026-10-12",
+        "appointments": [
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000015",
+            "date": "2026-10-01",
+            "time": "09:00",
+            "status": "Programada",
+            "reason": "Pasada",
+            "notes": "Nota 15"
+          }
+        ]
+      },
+      "expected": {
+        "NextAppointmentDate": null,
+        "NextAppointmentTime": "",
+        "NextAppointmentReason": "",
+        "NextAppointmentNotes": ""
+      }
+    },
+    {
+      "name": "America/Mexico_City · próxima cita · la primera pendiente por fecha y hora, no la última que se guardó",
+      "input": {
+        "check": "next-appointment",
+        "zone": "America/Mexico_City",
+        "today": "2026-10-11",
+        "appointments": [
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000001",
+            "date": "2026-10-21",
+            "time": "09:00",
+            "status": "Programada",
+            "reason": "Control",
+            "notes": "Nota 1"
+          },
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000002",
+            "date": "2026-10-14",
+            "time": "12:00",
+            "status": "Confirmada",
+            "reason": "Estudios",
+            "notes": "Nota 2"
+          },
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000003",
+            "date": "2026-10-14",
+            "time": "10:30",
+            "status": "Programada",
+            "reason": "Revisión",
+            "notes": "Nota 3"
+          }
+        ]
+      },
+      "expected": {
+        "NextAppointmentDate": "2026-10-14 00:00:00.0000000",
+        "NextAppointmentTime": "10:30",
+        "NextAppointmentReason": "Revisión",
+        "NextAppointmentNotes": "Nota 3"
+      }
+    },
+    {
+      "name": "America/Mexico_City · próxima cita · las atendidas y las canceladas no cuentan",
+      "input": {
+        "check": "next-appointment",
+        "zone": "America/Mexico_City",
+        "today": "2026-10-11",
+        "appointments": [
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000004",
+            "date": "2026-10-12",
+            "time": "08:00",
+            "status": "Atendida",
+            "reason": "Curación",
+            "notes": "Nota 4"
+          },
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000005",
+            "date": "2026-10-13",
+            "time": "08:00",
+            "status": "Cancelada",
+            "reason": "Cancelada",
+            "notes": "Nota 5"
+          },
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000006",
+            "date": "2026-10-20",
+            "time": "08:00",
+            "status": "Programada",
+            "reason": "Control",
+            "notes": "Nota 6"
+          }
+        ]
+      },
+      "expected": {
+        "NextAppointmentDate": "2026-10-20 00:00:00.0000000",
+        "NextAppointmentTime": "08:00",
+        "NextAppointmentReason": "Control",
+        "NextAppointmentNotes": "Nota 6"
+      }
+    },
+    {
+      "name": "America/Mexico_City · próxima cita · hoy cuenta; ayer no (11/10 en la Ciudad de México y 12/10 en UTC)",
+      "input": {
+        "check": "next-appointment",
+        "zone": "America/Mexico_City",
+        "today": "2026-10-11",
+        "appointments": [
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000007",
+            "date": "2026-10-11",
+            "time": "18:00",
+            "status": "Programada",
+            "reason": "Del 11",
+            "notes": "Nota 7"
+          },
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000008",
+            "date": "2026-10-12",
+            "time": "07:00",
+            "status": "Programada",
+            "reason": "Del 12",
+            "notes": "Nota 8"
+          },
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000009",
+            "date": "2026-10-30",
+            "time": "07:00",
+            "status": "Programada",
+            "reason": "Después",
+            "notes": "Nota 9"
+          }
+        ]
+      },
+      "expected": {
+        "NextAppointmentDate": "2026-10-11 00:00:00.0000000",
+        "NextAppointmentTime": "18:00",
+        "NextAppointmentReason": "Del 11",
+        "NextAppointmentNotes": "Nota 7"
+      }
+    },
+    {
+      "name": "America/Mexico_City · próxima cita · misma fecha y hora: por SyncId en minúsculas",
+      "input": {
+        "check": "next-appointment",
+        "zone": "America/Mexico_City",
+        "today": "2026-10-11",
+        "appointments": [
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000011",
+            "date": "2026-10-15",
+            "time": "09:00",
+            "status": "Programada",
+            "reason": "Segunda",
+            "notes": "Nota 11"
+          },
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000010",
+            "date": "2026-10-15",
+            "time": "09:00",
+            "status": "Programada",
+            "reason": "Primera",
+            "notes": "Nota 10"
+          }
+        ]
+      },
+      "expected": {
+        "NextAppointmentDate": "2026-10-15 00:00:00.0000000",
+        "NextAppointmentTime": "09:00",
+        "NextAppointmentReason": "Primera",
+        "NextAppointmentNotes": "Nota 10"
+      }
+    },
+    {
+      "name": "America/Mexico_City · próxima cita · hora con AM/PM y una que no se puede leer (cuenta como las 10:00)",
+      "input": {
+        "check": "next-appointment",
+        "zone": "America/Mexico_City",
+        "today": "2026-10-11",
+        "appointments": [
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000012",
+            "date": "2026-10-16",
+            "time": "9:30 p. m.",
+            "status": "Programada",
+            "reason": "Noche",
+            "notes": "Nota 12"
+          },
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000013",
+            "date": "2026-10-16",
+            "time": "mediodía",
+            "status": "Programada",
+            "reason": "Sin hora",
+            "notes": "Nota 13"
+          },
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000014",
+            "date": "2026-10-16",
+            "time": "09:15 AM",
+            "status": "Programada",
+            "reason": "Mañana",
+            "notes": "Nota 14"
+          }
+        ]
+      },
+      "expected": {
+        "NextAppointmentDate": "2026-10-16 00:00:00.0000000",
+        "NextAppointmentTime": "09:15 AM",
+        "NextAppointmentReason": "Mañana",
+        "NextAppointmentNotes": "Nota 14"
+      }
+    },
+    {
+      "name": "America/Mexico_City · próxima cita · sin citas pendientes: sin próxima cita",
+      "input": {
+        "check": "next-appointment",
+        "zone": "America/Mexico_City",
+        "today": "2026-10-11",
+        "appointments": [
+          {
+            "syncId": "c0000000-0000-4000-8000-000000000015",
+            "date": "2026-10-01",
+            "time": "09:00",
+            "status": "Programada",
+            "reason": "Pasada",
+            "notes": "Nota 15"
+          }
+        ]
+      },
+      "expected": {
+        "NextAppointmentDate": null,
+        "NextAppointmentTime": "",
+        "NextAppointmentReason": "",
+        "NextAppointmentNotes": ""
+      }
+    },
+    {
+      "name": "última visita · la consulta más reciente, con su hora",
+      "input": {
+        "check": "last-visit",
+        "consultationDates": [
+          "2026-10-01 09:00:00.0000000",
+          "2026-10-09 18:30:00.0000000",
+          "2026-09-01 00:00:00.0000000"
+        ]
+      },
+      "expected": "2026-10-09 18:30:00.0000000"
+    },
+    {
+      "name": "última visita · sin consultas: nada que calcular (se queda la que tenía, la del alta)",
+      "input": {
+        "check": "last-visit",
+        "consultationDates": []
+      },
+      "expected": null
+    },
+    {
+      "name": "hora · '9:05'",
+      "input": {
+        "check": "time",
+        "time": "9:05"
+      },
+      "expected": "09:05:00"
+    },
+    {
+      "name": "hora · '16:00'",
+      "input": {
+        "check": "time",
+        "time": "16:00"
+      },
+      "expected": "16:00:00"
+    },
+    {
+      "name": "hora · '16:00:30'",
+      "input": {
+        "check": "time",
+        "time": "16:00:30"
+      },
+      "expected": "16:00:30"
+    },
+    {
+      "name": "hora · '09:00 AM'",
+      "input": {
+        "check": "time",
+        "time": "09:00 AM"
+      },
+      "expected": "09:00:00"
+    },
+    {
+      "name": "hora · '9:15 p. m.'",
+      "input": {
+        "check": "time",
+        "time": "9:15 p. m."
+      },
+      "expected": "21:15:00"
+    },
+    {
+      "name": "hora · '12:30 am'",
+      "input": {
+        "check": "time",
+        "time": "12:30 am"
+      },
+      "expected": "00:30:00"
+    },
+    {
+      "name": "hora · '12:30 PM'",
+      "input": {
+        "check": "time",
+        "time": "12:30 PM"
+      },
+      "expected": "12:30:00"
+    },
+    {
+      "name": "hora · '1:05pm'",
+      "input": {
+        "check": "time",
+        "time": "1:05pm"
+      },
+      "expected": "13:05:00"
+    },
+    {
+      "name": "hora · ' 07:45 '",
+      "input": {
+        "check": "time",
+        "time": " 07:45 "
+      },
+      "expected": "07:45:00"
+    },
+    {
+      "name": "hora · 'mediodía'",
+      "input": {
+        "check": "time",
+        "time": "mediodía"
+      },
+      "expected": "10:00:00"
+    },
+    {
+      "name": "hora · '25:00'",
+      "input": {
+        "check": "time",
+        "time": "25:00"
+      },
+      "expected": "10:00:00"
+    },
+    {
+      "name": "hora · '9:5'",
+      "input": {
+        "check": "time",
+        "time": "9:5"
+      },
+      "expected": "10:00:00"
+    },
+    {
+      "name": "hora · ''",
+      "input": {
+        "check": "time",
+        "time": ""
+      },
+      "expected": "10:00:00"
+    }
+  ]
+}

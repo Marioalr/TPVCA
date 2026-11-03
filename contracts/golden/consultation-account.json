@@ -1,0 +1,694 @@
+{
+  "rule": "consultation-account",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "La cuenta de la consulta (Services/Rules/ConsultationAccountRules.cs, antes en ConsultationAccount y ConsultationService): el honorario, el total y cómo se suman y se quitan renglones. Importes como texto decimal invariante. Lo que cada hoja carga está en sheet-charges.json.",
+    "fee: entre los servicios activos, el de Id feeOverrideId (la consulta recibida de otro equipo trae el honorario que usaba aquel, por su SyncId: handoff-payload.json), si no el de código SERV-001, si no el primero de categoría 'Consulta', si no el primero cuyo nombre contiene 'Consulta' (las tres sin distinguir mayúsculas; los acentos cuentan); name y amount son los suyos o 'Consulta Médica General' y 300.00. En la lista del catálogo, en su orden.",
+    "account: add suma 'quantity' piezas al renglón con el mismo lineId (solo cambia su cantidad) o agrega uno al final; con cantidad 0 o negativa no hace nada (false). remove quita piezas del renglón con ese lineId: si tiene más se reduce, si no sale; false sin renglón o con cantidad 0 o negativa. lineId es el Id local del renglón (el producto, -Id del servicio o el de un cargo libre); en Kotlin cada renglón se reconoce con la regla de synced-json-columns.json. total = honorario + Σ cantidad × precio.",
+    "dispense-default («Se surte aquí» al agregar un medicamento a la receta, decisión del médico del 2026-10-22): true si hay producto y tiene existencias: stock > 0 o, en un producto de piezas sueltas (unitsPerPackage > 1), piezas disponibles > 0 (max(0, stock) × unitsPerPackage + max(0, openedUnitsRemaining)); false con 0 o en negativo (sin paquete abierto) y sin producto. Desmarcado no se carga; el médico lo puede marcar a mano y entonces se carga con prescription-quantity y el aviso de existencias.",
+    "prescription-quantity («Se surte aquí»): las piezas que carga un medicamento recetado, su cantidad recomendada (1 como mínimo), o null si no hay producto (se receta igual, sin cobrar). Revisión 20 (decisión del médico del 2026-10-22: un inventario mal contado nunca impide cobrar): las existencias ya no cuentan; antes, con menos existencias que la cantidad, era null. Si no alcanzan se avisa sin bloquear con el texto de checkout.json (stockWarning).",
+    "line-texts: el código de un cargo libre (el suyo o 'CARGO' si está vacío), el genérico del renglón de un servicio 'Servicio Clínico • {categoría}' y su presentación 'Duración: N min'."
+  ],
+  "cases": [
+    {
+      "name": "honorario · el código SERV-001 gana a la categoría",
+      "input": {
+        "check": "fee",
+        "services": [
+          {
+            "id": 2,
+            "code": "SERV-010",
+            "name": "Consulta de especialidad",
+            "category": "Consulta",
+            "price": "500.00",
+            "minutes": 20
+          },
+          {
+            "id": 1,
+            "code": "serv-001",
+            "name": "Consulta general",
+            "category": "Consultas",
+            "price": "350.00",
+            "minutes": 20
+          }
+        ],
+        "feeOverrideId": null
+      },
+      "expected": {
+        "serviceId": 1,
+        "name": "Consulta general",
+        "amount": "350.00"
+      }
+    },
+    {
+      "name": "honorario · el que usaba el equipo que envió la consulta",
+      "input": {
+        "check": "fee",
+        "services": [
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta general",
+            "category": "Consulta",
+            "price": "350.00",
+            "minutes": 20
+          },
+          {
+            "id": 7,
+            "code": "SERV-007",
+            "name": "Consulta nocturna",
+            "category": "Consulta",
+            "price": "600.00",
+            "minutes": 20
+          }
+        ],
+        "feeOverrideId": 7
+      },
+      "expected": {
+        "serviceId": 7,
+        "name": "Consulta nocturna",
+        "amount": "600.00"
+      }
+    },
+    {
+      "name": "honorario · el que envió ya no está activo: SERV-001",
+      "input": {
+        "check": "fee",
+        "services": [
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta general",
+            "category": "Consulta",
+            "price": "350.00",
+            "minutes": 20
+          },
+          {
+            "id": 7,
+            "code": "SERV-007",
+            "name": "Consulta nocturna",
+            "category": "Consulta",
+            "price": "600.00",
+            "minutes": 20,
+            "active": false
+          }
+        ],
+        "feeOverrideId": 7
+      },
+      "expected": {
+        "serviceId": 1,
+        "name": "Consulta general",
+        "amount": "350.00"
+      }
+    },
+    {
+      "name": "honorario · la categoría Consulta sin distinguir mayúsculas",
+      "input": {
+        "check": "fee",
+        "services": [
+          {
+            "id": 3,
+            "code": "SERV-003",
+            "name": "Sutura",
+            "category": "Procedimientos",
+            "price": "450.00",
+            "minutes": 20
+          },
+          {
+            "id": 4,
+            "code": "C-1",
+            "name": "Valoración",
+            "category": "CONSULTA",
+            "price": "280.00",
+            "minutes": 20
+          }
+        ],
+        "feeOverrideId": null
+      },
+      "expected": {
+        "serviceId": 4,
+        "name": "Valoración",
+        "amount": "280.00"
+      }
+    },
+    {
+      "name": "honorario · el nombre que contiene Consulta",
+      "input": {
+        "check": "fee",
+        "services": [
+          {
+            "id": 3,
+            "code": "SERV-003",
+            "name": "Sutura",
+            "category": "Procedimientos",
+            "price": "450.00",
+            "minutes": 20
+          },
+          {
+            "id": 5,
+            "code": "X-5",
+            "name": "Primera consulta",
+            "category": "Otros",
+            "price": "320.50",
+            "minutes": 20
+          }
+        ],
+        "feeOverrideId": null
+      },
+      "expected": {
+        "serviceId": 5,
+        "name": "Primera consulta",
+        "amount": "320.50"
+      }
+    },
+    {
+      "name": "honorario · SERV-001 inactivo no cuenta",
+      "input": {
+        "check": "fee",
+        "services": [
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta general",
+            "category": "Consulta",
+            "price": "350.00",
+            "minutes": 20,
+            "active": false
+          },
+          {
+            "id": 5,
+            "code": "X-5",
+            "name": "Primera consulta",
+            "category": "Otros",
+            "price": "320.50",
+            "minutes": 20
+          }
+        ],
+        "feeOverrideId": null
+      },
+      "expected": {
+        "serviceId": 5,
+        "name": "Primera consulta",
+        "amount": "320.50"
+      }
+    },
+    {
+      "name": "honorario · sin servicio de consulta: 300 y su nombre",
+      "input": {
+        "check": "fee",
+        "services": [
+          {
+            "id": 3,
+            "code": "SERV-003",
+            "name": "Sutura",
+            "category": "Procedimientos",
+            "price": "450.00",
+            "minutes": 20
+          }
+        ],
+        "feeOverrideId": null
+      },
+      "expected": {
+        "serviceId": null,
+        "name": "Consulta Médica General",
+        "amount": "300.00"
+      }
+    },
+    {
+      "name": "honorario · sin catálogo",
+      "input": {
+        "check": "fee",
+        "services": [],
+        "feeOverrideId": null
+      },
+      "expected": {
+        "serviceId": null,
+        "name": "Consulta Médica General",
+        "amount": "300.00"
+      }
+    },
+    {
+      "name": "cuenta · el mismo renglón suma piezas y conserva su nombre y precio",
+      "input": {
+        "check": "account",
+        "feeAmount": "350.00",
+        "ops": [
+          {
+            "op": "add",
+            "lineId": 10,
+            "code": "X",
+            "name": "Gasa",
+            "unitPrice": "18.00",
+            "quantity": 2
+          },
+          {
+            "op": "add",
+            "lineId": -3,
+            "code": "X",
+            "name": "Sutura",
+            "unitPrice": "450.00",
+            "quantity": 1
+          },
+          {
+            "op": "add",
+            "lineId": 10,
+            "code": "X",
+            "name": "Gasa (otro nombre)",
+            "unitPrice": "20.00",
+            "quantity": 3
+          }
+        ]
+      },
+      "expected": {
+        "results": [
+          true,
+          true,
+          true
+        ],
+        "items": [
+          {
+            "lineId": 10,
+            "name": "Gasa",
+            "unitPrice": "18.00",
+            "quantity": 5,
+            "subtotal": "90.00"
+          },
+          {
+            "lineId": -3,
+            "name": "Sutura",
+            "unitPrice": "450.00",
+            "quantity": 1,
+            "subtotal": "450.00"
+          }
+        ],
+        "total": "890.00"
+      }
+    },
+    {
+      "name": "cuenta · cantidad 0 o negativa no agrega",
+      "input": {
+        "check": "account",
+        "feeAmount": "300",
+        "ops": [
+          {
+            "op": "add",
+            "lineId": 10,
+            "code": "X",
+            "name": "Gasa",
+            "unitPrice": "18.00",
+            "quantity": 0
+          },
+          {
+            "op": "add",
+            "lineId": 11,
+            "code": "X",
+            "name": "Venda",
+            "unitPrice": "25.00",
+            "quantity": -1
+          }
+        ]
+      },
+      "expected": {
+        "results": [
+          false,
+          false
+        ],
+        "items": [],
+        "total": "300"
+      }
+    },
+    {
+      "name": "cuenta · quitar menos de lo que hay reduce; igual o más lo quita",
+      "input": {
+        "check": "account",
+        "feeAmount": "300",
+        "ops": [
+          {
+            "op": "add",
+            "lineId": 10,
+            "code": "X",
+            "name": "Gasa",
+            "unitPrice": "18.50",
+            "quantity": 5
+          },
+          {
+            "op": "add",
+            "lineId": 11,
+            "code": "X",
+            "name": "Venda",
+            "unitPrice": "25.00",
+            "quantity": 1
+          },
+          {
+            "op": "remove",
+            "lineId": 10,
+            "quantity": 2
+          },
+          {
+            "op": "remove",
+            "lineId": 11,
+            "quantity": 3
+          }
+        ]
+      },
+      "expected": {
+        "results": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "items": [
+          {
+            "lineId": 10,
+            "name": "Gasa",
+            "unitPrice": "18.50",
+            "quantity": 3,
+            "subtotal": "55.50"
+          }
+        ],
+        "total": "355.50"
+      }
+    },
+    {
+      "name": "cuenta · quitar lo que no está o 0 no hace nada",
+      "input": {
+        "check": "account",
+        "feeAmount": "300",
+        "ops": [
+          {
+            "op": "add",
+            "lineId": 10,
+            "code": "X",
+            "name": "Gasa",
+            "unitPrice": "18.00",
+            "quantity": 1
+          },
+          {
+            "op": "remove",
+            "lineId": 99,
+            "quantity": 1
+          },
+          {
+            "op": "remove",
+            "lineId": 10,
+            "quantity": 0
+          }
+        ]
+      },
+      "expected": {
+        "results": [
+          true,
+          false,
+          false
+        ],
+        "items": [
+          {
+            "lineId": 10,
+            "name": "Gasa",
+            "unitPrice": "18.00",
+            "quantity": 1,
+            "subtotal": "18.00"
+          }
+        ],
+        "total": "318.00"
+      }
+    },
+    {
+      "name": "cuenta · centavos",
+      "input": {
+        "check": "account",
+        "feeAmount": "0.01",
+        "ops": [
+          {
+            "op": "add",
+            "lineId": 10,
+            "code": "X",
+            "name": "A",
+            "unitPrice": "0.10",
+            "quantity": 3
+          },
+          {
+            "op": "add",
+            "lineId": 11,
+            "code": "X",
+            "name": "B",
+            "unitPrice": "33.33",
+            "quantity": 3
+          }
+        ]
+      },
+      "expected": {
+        "results": [
+          true,
+          true
+        ],
+        "items": [
+          {
+            "lineId": 10,
+            "name": "A",
+            "unitPrice": "0.10",
+            "quantity": 3,
+            "subtotal": "0.30"
+          },
+          {
+            "lineId": 11,
+            "name": "B",
+            "unitPrice": "33.33",
+            "quantity": 3,
+            "subtotal": "99.99"
+          }
+        ],
+        "total": "100.30"
+      }
+    },
+    {
+      "name": "se surte aquí · alcanzan las existencias",
+      "input": {
+        "check": "prescription-quantity",
+        "recommendedQuantity": 2,
+        "product": {
+          "id": 1,
+          "code": "MED-001",
+          "name": "Paracetamol 500 mg",
+          "stock": 5
+        }
+      },
+      "expected": 2
+    },
+    {
+      "name": "se surte aquí · existencias justas",
+      "input": {
+        "check": "prescription-quantity",
+        "recommendedQuantity": 2,
+        "product": {
+          "id": 1,
+          "code": "MED-001",
+          "name": "Paracetamol 500 mg",
+          "stock": 2
+        }
+      },
+      "expected": 2
+    },
+    {
+      "name": "se surte aquí · no alcanzan: se carga igual (revisión 20; antes se recetaba sin cobrar)",
+      "input": {
+        "check": "prescription-quantity",
+        "recommendedQuantity": 3,
+        "product": {
+          "id": 1,
+          "code": "MED-001",
+          "name": "Paracetamol 500 mg",
+          "stock": 2
+        }
+      },
+      "expected": 3
+    },
+    {
+      "name": "se surte aquí · sin existencias: se carga igual",
+      "input": {
+        "check": "prescription-quantity",
+        "recommendedQuantity": 2,
+        "product": {
+          "id": 1,
+          "code": "MED-001",
+          "name": "Paracetamol 500 mg",
+          "stock": 0
+        }
+      },
+      "expected": 2
+    },
+    {
+      "name": "se surte aquí · existencias en negativo: se carga igual",
+      "input": {
+        "check": "prescription-quantity",
+        "recommendedQuantity": 1,
+        "product": {
+          "id": 1,
+          "code": "MED-001",
+          "name": "Paracetamol 500 mg",
+          "stock": -3
+        }
+      },
+      "expected": 1
+    },
+    {
+      "name": "se surte aquí · cantidad 0 cuenta como 1",
+      "input": {
+        "check": "prescription-quantity",
+        "recommendedQuantity": 0,
+        "product": {
+          "id": 1,
+          "code": "MED-001",
+          "name": "Paracetamol 500 mg",
+          "stock": 1
+        }
+      },
+      "expected": 1
+    },
+    {
+      "name": "se surte aquí · sin producto",
+      "input": {
+        "check": "prescription-quantity",
+        "recommendedQuantity": 1,
+        "product": null
+      },
+      "expected": null
+    },
+    {
+      "name": "se surte aquí por defecto · con existencias: marcado",
+      "input": {
+        "check": "dispense-default",
+        "product": {
+          "id": 1,
+          "code": "MED-001",
+          "name": "Paracetamol 500 mg",
+          "stock": 3
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "se surte aquí por defecto · una sola: marcado",
+      "input": {
+        "check": "dispense-default",
+        "product": {
+          "id": 1,
+          "code": "MED-001",
+          "name": "Paracetamol 500 mg",
+          "stock": 1
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "se surte aquí por defecto · sin existencias: desmarcado",
+      "input": {
+        "check": "dispense-default",
+        "product": {
+          "id": 1,
+          "code": "MED-001",
+          "name": "Paracetamol 500 mg",
+          "stock": 0
+        }
+      },
+      "expected": false
+    },
+    {
+      "name": "se surte aquí por defecto · en negativo: desmarcado",
+      "input": {
+        "check": "dispense-default",
+        "product": {
+          "id": 1,
+          "code": "MED-001",
+          "name": "Paracetamol 500 mg",
+          "stock": -2
+        }
+      },
+      "expected": false
+    },
+    {
+      "name": "se surte aquí por defecto · piezas sueltas: sin paquetes pero con el paquete abierto, marcado",
+      "input": {
+        "check": "dispense-default",
+        "product": {
+          "id": 1,
+          "code": "MED-001",
+          "name": "Paracetamol 500 mg",
+          "stock": 0,
+          "unitsPerPackage": 10,
+          "openedUnitsRemaining": 4
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "se surte aquí por defecto · piezas sueltas: en negativo aunque quede un paquete abierto, marcado (cuentan las piezas disponibles)",
+      "input": {
+        "check": "dispense-default",
+        "product": {
+          "id": 1,
+          "code": "MED-001",
+          "name": "Paracetamol 500 mg",
+          "stock": -1,
+          "unitsPerPackage": 10,
+          "openedUnitsRemaining": 4
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "se surte aquí por defecto · piezas sueltas: sin paquetes ni piezas, desmarcado",
+      "input": {
+        "check": "dispense-default",
+        "product": {
+          "id": 1,
+          "code": "MED-001",
+          "name": "Paracetamol 500 mg",
+          "stock": 0,
+          "unitsPerPackage": 10
+        }
+      },
+      "expected": false
+    },
+    {
+      "name": "se surte aquí por defecto · no está en el inventario: desmarcado",
+      "input": {
+        "check": "dispense-default",
+        "product": null
+      },
+      "expected": false
+    },
+    {
+      "name": "textos del renglón · servicio",
+      "input": {
+        "check": "line-texts",
+        "code": "SERV-002",
+        "category": "Curaciones",
+        "minutes": 20
+      },
+      "expected": {
+        "code": "SERV-002",
+        "generic": "Servicio Clínico • Curaciones",
+        "presentation": "Duración: 20 min"
+      }
+    },
+    {
+      "name": "textos del renglón · cargo libre sin código",
+      "input": {
+        "check": "line-texts",
+        "code": "  ",
+        "category": "Otros",
+        "minutes": 0
+      },
+      "expected": {
+        "code": "CARGO",
+        "generic": "Servicio Clínico • Otros",
+        "presentation": "Duración: 0 min"
+      }
+    }
+  ]
+}

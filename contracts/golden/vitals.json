@@ -1,0 +1,561 @@
+{
+  "rule": "vitals",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Los signos de la consulta (Services/Rules/VitalSignsRules.cs): el IMC mientras se captura, el aviso de valores fuera de rango y el texto que se guarda en la nota. Lo que se captura llega como texto; cómo se lee de vuelta ese texto está en vitals-evolution.json.",
+    "bmi: peso y talla con coma o punto decimal, cultura invariante; con los dos y talla mayor que 0, la talla en metros (revisión 20, VitalSignsRules.HeightInMeters: más de 3 son centímetros y se divide entre 100 en decimal; es la misma regla con que vitals-evolution.json lee la nota; antes la captura no la convertía y 170 daba '0.0 kg/m² (Bajo peso)'), imc = peso / talla² en decimal y 'F1 kg/m² (clasificación)' (F1 de decimal: el punto medio hacia arriba); si no, 'Valores no disponibles'. bmi-category (OMS): < 18.5 'Bajo peso', < 25 'Peso normal', < 30 'Sobrepeso', < 35 'Obesidad Grado I', si no 'Obesidad Grado II+'.",
+    "warning: cada valor como double (coma = punto, sin espacios); en este orden y unidos por ' · ': Temp ≥ 38 'Temp {0.#} °C: fiebre', o 0 < Temp < 35.5 'hipotermia'; T/A 'sis/dia' ≥ 140 o ≥ 90 'T/A {0}/{0}: elevada', o 0 < sis < 90 'baja'; SpO₂ > 0 (≤ 1 se multiplica por 100) < 92 'SpO₂ {0} %: baja'; glucosa > 0, ≥ 200 'elevada' o < 70 'hipoglucemia'; FC > 0: adulto (sin edad o 12 años o más) > 100 'taquicardia', niño (menos de 12) > 140 'alta para la edad', y si no < 50 'bradicardia'. Los números con '0.#' o '0' de double con la cultura es-MX: .NET formatea el valor binario más corto y redondea el punto medio hacia arriba (38.25 → 38.3; 69.5 → 70, así que 'Glucosa 70 mg/dL: hipoglucemia' sale con 69.5).",
+    "format (lo que se guarda en PatientConsultation.VitalSigns al terminar): cada dato capturado sin espacios a los lados y unidos por ' | ': 'TA: {sin la / del final} mmHg', 'FC: … lpm', 'FR: … rpm', 'Temp: … °C', 'Peso: … kg', 'Talla: … m', 'Glucosa: … mg/dL', 'SpO2: {sin % al final}%', 'IMC: {el texto de bmi}' (no va si contiene 'no disponibles'). Lo vacío o solo espacios no va; sin nada, ''."
+  ],
+  "cases": [
+    {
+      "name": "IMC · peso normal",
+      "input": {
+        "check": "bmi",
+        "weight": "70",
+        "height": "1.75"
+      },
+      "expected": "22.9 kg/m² (Peso normal)"
+    },
+    {
+      "name": "IMC · coma decimal",
+      "input": {
+        "check": "bmi",
+        "weight": "70,5",
+        "height": "1,70"
+      },
+      "expected": "24.4 kg/m² (Peso normal)"
+    },
+    {
+      "name": "IMC · punto medio del F1 hacia arriba (22.25 → 22.3)",
+      "input": {
+        "check": "bmi",
+        "weight": "89",
+        "height": "2"
+      },
+      "expected": "22.3 kg/m² (Peso normal)"
+    },
+    {
+      "name": "IMC · bajo peso",
+      "input": {
+        "check": "bmi",
+        "weight": "45",
+        "height": "1.60"
+      },
+      "expected": "17.6 kg/m² (Bajo peso)"
+    },
+    {
+      "name": "IMC · sobrepeso",
+      "input": {
+        "check": "bmi",
+        "weight": "80",
+        "height": "1.70"
+      },
+      "expected": "27.7 kg/m² (Sobrepeso)"
+    },
+    {
+      "name": "IMC · obesidad grado I",
+      "input": {
+        "check": "bmi",
+        "weight": "95",
+        "height": "1.70"
+      },
+      "expected": "32.9 kg/m² (Obesidad Grado I)"
+    },
+    {
+      "name": "IMC · obesidad grado II+",
+      "input": {
+        "check": "bmi",
+        "weight": "120",
+        "height": "1.70"
+      },
+      "expected": "41.5 kg/m² (Obesidad Grado II+)"
+    },
+    {
+      "name": "IMC · talla en centímetros (revisión 20): 170 → 1.70 m, como al leer la nota",
+      "input": {
+        "check": "bmi",
+        "weight": "70",
+        "height": "170"
+      },
+      "expected": "24.2 kg/m² (Peso normal)"
+    },
+    {
+      "name": "IMC · talla en centímetros con decimales",
+      "input": {
+        "check": "bmi",
+        "weight": "15,5",
+        "height": "95,5"
+      },
+      "expected": "17.0 kg/m² (Bajo peso)"
+    },
+    {
+      "name": "IMC · 3 todavía son metros",
+      "input": {
+        "check": "bmi",
+        "weight": "70",
+        "height": "3"
+      },
+      "expected": "7.8 kg/m² (Bajo peso)"
+    },
+    {
+      "name": "IMC · 3.01 ya son centímetros (0.0301 m)",
+      "input": {
+        "check": "bmi",
+        "weight": "0.1",
+        "height": "3.01"
+      },
+      "expected": "110.4 kg/m² (Obesidad Grado II+)"
+    },
+    {
+      "name": "IMC · sin peso",
+      "input": {
+        "check": "bmi",
+        "weight": "",
+        "height": "1.70"
+      },
+      "expected": "Valores no disponibles"
+    },
+    {
+      "name": "IMC · talla 0",
+      "input": {
+        "check": "bmi",
+        "weight": "70",
+        "height": "0"
+      },
+      "expected": "Valores no disponibles"
+    },
+    {
+      "name": "IMC · texto",
+      "input": {
+        "check": "bmi",
+        "weight": "setenta",
+        "height": "1.70"
+      },
+      "expected": "Valores no disponibles"
+    },
+    {
+      "name": "clasificación · 18.49",
+      "input": {
+        "check": "bmi-category",
+        "bmi": "18.49"
+      },
+      "expected": "Bajo peso"
+    },
+    {
+      "name": "clasificación · 18.5",
+      "input": {
+        "check": "bmi-category",
+        "bmi": "18.5"
+      },
+      "expected": "Peso normal"
+    },
+    {
+      "name": "clasificación · 24.99",
+      "input": {
+        "check": "bmi-category",
+        "bmi": "24.99"
+      },
+      "expected": "Peso normal"
+    },
+    {
+      "name": "clasificación · 25",
+      "input": {
+        "check": "bmi-category",
+        "bmi": "25"
+      },
+      "expected": "Sobrepeso"
+    },
+    {
+      "name": "clasificación · 29.99",
+      "input": {
+        "check": "bmi-category",
+        "bmi": "29.99"
+      },
+      "expected": "Sobrepeso"
+    },
+    {
+      "name": "clasificación · 30",
+      "input": {
+        "check": "bmi-category",
+        "bmi": "30"
+      },
+      "expected": "Obesidad Grado I"
+    },
+    {
+      "name": "clasificación · 34.99",
+      "input": {
+        "check": "bmi-category",
+        "bmi": "34.99"
+      },
+      "expected": "Obesidad Grado I"
+    },
+    {
+      "name": "clasificación · 35",
+      "input": {
+        "check": "bmi-category",
+        "bmi": "35"
+      },
+      "expected": "Obesidad Grado II+"
+    },
+    {
+      "name": "aviso · todo normal",
+      "input": {
+        "check": "warning",
+        "temperature": "36.5",
+        "bloodPressure": "120/80",
+        "oxygenSaturation": "98",
+        "glucose": "95",
+        "heartRate": "76",
+        "patientAge": 40
+      },
+      "expected": ""
+    },
+    {
+      "name": "aviso · fiebre desde 38",
+      "input": {
+        "check": "warning",
+        "temperature": "38",
+        "bloodPressure": null,
+        "oxygenSaturation": null,
+        "glucose": null,
+        "heartRate": null,
+        "patientAge": null
+      },
+      "expected": "Temp 38 °C: fiebre"
+    },
+    {
+      "name": "aviso · 37.9 no",
+      "input": {
+        "check": "warning",
+        "temperature": "37.9",
+        "bloodPressure": null,
+        "oxygenSaturation": null,
+        "glucose": null,
+        "heartRate": null,
+        "patientAge": null
+      },
+      "expected": ""
+    },
+    {
+      "name": "aviso · coma decimal; el punto medio exacto del formato 0.# va hacia arriba: 38,25 → 38.3",
+      "input": {
+        "check": "warning",
+        "temperature": "38,25",
+        "bloodPressure": null,
+        "oxygenSaturation": null,
+        "glucose": null,
+        "heartRate": null,
+        "patientAge": null
+      },
+      "expected": "Temp 38.3 °C: fiebre"
+    },
+    {
+      "name": "aviso · hipotermia bajo 35.5",
+      "input": {
+        "check": "warning",
+        "temperature": "35.4",
+        "bloodPressure": null,
+        "oxygenSaturation": null,
+        "glucose": null,
+        "heartRate": null,
+        "patientAge": null
+      },
+      "expected": "Temp 35.4 °C: hipotermia"
+    },
+    {
+      "name": "aviso · 0 no cuenta",
+      "input": {
+        "check": "warning",
+        "temperature": "0",
+        "bloodPressure": "0/0",
+        "oxygenSaturation": "0",
+        "glucose": "0",
+        "heartRate": "0",
+        "patientAge": null
+      },
+      "expected": ""
+    },
+    {
+      "name": "aviso · T/A elevada por la sistólica",
+      "input": {
+        "check": "warning",
+        "temperature": null,
+        "bloodPressure": "140/85",
+        "oxygenSaturation": null,
+        "glucose": null,
+        "heartRate": null,
+        "patientAge": null
+      },
+      "expected": "T/A 140/85: elevada"
+    },
+    {
+      "name": "aviso · T/A elevada por la diastólica",
+      "input": {
+        "check": "warning",
+        "temperature": null,
+        "bloodPressure": "130/90",
+        "oxygenSaturation": null,
+        "glucose": null,
+        "heartRate": null,
+        "patientAge": null
+      },
+      "expected": "T/A 130/90: elevada"
+    },
+    {
+      "name": "aviso · T/A baja",
+      "input": {
+        "check": "warning",
+        "temperature": null,
+        "bloodPressure": "85/60",
+        "oxygenSaturation": null,
+        "glucose": null,
+        "heartRate": null,
+        "patientAge": null
+      },
+      "expected": "T/A 85/60: baja"
+    },
+    {
+      "name": "aviso · T/A sin diastólica no se lee",
+      "input": {
+        "check": "warning",
+        "temperature": null,
+        "bloodPressure": "150/",
+        "oxygenSaturation": null,
+        "glucose": null,
+        "heartRate": null,
+        "patientAge": null
+      },
+      "expected": ""
+    },
+    {
+      "name": "aviso · SpO2 como fracción",
+      "input": {
+        "check": "warning",
+        "temperature": null,
+        "bloodPressure": null,
+        "oxygenSaturation": "0.91",
+        "glucose": null,
+        "heartRate": null,
+        "patientAge": null
+      },
+      "expected": "SpO₂ 91 %: baja"
+    },
+    {
+      "name": "aviso · SpO2 92 está bien",
+      "input": {
+        "check": "warning",
+        "temperature": null,
+        "bloodPressure": null,
+        "oxygenSaturation": "92",
+        "glucose": null,
+        "heartRate": null,
+        "patientAge": null
+      },
+      "expected": ""
+    },
+    {
+      "name": "aviso · glucosa elevada",
+      "input": {
+        "check": "warning",
+        "temperature": null,
+        "bloodPressure": null,
+        "oxygenSaturation": null,
+        "glucose": "200",
+        "heartRate": null,
+        "patientAge": null
+      },
+      "expected": "Glucosa 200 mg/dL: elevada"
+    },
+    {
+      "name": "aviso · hipoglucemia",
+      "input": {
+        "check": "warning",
+        "temperature": null,
+        "bloodPressure": null,
+        "oxygenSaturation": null,
+        "glucose": "69.5",
+        "heartRate": null,
+        "patientAge": null
+      },
+      "expected": "Glucosa 70 mg/dL: hipoglucemia"
+    },
+    {
+      "name": "aviso · taquicardia de adulto",
+      "input": {
+        "check": "warning",
+        "temperature": null,
+        "bloodPressure": null,
+        "oxygenSaturation": null,
+        "glucose": null,
+        "heartRate": "101",
+        "patientAge": 12
+      },
+      "expected": "FC 101: taquicardia"
+    },
+    {
+      "name": "aviso · un niño de 11 con 130 está bien",
+      "input": {
+        "check": "warning",
+        "temperature": null,
+        "bloodPressure": null,
+        "oxygenSaturation": null,
+        "glucose": null,
+        "heartRate": "130",
+        "patientAge": 11
+      },
+      "expected": ""
+    },
+    {
+      "name": "aviso · un niño con 141",
+      "input": {
+        "check": "warning",
+        "temperature": null,
+        "bloodPressure": null,
+        "oxygenSaturation": null,
+        "glucose": null,
+        "heartRate": "141",
+        "patientAge": 5
+      },
+      "expected": "FC 141: alta para la edad"
+    },
+    {
+      "name": "aviso · bradicardia",
+      "input": {
+        "check": "warning",
+        "temperature": null,
+        "bloodPressure": null,
+        "oxygenSaturation": null,
+        "glucose": null,
+        "heartRate": "49",
+        "patientAge": 5
+      },
+      "expected": "FC 49: bradicardia"
+    },
+    {
+      "name": "aviso · sin edad cuenta como adulto",
+      "input": {
+        "check": "warning",
+        "temperature": null,
+        "bloodPressure": null,
+        "oxygenSaturation": null,
+        "glucose": null,
+        "heartRate": "120",
+        "patientAge": null
+      },
+      "expected": "FC 120: taquicardia"
+    },
+    {
+      "name": "aviso · varios en su orden",
+      "input": {
+        "check": "warning",
+        "temperature": "39.2",
+        "bloodPressure": "160/100",
+        "oxygenSaturation": "0.88",
+        "glucose": "250",
+        "heartRate": "120",
+        "patientAge": 40
+      },
+      "expected": "Temp 39.2 °C: fiebre · T/A 160/100: elevada · SpO₂ 88 %: baja · Glucosa 250 mg/dL: elevada · FC 120: taquicardia"
+    },
+    {
+      "name": "texto de la nota · todo",
+      "input": {
+        "check": "format",
+        "bloodPressure": "120/80",
+        "heartRate": "76",
+        "respiratoryRate": "18",
+        "temperature": "36.5",
+        "weight": "70",
+        "height": "1.75",
+        "glucose": "95",
+        "oxygenSaturation": "98",
+        "bmiText": "22.9 kg/m² (Peso normal)"
+      },
+      "expected": "TA: 120/80 mmHg | FC: 76 lpm | FR: 18 rpm | Temp: 36.5 °C | Peso: 70 kg | Talla: 1.75 m | Glucosa: 95 mg/dL | SpO2: 98% | IMC: 22.9 kg/m² (Peso normal)"
+    },
+    {
+      "name": "texto de la nota · la T/A sin la diagonal del final y la SpO2 sin su %",
+      "input": {
+        "check": "format",
+        "bloodPressure": " 120/ ",
+        "heartRate": null,
+        "respiratoryRate": null,
+        "temperature": null,
+        "weight": null,
+        "height": null,
+        "glucose": null,
+        "oxygenSaturation": "97 %",
+        "bmiText": null
+      },
+      "expected": "TA: 120 mmHg | SpO2: 97 %"
+    },
+    {
+      "name": "texto de la nota · espacios a los lados",
+      "input": {
+        "check": "format",
+        "bloodPressure": null,
+        "heartRate": " 80 ",
+        "respiratoryRate": null,
+        "temperature": null,
+        "weight": " 15,5 ",
+        "height": null,
+        "glucose": null,
+        "oxygenSaturation": null,
+        "bmiText": null
+      },
+      "expected": "FC: 80 lpm | Peso: 15,5 kg"
+    },
+    {
+      "name": "texto de la nota · el IMC no disponible no va",
+      "input": {
+        "check": "format",
+        "bloodPressure": null,
+        "heartRate": null,
+        "respiratoryRate": null,
+        "temperature": null,
+        "weight": "70",
+        "height": null,
+        "glucose": null,
+        "oxygenSaturation": null,
+        "bmiText": "Valores no disponibles"
+      },
+      "expected": "Peso: 70 kg"
+    },
+    {
+      "name": "texto de la nota · nada capturado",
+      "input": {
+        "check": "format",
+        "bloodPressure": null,
+        "heartRate": null,
+        "respiratoryRate": null,
+        "temperature": null,
+        "weight": null,
+        "height": null,
+        "glucose": null,
+        "oxygenSaturation": null,
+        "bmiText": null
+      },
+      "expected": ""
+    },
+    {
+      "name": "texto de la nota · solo espacios",
+      "input": {
+        "check": "format",
+        "bloodPressure": "  ",
+        "heartRate": "  ",
+        "respiratoryRate": null,
+        "temperature": null,
+        "weight": null,
+        "height": null,
+        "glucose": null,
+        "oxygenSaturation": null,
+        "bmiText": null
+      },
+      "expected": ""
+    }
+  ]
+}

@@ -1,0 +1,246 @@
+{
+  "rule": "canonical-json",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Forma canónica (Services/Rules/CanonicalJson y PatientSheetCanonical, paso 8.22): para saber si dos versiones de un expediente dicen lo mismo sin depender de cómo las escribió cada equipo. 'expected' es el texto canónico.",
+    "json: sin espacios; llaves de objeto ordenadas por unidades UTF-16 (String.compareTo de Kotlin), y si una se repite se queda el último valor; texto con solo \\\" \\\\ y los caracteres de control escapados (\\b \\f \\n \\r \\t; los demás \\u00xx en minúsculas), lo demás tal cual; números en decimal sin exponente, sin ceros de más en la fracción ni punto final, y 0 sin signo (BigDecimal.stripTrailingZeros().toPlainString(), con 0 para el cero); true, false y null tal cual.",
+    "value: el valor de una columna sincronizada como valor canónico: texto como texto, entero y enum como número, booleano como true/false (en la nube es 0/1), fecha como texto de 27 caracteres, GUID en minúsculas, decimal como número canónico, nulo como null. Los nombres de 'clrType' son los de contracts/sync/schema.json.",
+    "sheet: una hoja del paciente (Active*Json) como arreglo de renglones canónicos, en su orden. Se lee como la PC (nombres sin distinguir mayúsculas, lo que falta con su valor por omisión: Quantity y RecommendedQuantity 1, los demás números 0, textos '' salvo Presentation, ActiveIngredient, ChargedConsultationFolio, ChargedLineKind y los SyncId, que son null, y ShowActiveIngredient null; un texto que no se puede leer es una hoja vacía; RowId determinista de contracts/golden/synced-json-columns.json para un renglón sin él) y cada renglón lleva TODOS sus campos conocidos menos los Id locales (ChargedLineId en insumos, ServiceId en servicios), más los desconocidos tal cual. Campos: receta RowId, MedicineName, Dosage, RecommendedQuantity, Presentation, DispenseInClinic y, desde la revisión 16, ActiveIngredient y ShowActiveIngredient (null si no los lleva); insumos RowId, SupplyName, Instructions, Quantity, UnitPrice, ChargedConsultationFolio, ChargedUnits, ChargedLineKind, ChargedLineSyncId; servicios RowId, ServiceSyncId, ServiceCode, ServiceName, Category, Notes, Price, Quantity, ChargedConsultationFolio, ChargedUnits y, desde la revisión 14, Supplies (null sin lista; si no, el arreglo de sus insumos en su orden, cada uno con SupplyName, Quantity, UnitPrice, ChargedLineKind y ChargedLineSyncId, sin su ChargedLineId, más sus desconocidos)."
+  ],
+  "cases": [
+    {
+      "name": "json · llaves ordenadas por unidades UTF-16 (mayúsculas antes que minúsculas; acentos al final)",
+      "input": {
+        "check": "json",
+        "json": "{\"b\":1,\"a\":2,\"B\":3,\"á\":4,\"Z\":5}"
+      },
+      "expected": "{\"B\":3,\"Z\":5,\"a\":2,\"b\":1,\"á\":4}"
+    },
+    {
+      "name": "json · sin espacios, también en objetos y arreglos anidados",
+      "input": {
+        "check": "json",
+        "json": "{ \"x\" : [ 1 , { \"z\" : true , \"y\" : null } ] }"
+      },
+      "expected": "{\"x\":[1,{\"y\":null,\"z\":true}]}"
+    },
+    {
+      "name": "json · números: sin ceros de más, sin exponente, sin signo en el cero",
+      "input": {
+        "check": "json",
+        "json": "[35.0, 12.50, 1e3, -0, -0.0, 0.10, 100, 2.5E-2]"
+      },
+      "expected": "[35,12.5,1000,0,0,0.1,100,0.025]"
+    },
+    {
+      "name": "json · una llave repetida: se queda el último valor (como kotlinx)",
+      "input": {
+        "check": "json",
+        "json": "{\"a\":1,\"b\":{\"x\":1,\"x\":2},\"a\":3}"
+      },
+      "expected": "{\"a\":3,\"b\":{\"x\":2}}"
+    },
+    {
+      "name": "json · texto: acentos, ñ y símbolos tal cual; solo se escapan comillas, diagonal invertida y control",
+      "input": {
+        "check": "json",
+        "json": "[\"Peña — 50 % ✓ <b> & / ü\", \"comilla \\\" y diagonal \\\\\", \"salto\\nretorno\\rtab\\tcampana\\u0007\", \"á escrita con escape\"]"
+      },
+      "expected": "[\"Peña — 50 % ✓ <b> & / ü\",\"comilla \\\" y diagonal \\\\\",\"salto\\nretorno\\rtab\\tcampana\\u0007\",\"á escrita con escape\"]"
+    },
+    {
+      "name": "valor de columna · texto",
+      "input": {
+        "check": "value",
+        "clrType": "string",
+        "value": "García López, Ana"
+      },
+      "expected": "\"García López, Ana\""
+    },
+    {
+      "name": "valor de columna · texto vacío",
+      "input": {
+        "check": "value",
+        "clrType": "string",
+        "value": ""
+      },
+      "expected": "\"\""
+    },
+    {
+      "name": "valor de columna · nulo",
+      "input": {
+        "check": "value",
+        "clrType": "string?",
+        "value": null
+      },
+      "expected": "null"
+    },
+    {
+      "name": "valor de columna · entero",
+      "input": {
+        "check": "value",
+        "clrType": "int",
+        "value": "42"
+      },
+      "expected": "42"
+    },
+    {
+      "name": "valor de columna · booleano (en la nube viaja como 0/1)",
+      "input": {
+        "check": "value",
+        "clrType": "bool",
+        "value": "true"
+      },
+      "expected": "true"
+    },
+    {
+      "name": "valor de columna · fecha: 27 caracteres",
+      "input": {
+        "check": "value",
+        "clrType": "DateTime",
+        "value": "1990-05-01 00:00:00.0000000"
+      },
+      "expected": "\"1990-05-01 00:00:00.0000000\""
+    },
+    {
+      "name": "valor de columna · fecha opcional nula",
+      "input": {
+        "check": "value",
+        "clrType": "DateTime?",
+        "value": null
+      },
+      "expected": "null"
+    },
+    {
+      "name": "valor de columna · GUID en mayúsculas sale en minúsculas",
+      "input": {
+        "check": "value",
+        "clrType": "Guid",
+        "value": "3F2504E0-4F89-11D3-9A0C-0305E82C3301"
+      },
+      "expected": "\"3f2504e0-4f89-11d3-9a0c-0305e82c3301\""
+    },
+    {
+      "name": "valor de columna · decimal con su escala: 12.50 vale lo mismo que 12.5",
+      "input": {
+        "check": "value",
+        "clrType": "decimal",
+        "value": "12.50"
+      },
+      "expected": "12.5"
+    },
+    {
+      "name": "hoja · insumos: con todos sus campos conocidos (los omitidos con su valor por omisión), sin ChargedLineId",
+      "input": {
+        "check": "sheet",
+        "column": "ActiveSuppliesJson",
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "json": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Quantity\":2,\"UnitPrice\":10.0,\"ChargedConsultationFolio\":\"CNS-20261014-090000\",\"ChargedUnits\":2,\"ChargedLineId\":5,\"ChargedLineKind\":\"producto\",\"ChargedLineSyncId\":\"A1B2C3D4-0000-4000-8000-000000000001\"}]"
+      },
+      "expected": "[{\"ChargedConsultationFolio\":\"CNS-20261014-090000\",\"ChargedLineKind\":\"producto\",\"ChargedLineSyncId\":\"a1b2c3d4-0000-4000-8000-000000000001\",\"ChargedUnits\":2,\"Instructions\":\"\",\"Quantity\":2,\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"UnitPrice\":10}]"
+    },
+    {
+      "name": "hoja · insumos: nombres sin distinguir mayúsculas y lo que falta por omisión (Quantity 1)",
+      "input": {
+        "check": "sheet",
+        "column": "ActiveSuppliesJson",
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "json": "[{\"rowid\":\"a0000000-0000-4000-8000-000000000001\",\"supplyname\":\"Gasa\"}]"
+      },
+      "expected": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":1,\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"UnitPrice\":0}]"
+    },
+    {
+      "name": "hoja · insumos: el Id local de otro equipo no cambia el significado",
+      "input": {
+        "check": "sheet",
+        "column": "ActiveSuppliesJson",
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "json": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"ChargedLineId\":-1234567,\"ChargedLineKind\":\"libre\"}]"
+      },
+      "expected": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":\"libre\",\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Instructions\":\"\",\"Quantity\":1,\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"UnitPrice\":0}]"
+    },
+    {
+      "name": "hoja · receta: un renglón sin RowId recibe el determinista de su posición; los campos desconocidos van tal cual",
+      "input": {
+        "check": "sheet",
+        "column": "ActivePrescriptionJson",
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "json": "[{\"MedicineName\":\"Paracetamol 500 mg\",\"Dosage\":\"1 cada 8 horas\",\"Plantilla\":{\"Id\":\"fiebre\",\"V\":2.0}}]"
+      },
+      "expected": "[{\"ActiveIngredient\":null,\"DispenseInClinic\":false,\"Dosage\":\"1 cada 8 horas\",\"MedicineName\":\"Paracetamol 500 mg\",\"Plantilla\":{\"Id\":\"fiebre\",\"V\":2},\"Presentation\":null,\"RecommendedQuantity\":1,\"RowId\":\"1d5b7626-698f-5477-9ee4-af486e6d37c2\",\"ShowActiveIngredient\":null}]"
+    },
+    {
+      "name": "hoja · receta (revisión 16): el principio activo y si se muestra son parte del renglón; en uno sin ellos, null",
+      "input": {
+        "check": "sheet",
+        "column": "ActivePrescriptionJson",
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "json": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"MedicineName\":\"Tempra 500 mg tabletas\",\"ActiveIngredient\":\"Paracetamol\",\"ShowActiveIngredient\":false,\"Dosage\":\"1 cada 8 horas\"},{\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"MedicineName\":\"Paracetamol 500 mg tabletas (Tempra)\",\"Dosage\":\"1 cada 8 horas\"}]"
+      },
+      "expected": "[{\"ActiveIngredient\":\"Paracetamol\",\"DispenseInClinic\":false,\"Dosage\":\"1 cada 8 horas\",\"MedicineName\":\"Tempra 500 mg tabletas\",\"Presentation\":null,\"RecommendedQuantity\":1,\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"ShowActiveIngredient\":false},{\"ActiveIngredient\":null,\"DispenseInClinic\":false,\"Dosage\":\"1 cada 8 horas\",\"MedicineName\":\"Paracetamol 500 mg tabletas (Tempra)\",\"Presentation\":null,\"RecommendedQuantity\":1,\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"ShowActiveIngredient\":null}]"
+    },
+    {
+      "name": "hoja · servicios: sin ServiceId (el Id local), con ServiceSyncId",
+      "input": {
+        "check": "sheet",
+        "column": "ActiveServicesJson",
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "json": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"ServiceId\":21,\"ServiceSyncId\":\"b1b2c3d4-0000-4000-8000-000000000001\",\"ServiceCode\":\"SERV-002\",\"ServiceName\":\"Curación Menor y Asepsia\",\"Price\":250,\"Quantity\":1}]"
+      },
+      "expected": "[{\"Category\":\"\",\"ChargedConsultationFolio\":null,\"ChargedUnits\":0,\"Notes\":\"\",\"Price\":250,\"Quantity\":1,\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"ServiceCode\":\"SERV-002\",\"ServiceName\":\"Curación Menor y Asepsia\",\"ServiceSyncId\":\"b1b2c3d4-0000-4000-8000-000000000001\",\"Supplies\":null}]"
+    },
+    {
+      "name": "hoja · servicios (revisión 14): la lista de insumos va en su orden, cada insumo con todos sus campos conocidos (lo que falta por omisión: Quantity 1) menos ChargedLineId, y sus desconocidos tal cual",
+      "input": {
+        "check": "sheet",
+        "column": "ActiveServicesJson",
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "json": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"ServiceId\":21,\"ServiceSyncId\":\"b1b2c3d4-0000-4000-8000-000000000001\",\"ServiceName\":\"Curación Menor y Asepsia\",\"Price\":250,\"Quantity\":1,\"ChargedConsultationFolio\":\"CNS-20261014-090000\",\"ChargedUnits\":1,\"Supplies\":[{\"SupplyName\":\"Gasa\",\"Quantity\":2,\"UnitPrice\":10.0,\"ChargedLineId\":5,\"ChargedLineKind\":\"producto\",\"ChargedLineSyncId\":\"A1B2C3D4-0000-4000-8000-000000000001\",\"Lote\":\"A1\"},{\"supplyname\":\"Férula\",\"chargedlinekind\":\"libre\",\"unitprice\":35}]}]"
+      },
+      "expected": "[{\"Category\":\"\",\"ChargedConsultationFolio\":\"CNS-20261014-090000\",\"ChargedUnits\":1,\"Notes\":\"\",\"Price\":250,\"Quantity\":1,\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"ServiceCode\":\"\",\"ServiceName\":\"Curación Menor y Asepsia\",\"ServiceSyncId\":\"b1b2c3d4-0000-4000-8000-000000000001\",\"Supplies\":[{\"ChargedLineKind\":\"producto\",\"ChargedLineSyncId\":\"a1b2c3d4-0000-4000-8000-000000000001\",\"Lote\":\"A1\",\"Quantity\":2,\"SupplyName\":\"Gasa\",\"UnitPrice\":10},{\"ChargedLineKind\":\"libre\",\"ChargedLineSyncId\":null,\"Quantity\":1,\"SupplyName\":\"Férula\",\"UnitPrice\":35}]}]"
+    },
+    {
+      "name": "hoja · servicios (revisión 14): una lista vacía no es lo mismo que un renglón sin lista (null)",
+      "input": {
+        "check": "sheet",
+        "column": "ActiveServicesJson",
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "json": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"ServiceName\":\"Retiro de puntos\",\"Price\":200,\"Supplies\":[]},{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"ServiceName\":\"Retiro de puntos\",\"Price\":200}]"
+      },
+      "expected": "[{\"Category\":\"\",\"ChargedConsultationFolio\":null,\"ChargedUnits\":0,\"Notes\":\"\",\"Price\":200,\"Quantity\":1,\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"ServiceCode\":\"\",\"ServiceName\":\"Retiro de puntos\",\"ServiceSyncId\":null,\"Supplies\":[]},{\"Category\":\"\",\"ChargedConsultationFolio\":null,\"ChargedUnits\":0,\"Notes\":\"\",\"Price\":200,\"Quantity\":1,\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"ServiceCode\":\"\",\"ServiceName\":\"Retiro de puntos\",\"ServiceSyncId\":null,\"Supplies\":null}]"
+    },
+    {
+      "name": "hoja · un campo desconocido con una llave repetida, o el mismo campo dos veces: se queda el último",
+      "input": {
+        "check": "sheet",
+        "column": "ActiveSuppliesJson",
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "json": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"SupplyName\":\"Gasa estéril\",\"Extra\":{\"x\":1,\"x\":2},\"Extra2\":1,\"Extra2\":2}]"
+      },
+      "expected": "[{\"ChargedConsultationFolio\":null,\"ChargedLineKind\":null,\"ChargedLineSyncId\":null,\"ChargedUnits\":0,\"Extra\":{\"x\":2},\"Extra2\":2,\"Instructions\":\"\",\"Quantity\":1,\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa estéril\",\"UnitPrice\":0}]"
+    },
+    {
+      "name": "hoja · hoja vacía o que no se puede leer: arreglo vacío",
+      "input": {
+        "check": "sheet",
+        "column": "ActiveSuppliesJson",
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "json": "no es JSON"
+      },
+      "expected": "[]"
+    },
+    {
+      "name": "hoja · texto vacío",
+      "input": {
+        "check": "sheet",
+        "column": "ActiveSuppliesJson",
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "json": ""
+      },
+      "expected": "[]"
+    }
+  ]
+}

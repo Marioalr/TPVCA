@@ -1,0 +1,2545 @@
+{
+  "rule": "synced-json-columns",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Hojas del paciente (paso 8.18; los insumos de un servicio desde la revisión 14): Patients.ActivePrescriptionJson, ActiveSuppliesJson y ActiveServicesJson son arreglos JSON de renglones con nombres PascalCase (se leen sin distinguir mayúsculas) y acentos sin escapar; '' es una hoja vacía. Los campos de cada columna, en su 'note' de sync/schema.json.",
+    "RowId (GUID en minúsculas): uno nuevo se toma al azar. Al leer, el renglón sin RowId, con el GUID vacío o con uno que ya usó otro renglón de la misma hoja recibe uuid5(tpvc, 'sheetrow:' + SyncId del paciente en minúsculas + ':' + columna + ':' + posición desde 0 + ':' + el nombre tal cual: MedicineName, SupplyName o ServiceName); 'uuid5Name' es ese nombre. Se guarda con la siguiente escritura de la hoja: no hay relleno al arrancar.",
+    "Leer y volver a escribir: 'expected' es la hoja que escribe la PC al guardarla sin cambios. Los campos que no conoce se conservan (también objetos, arreglos y nulos), después de los suyos. Un campo con valor por omisión no se escribe (Presentation, ChargedConsultationFolio, ChargedUnits, ChargedLineId, ChargedLineKind, ChargedLineSyncId, ServiceSyncId); se comparan como JSON, no como texto.",
+    "Receta (revisión 16, pedido del médico del 2026-10-21): un renglón que se recetó de un producto de marca lleva ActiveIngredient (lo que va entre paréntesis al final de MedicineName, catalog-matching.json 'medicine-line-parts') y ShowActiveIngredient (si MedicineName lo trae); MedicineName es siempre el texto que se imprime. Ninguno de los dos se escribe en un renglón genérico, escrito a mano o de antes: esos renglones no se reescriben ni ganan los campos. Mostrar u ocultar ('with-active-ingredient' de catalog-matching.json) cambia MedicineName y ShowActiveIngredient en el mismo renglón (mismo RowId).",
+    "Escribir: un insumo cargado a la cuenta lleva el folio de la consulta, sus piezas, ChargedLineKind ('producto' o 'libre') y, si es producto, ChargedLineSyncId. Un servicio del catálogo lleva ServiceSyncId. ChargedLineId y ServiceId son los Id locales de la PC, para las PC anteriores: Kotlin no los escribe (ServiceId 0) y no los usa.",
+    "Renglón de la cuenta: el insumo se busca, en este orden, por 'libre' (el cargo libre de su nombre); por un ChargedLineId negativo, que es el cargo libre con ese Id tal cual (también en un producto: el que no existía al recibir la consulta; sale de un nombre y es igual en todos los equipos); por ChargedLineSyncId (el producto activo con ese SyncId o, si no hay, el de este equipo con ese SyncId aunque esté inactivo); por el Id viejo positivo solo si ese producto local activo tiene el mismo nombre normalizado (su nombre o 'Nombre (Presentación)'); por nombre (nombre, 'Nombre (Presentación)', genérico o el renglón normado de la receta, sin distinguir mayúsculas) y, si no, cargo libre. El servicio: por ServiceSyncId (activo); sin él y con ServiceId 0 es un cargo libre; el Id viejo con el mismo nombre normalizado; el servicio activo con el mismo nombre normalizado; si no, cargo libre.",
+    "Kotlin compara 'syncId' (o la clase 'libre' en un cargo libre); 'productId' y 'serviceId' son los Id locales de la PC, y 'freeChargeId' el Id del cargo libre en la PC (sale de un nombre normalizado: HandoffPayloadCodec.FreeChargeId). Un ChargedLineId negativo no es local: es un cargo libre en cualquier equipo, y Kotlin también lo lee así. Los casos con 'pcOnly' dependen de un Id local positivo de la PC (ChargedLineId o ServiceId) y no le aplican: Kotlin no tiene esos Id y pasa al nombre.",
+    "Al recibir una consulta, la PC traduce a sus Id los renglones con el formato de la revisión 10 que esa consulta cargó (ChargedConsultationFolio igual al folio; ChargedLineKind en un insumo, ServiceSyncId en un servicio): un insumo cargado como producto toma el Id del renglón de la cuenta recibida con su SyncId, ya traducido (el cargo libre del nombre de ese renglón si el producto no existe aquí); lo demás, con las reglas de arriba. Cambian ChargedLineId y ServiceId; la clase y los SyncId no. Un renglón viejo conserva los Id de la PC anterior que lo escribió, que los usa tal cual si la consulta le regresa, salvo un insumo que aquí es un cargo libre que la cuenta recibida sí tiene (el producto no existe en este equipo): queda con ese Id negativo, que esa PC también entiende.",
+    "Solo en la PC (Kotlin no tiene Id locales): antes de buscar, un renglón viejo (sin clase ni SyncId, con un Id positivo) cuyo Id tiene en la cuenta abierta un renglón con su mismo nombre (sin distinguir mayúsculas) lo cargó este equipo antes de la revisión 10, y es ese renglón aunque el producto o el servicio se haya renombrado o desactivado; el Id de otro equipo nunca coincide con un renglón de esta cuenta con el mismo nombre. Si su Id no está en la cuenta (trae el de la PC que lo cargó), un insumo viejo es el único renglón de producto de la cuenta con su mismo nombre; con ninguno o con varios, se busca como arriba. + / − en un renglón viejo le pone la clase y el SyncId y conserva su ChargedLineId; en un cargo libre carga el mismo renglón libre que ya tiene, aunque se llame distinto.",
+    "Insumos de un servicio (revisión 14, Services/Rules/ServiceRowSupplies): un renglón de ActiveServicesJson que se cargó a la cuenta lleva Supplies, lo que cargó además del servicio. 'supplies' en 'expected' va en forma canónica (contracts/golden/canonical-json.json: cada insumo con SupplyName, Quantity, UnitPrice, ChargedLineKind y ChargedLineSyncId, sin ChargedLineId, que es el Id local de la PC y Kotlin no escribe); el caso 'escribir' muestra el texto que escribe la PC. Quantity son las piezas de todas las unidades juntas.",
+    "Empezar: al cargar un servicio del catálogo, su lista son sus insumos por defecto ('defaults', con 'perUnit' = max(1, Quantity) de ServiceDefaultProducts) por las unidades: un insumo por producto (por su SyncId; dos renglones por defecto del mismo producto se suman), en el orden de la configuración, con el nombre y el precio del producto, clase 'producto' y su SyncId. Un servicio sin insumos por defecto o un cargo libre empieza con []. 'charges' es lo que se carga a la cuenta: el servicio ('servicio', por sus unidades) y cada insumo ('producto' con su SyncId, o 'libre' con su nombre).",
+    "Ajustar (solo para esta consulta; la configuración del servicio no cambia): 'requested' son las piezas nuevas del insumo ('add' = agregar un producto del inventario: si la lista ya lo tiene, una pieza más; si no, entra al final con una). Si suben, se carga todo lo pedido (revisión 20: un inventario mal contado nunca impide cobrar; antes solo cabía lo que dejaban las existencias); 'warning' si lo pedido pasa de min(lo pedido, existencias − lo que ya está en la cuenta de ese producto, de cualquier hoja, servicio o receta), nunca menos de 0 ('stock' e 'inAccount'): la PC avisa con el texto de stockWarning de checkout.json, sin bloquear. 'charge' es lo que se carga (positivo) o se descuenta (negativo) de su renglón de la cuenta; en 0 piezas el insumo sale de la lista.",
+    "Unidades: una más ('units' de antes a después) carga el servicio y los insumos por defecto de una unidad: cada uno se suma al insumo de la lista del mismo producto (por su SyncId) o entra al final. Una menos descuenta el servicio y los de una unidad, cada uno hasta lo que tenga la lista (un insumo que llega a 0 sale). Lo que el médico ajustó a mano (piezas de más, otro producto, uno quitado) se queda. En 0 unidades se quita el renglón.",
+    "Quitar el renglón: solo si lo cargó la consulta en curso (su ChargedConsultationFolio es el folio de la consulta en curso; uno de una consulta anterior no descuenta nada). Con lista: el servicio por ChargedUnits y cada insumo de la lista con sus piezas. Sin lista (un renglón de la revisión 13 o anterior): como antes, el servicio y los insumos por defecto que el servicio tiene hoy por ChargedUnits.",
+    "Cada insumo de la lista busca su renglón de la cuenta con las reglas de un insumo de la hoja (los casos 'renglón de la cuenta · insumo de un servicio'), y al recibir una consulta se traduce como ellos (ChargedLineId al renglón de la cuenta recibida con su SyncId, o al cargo libre al que se tradujo), aunque el servicio sea un renglón viejo o un cargo libre. Quien reescribe la hoja conserva los campos que no conoce de cada insumo."
+  ],
+  "cases": [
+    {
+      "name": "RowId viejo · receta, primer renglón",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "column": "ActivePrescriptionJson",
+        "position": 0,
+        "rowName": "Paracetamol 500 mg tabletas",
+        "uuid5Name": "sheetrow:3f2504e0-4f89-11d3-9a0c-0305e82c3301:ActivePrescriptionJson:0:Paracetamol 500 mg tabletas"
+      },
+      "expected": "c3e626ab-fb92-5876-951f-05d910f96085"
+    },
+    {
+      "name": "RowId viejo · el SyncId del paciente en mayúsculas da lo mismo",
+      "input": {
+        "patientSyncId": "3F2504E0-4F89-11D3-9A0C-0305E82C3301",
+        "column": "ActivePrescriptionJson",
+        "position": 0,
+        "rowName": "Paracetamol 500 mg tabletas",
+        "uuid5Name": "sheetrow:3f2504e0-4f89-11d3-9a0c-0305e82c3301:ActivePrescriptionJson:0:Paracetamol 500 mg tabletas"
+      },
+      "expected": "c3e626ab-fb92-5876-951f-05d910f96085"
+    },
+    {
+      "name": "RowId viejo · insumos, tercer renglón, con acentos",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "column": "ActiveSuppliesJson",
+        "position": 2,
+        "rowName": "Gasa Estéril 10x10 cm (Paquete con 10 piezas)",
+        "uuid5Name": "sheetrow:3f2504e0-4f89-11d3-9a0c-0305e82c3301:ActiveSuppliesJson:2:Gasa Estéril 10x10 cm (Paquete con 10 piezas)"
+      },
+      "expected": "9bbb171d-e524-50d0-b219-cd6f7f05fd64"
+    },
+    {
+      "name": "RowId viejo · servicios",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "column": "ActiveServicesJson",
+        "position": 0,
+        "rowName": "Curación Menor y Asepsia",
+        "uuid5Name": "sheetrow:3f2504e0-4f89-11d3-9a0c-0305e82c3301:ActiveServicesJson:0:Curación Menor y Asepsia"
+      },
+      "expected": "bea0c7f9-ecd9-59f1-aa36-5bf07d10e364"
+    },
+    {
+      "name": "RowId viejo · el nombre tal cual (con espacios y mayúsculas)",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "column": "ActiveServicesJson",
+        "position": 0,
+        "rowName": " CURACIÓN menor y asepsia ",
+        "uuid5Name": "sheetrow:3f2504e0-4f89-11d3-9a0c-0305e82c3301:ActiveServicesJson:0: CURACIÓN menor y asepsia "
+      },
+      "expected": "1963e53e-8256-5c32-b18f-a24148bc322a"
+    },
+    {
+      "name": "RowId viejo · sin nombre",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "column": "ActiveSuppliesJson",
+        "position": 5,
+        "rowName": "",
+        "uuid5Name": "sheetrow:3f2504e0-4f89-11d3-9a0c-0305e82c3301:ActiveSuppliesJson:5:"
+      },
+      "expected": "1050603f-7294-5e3f-9be1-698929557799"
+    },
+    {
+      "name": "leer y volver a escribir · receta vieja: cada renglón recibe su RowId por posición y nombre",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "column": "ActivePrescriptionJson",
+        "json": "[{\"MedicineName\":\"Paracetamol 500 mg tabletas\",\"Dosage\":\"1 cada 8 horas\",\"RecommendedQuantity\":1,\"Presentation\":\"Caja con 20 tabletas\",\"DispenseInClinic\":true},{\"MedicineName\":\"Loratadina 10 mg\",\"Dosage\":\"1 cada 24 horas\",\"RecommendedQuantity\":1,\"DispenseInClinic\":false}]"
+      },
+      "expected": [
+        {
+          "RowId": "c3e626ab-fb92-5876-951f-05d910f96085",
+          "MedicineName": "Paracetamol 500 mg tabletas",
+          "Dosage": "1 cada 8 horas",
+          "RecommendedQuantity": 1,
+          "Presentation": "Caja con 20 tabletas",
+          "DispenseInClinic": true
+        },
+        {
+          "RowId": "9f741043-262a-56cf-a5c6-f9fb13954e18",
+          "MedicineName": "Loratadina 10 mg",
+          "Dosage": "1 cada 24 horas",
+          "RecommendedQuantity": 1,
+          "DispenseInClinic": false
+        }
+      ]
+    },
+    {
+      "name": "leer y volver a escribir · insumos: el RowId que ya trae se conserva; el renglón viejo (de una PC anterior, solo con ChargedLineId) recibe el suyo",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "column": "ActiveSuppliesJson",
+        "json": "[{\"RowId\":\"6f9619ff-8b86-d011-b42d-00c04fc964ff\",\"SupplyName\":\"Alcohol Etílico 70% (Botella de 1000 ml)\",\"Instructions\":\"Asepsia\",\"Quantity\":1,\"UnitPrice\":50.0,\"ChargedConsultationFolio\":\"CNS-20261009-103015\",\"ChargedUnits\":1,\"ChargedLineId\":12,\"ChargedLineKind\":\"producto\",\"ChargedLineSyncId\":\"a1b2c3d4-0000-4000-8000-000000000002\"},{\"SupplyName\":\"Gasa Estéril 10x10 cm (Paquete con 10 piezas)\",\"Instructions\":\"Curación\",\"Quantity\":2,\"UnitPrice\":35.0,\"ChargedConsultationFolio\":\"CNS-20261009-103015\",\"ChargedUnits\":2,\"ChargedLineId\":4}]"
+      },
+      "expected": [
+        {
+          "RowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+          "SupplyName": "Alcohol Etílico 70% (Botella de 1000 ml)",
+          "Instructions": "Asepsia",
+          "Quantity": 1,
+          "UnitPrice": 50.0,
+          "ChargedConsultationFolio": "CNS-20261009-103015",
+          "ChargedUnits": 1,
+          "ChargedLineId": 12,
+          "ChargedLineKind": "producto",
+          "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+        },
+        {
+          "RowId": "3fba4f29-702e-5755-8b02-677296e574c0",
+          "SupplyName": "Gasa Estéril 10x10 cm (Paquete con 10 piezas)",
+          "Instructions": "Curación",
+          "Quantity": 2,
+          "UnitPrice": 35.0,
+          "ChargedConsultationFolio": "CNS-20261009-103015",
+          "ChargedUnits": 2,
+          "ChargedLineId": 4
+        }
+      ]
+    },
+    {
+      "name": "leer y volver a escribir · un RowId repetido o vacío se trata como si faltara",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "column": "ActiveSuppliesJson",
+        "json": "[{\"RowId\":\"6f9619ff-8b86-d011-b42d-00c04fc964ff\",\"SupplyName\":\"Guantes\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":5},{\"RowId\":\"6f9619ff-8b86-d011-b42d-00c04fc964ff\",\"SupplyName\":\"Guantes\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":5},{\"RowId\":\"00000000-0000-0000-0000-000000000000\",\"SupplyName\":\"Cubrebocas\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":3}]"
+      },
+      "expected": [
+        {
+          "RowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+          "SupplyName": "Guantes",
+          "Instructions": "",
+          "Quantity": 1,
+          "UnitPrice": 5
+        },
+        {
+          "RowId": "7fd91b2f-2b2d-5815-a06b-3c7123a98f4a",
+          "SupplyName": "Guantes",
+          "Instructions": "",
+          "Quantity": 1,
+          "UnitPrice": 5
+        },
+        {
+          "RowId": "8789cae7-d41e-54d6-80c9-336a0b12b5cf",
+          "SupplyName": "Cubrebocas",
+          "Instructions": "",
+          "Quantity": 1,
+          "UnitPrice": 3
+        }
+      ]
+    },
+    {
+      "name": "leer y volver a escribir · los campos que la PC no conoce se vuelven a escribir tal cual",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "column": "ActiveServicesJson",
+        "json": "[{\"RowId\":\"6f9619ff-8b86-d011-b42d-00c04fc964ff\",\"ServiceId\":0,\"ServiceSyncId\":\"b1b2c3d4-0000-4000-8000-000000000001\",\"ServiceCode\":\"SERV-002\",\"ServiceName\":\"Curación Menor y Asepsia\",\"Category\":\"Curaciones\",\"Notes\":\"\",\"Price\":250,\"Quantity\":1,\"RemovedAtUtc\":\"2026-10-12 10:00:00.0000000\",\"Stamps\":{\"Quantity\":\"2026-10-12 09:59:00.0000000\"},\"Tags\":[\"tablet\",1,null,true]}]"
+      },
+      "expected": [
+        {
+          "RowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+          "ServiceId": 0,
+          "ServiceSyncId": "b1b2c3d4-0000-4000-8000-000000000001",
+          "ServiceCode": "SERV-002",
+          "ServiceName": "Curación Menor y Asepsia",
+          "Category": "Curaciones",
+          "Notes": "",
+          "Price": 250,
+          "Quantity": 1,
+          "RemovedAtUtc": "2026-10-12 10:00:00.0000000",
+          "Stamps": {
+            "Quantity": "2026-10-12 09:59:00.0000000"
+          },
+          "Tags": [
+            "tablet",
+            1,
+            null,
+            true
+          ]
+        }
+      ]
+    },
+    {
+      "name": "leer y volver a escribir · se lee sin distinguir mayúsculas y se escribe en PascalCase",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "column": "ActiveServicesJson",
+        "json": "[{\"rowId\":\"6f9619ff-8b86-d011-b42d-00c04fc964ff\",\"serviceSyncId\":\"b1b2c3d4-0000-4000-8000-000000000002\",\"serviceName\":\"Monitoreo de Glucemia Capilar\",\"price\":80,\"quantity\":1}]"
+      },
+      "expected": [
+        {
+          "RowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+          "ServiceId": 0,
+          "ServiceSyncId": "b1b2c3d4-0000-4000-8000-000000000002",
+          "ServiceCode": "",
+          "ServiceName": "Monitoreo de Glucemia Capilar",
+          "Category": "",
+          "Notes": "",
+          "Price": 80,
+          "Quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "leer y volver a escribir · hoja vacía",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "column": "ActivePrescriptionJson",
+        "json": ""
+      },
+      "expected": []
+    },
+    {
+      "name": "leer y volver a escribir · receta (revisión 16): el principio activo y si se muestra se quedan; el renglón de antes, sin ellos, no los gana",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "column": "ActivePrescriptionJson",
+        "json": "[{\"RowId\":\"6f9619ff-8b86-d011-b42d-00c04fc964ff\",\"MedicineName\":\"Tempra 500 mg tabletas\",\"ActiveIngredient\":\"Paracetamol\",\"ShowActiveIngredient\":false,\"Dosage\":\"1 cada 8 horas\",\"RecommendedQuantity\":1,\"Presentation\":\"Caja con 20 tabletas\",\"DispenseInClinic\":true},{\"MedicineName\":\"Paracetamol 500 mg tabletas (Tempra)\",\"Dosage\":\"1 cada 8 horas\",\"RecommendedQuantity\":1,\"DispenseInClinic\":false}]"
+      },
+      "expected": [
+        {
+          "RowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+          "MedicineName": "Tempra 500 mg tabletas",
+          "ActiveIngredient": "Paracetamol",
+          "ShowActiveIngredient": false,
+          "Dosage": "1 cada 8 horas",
+          "RecommendedQuantity": 1,
+          "Presentation": "Caja con 20 tabletas",
+          "DispenseInClinic": true
+        },
+        {
+          "RowId": "754e446f-c0b6-5f69-bab1-e6fff2d6c539",
+          "MedicineName": "Paracetamol 500 mg tabletas (Tempra)",
+          "Dosage": "1 cada 8 horas",
+          "RecommendedQuantity": 1,
+          "DispenseInClinic": false
+        }
+      ]
+    },
+    {
+      "name": "escribir · insumo del inventario cargado a la cuenta",
+      "input": {
+        "column": "ActiveSuppliesJson",
+        "product": {
+          "id": 11,
+          "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+          "name": "Gasa Estéril 10x10 cm",
+          "presentation": "Paquete con 10 piezas",
+          "genericName": "Gasa de algodón hidrófilo estéril",
+          "active": true
+        },
+        "quantity": 2,
+        "folio": "CNS-20261012-103015",
+        "rowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff"
+      },
+      "expected": {
+        "RowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+        "SupplyName": "Gasa Estéril 10x10 cm (Paquete con 10 piezas)",
+        "Instructions": "Curación de herida",
+        "Quantity": 2,
+        "UnitPrice": 35,
+        "ChargedConsultationFolio": "CNS-20261012-103015",
+        "ChargedUnits": 2,
+        "ChargedLineId": 11,
+        "ChargedLineKind": "producto",
+        "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "name": "escribir · insumo fuera del inventario (cargo libre)",
+      "input": {
+        "column": "ActiveSuppliesJson",
+        "name": "Férula de aluminio a la medida",
+        "quantity": 1,
+        "folio": "CNS-20261012-103015",
+        "rowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff"
+      },
+      "expected": {
+        "RowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+        "SupplyName": "Férula de aluminio a la medida",
+        "Instructions": "Uso clínico en consulta",
+        "Quantity": 1,
+        "UnitPrice": 35,
+        "ChargedConsultationFolio": "CNS-20261012-103015",
+        "ChargedUnits": 1,
+        "ChargedLineId": -1959291,
+        "ChargedLineKind": "libre"
+      }
+    },
+    {
+      "name": "escribir · insumo sin consulta (no se carga a ninguna cuenta)",
+      "input": {
+        "column": "ActiveSuppliesJson",
+        "product": {
+          "id": 11,
+          "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+          "name": "Gasa Estéril 10x10 cm",
+          "presentation": "Paquete con 10 piezas",
+          "genericName": "Gasa de algodón hidrófilo estéril",
+          "active": true
+        },
+        "quantity": 1,
+        "rowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff"
+      },
+      "expected": {
+        "RowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+        "SupplyName": "Gasa Estéril 10x10 cm (Paquete con 10 piezas)",
+        "Instructions": "Uso clínico en consulta",
+        "Quantity": 1,
+        "UnitPrice": 35
+      }
+    },
+    {
+      "name": "escribir · servicio del catálogo",
+      "input": {
+        "column": "ActiveServicesJson",
+        "service": {
+          "id": 21,
+          "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+          "code": "SERV-002",
+          "name": "Curación Menor y Asepsia",
+          "active": true
+        },
+        "quantity": 1,
+        "folio": "CNS-20261012-103015",
+        "rowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff"
+      },
+      "expected": {
+        "RowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+        "ServiceId": 21,
+        "ServiceSyncId": "b1b2c3d4-0000-4000-8000-000000000001",
+        "ServiceCode": "SERV-002",
+        "ServiceName": "Curación Menor y Asepsia",
+        "Category": "Curaciones",
+        "Notes": "Procedimiento clínico en consulta",
+        "Price": 250,
+        "Quantity": 1,
+        "ChargedConsultationFolio": "CNS-20261012-103015",
+        "ChargedUnits": 1
+      }
+    },
+    {
+      "name": "escribir · servicio fuera del catálogo (cargo libre)",
+      "input": {
+        "column": "ActiveServicesJson",
+        "name": "Retiro de puntos a domicilio",
+        "quantity": 1,
+        "folio": "CNS-20261012-103015",
+        "rowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff"
+      },
+      "expected": {
+        "RowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+        "ServiceId": 0,
+        "ServiceCode": "SERV-001",
+        "ServiceName": "Retiro de puntos a domicilio",
+        "Category": "Consulta",
+        "Notes": "Procedimiento clínico en consulta",
+        "Price": 200,
+        "Quantity": 1,
+        "ChargedConsultationFolio": "CNS-20261012-103015",
+        "ChargedUnits": 1
+      }
+    },
+    {
+      "name": "escribir · renglón de receta de un medicamento de marca (revisión 16): el principio activo y si se muestra",
+      "input": {
+        "column": "ActivePrescriptionJson",
+        "rowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+        "product": {
+          "name": "Tempra 500 mg",
+          "genericName": "Paracetamol",
+          "presentation": "Caja con 20 tabletas"
+        },
+        "showActiveIngredient": false
+      },
+      "expected": {
+        "RowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+        "MedicineName": "Tempra 500 mg tabletas",
+        "ActiveIngredient": "Paracetamol",
+        "ShowActiveIngredient": false,
+        "Dosage": "1 tableta cada 8 horas por 3 días",
+        "RecommendedQuantity": 1,
+        "Presentation": "Caja con 20 tabletas",
+        "DispenseInClinic": true
+      }
+    },
+    {
+      "name": "escribir · renglón de receta",
+      "input": {
+        "column": "ActivePrescriptionJson",
+        "rowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff"
+      },
+      "expected": {
+        "RowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+        "MedicineName": "Paracetamol 500 mg tabletas",
+        "Dosage": "1 tableta cada 8 horas por 3 días",
+        "RecommendedQuantity": 1,
+        "Presentation": "Caja con 20 tabletas",
+        "DispenseInClinic": true
+      }
+    },
+    {
+      "name": "renglón de la cuenta · insumo · cargo libre: el de su nombre",
+      "input": {
+        "row": {
+          "SupplyName": "Férula de aluminio a la medida",
+          "ChargedLineKind": "libre",
+          "ChargedLineSyncId": null,
+          "ChargedLineId": -1234567
+        },
+        "products": [
+          {
+            "id": 11,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "name": "Gasa Estéril 10x10 cm",
+            "presentation": "Paquete con 10 piezas",
+            "genericName": "Gasa de algodón hidrófilo estéril",
+            "active": true
+          },
+          {
+            "id": 12,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "name": "Alcohol Etílico 70%",
+            "presentation": "Botella de 1000 ml",
+            "genericName": "Etanol 70%",
+            "active": true
+          },
+          {
+            "id": 13,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000003",
+            "name": "Venda de gasa 5 cm",
+            "presentation": "Rollo",
+            "genericName": null,
+            "active": false
+          },
+          {
+            "id": 14,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+            "name": "Paracetamol 500 mg",
+            "presentation": "Caja con 20 tabletas",
+            "genericName": "Paracetamol",
+            "active": true
+          }
+        ]
+      },
+      "expected": {
+        "line": "libre",
+        "name": "Férula de aluminio a la medida",
+        "freeChargeId": -1959291
+      }
+    },
+    {
+      "name": "renglón de la cuenta · insumo · lo cargó otro equipo: por el SyncId, aunque su Id local sea otro",
+      "input": {
+        "row": {
+          "SupplyName": "Gasa Estéril 10x10 cm (Paquete con 10 piezas)",
+          "ChargedLineKind": "producto",
+          "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001",
+          "ChargedLineId": 4
+        },
+        "products": [
+          {
+            "id": 11,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "name": "Gasa Estéril 10x10 cm",
+            "presentation": "Paquete con 10 piezas",
+            "genericName": "Gasa de algodón hidrófilo estéril",
+            "active": true
+          },
+          {
+            "id": 12,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "name": "Alcohol Etílico 70%",
+            "presentation": "Botella de 1000 ml",
+            "genericName": "Etanol 70%",
+            "active": true
+          },
+          {
+            "id": 13,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000003",
+            "name": "Venda de gasa 5 cm",
+            "presentation": "Rollo",
+            "genericName": null,
+            "active": false
+          },
+          {
+            "id": 14,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+            "name": "Paracetamol 500 mg",
+            "presentation": "Caja con 20 tabletas",
+            "genericName": "Paracetamol",
+            "active": true
+          }
+        ]
+      },
+      "expected": {
+        "line": "producto",
+        "productId": 11,
+        "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "name": "renglón de la cuenta · insumo · el Id del otro equipo es aquí otro producto: manda el SyncId",
+      "input": {
+        "row": {
+          "SupplyName": "Gasa Estéril 10x10 cm (Paquete con 10 piezas)",
+          "ChargedLineKind": "producto",
+          "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001",
+          "ChargedLineId": 12
+        },
+        "products": [
+          {
+            "id": 11,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "name": "Gasa Estéril 10x10 cm",
+            "presentation": "Paquete con 10 piezas",
+            "genericName": "Gasa de algodón hidrófilo estéril",
+            "active": true
+          },
+          {
+            "id": 12,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "name": "Alcohol Etílico 70%",
+            "presentation": "Botella de 1000 ml",
+            "genericName": "Etanol 70%",
+            "active": true
+          },
+          {
+            "id": 13,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000003",
+            "name": "Venda de gasa 5 cm",
+            "presentation": "Rollo",
+            "genericName": null,
+            "active": false
+          },
+          {
+            "id": 14,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+            "name": "Paracetamol 500 mg",
+            "presentation": "Caja con 20 tabletas",
+            "genericName": "Paracetamol",
+            "active": true
+          }
+        ]
+      },
+      "expected": {
+        "line": "producto",
+        "productId": 11,
+        "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "name": "renglón de la cuenta · insumo · el producto ya no está activo: el de este equipo con ese SyncId",
+      "input": {
+        "row": {
+          "SupplyName": "Venda de gasa 5 cm (Rollo)",
+          "ChargedLineKind": "producto",
+          "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000003",
+          "ChargedLineId": 13
+        },
+        "products": [
+          {
+            "id": 11,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "name": "Gasa Estéril 10x10 cm",
+            "presentation": "Paquete con 10 piezas",
+            "genericName": "Gasa de algodón hidrófilo estéril",
+            "active": true
+          },
+          {
+            "id": 12,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "name": "Alcohol Etílico 70%",
+            "presentation": "Botella de 1000 ml",
+            "genericName": "Etanol 70%",
+            "active": true
+          },
+          {
+            "id": 13,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000003",
+            "name": "Venda de gasa 5 cm",
+            "presentation": "Rollo",
+            "genericName": null,
+            "active": false
+          },
+          {
+            "id": 14,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+            "name": "Paracetamol 500 mg",
+            "presentation": "Caja con 20 tabletas",
+            "genericName": "Paracetamol",
+            "active": true
+          }
+        ]
+      },
+      "expected": {
+        "line": "producto",
+        "productId": 13,
+        "syncId": "a1b2c3d4-0000-4000-8000-000000000003"
+      }
+    },
+    {
+      "name": "renglón de la cuenta · insumo · producto inactivo con el Id de otro equipo: el de este equipo con ese SyncId",
+      "input": {
+        "row": {
+          "SupplyName": "Venda de gasa 5 cm (Rollo)",
+          "ChargedLineKind": "producto",
+          "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000003",
+          "ChargedLineId": 7
+        },
+        "products": [
+          {
+            "id": 11,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "name": "Gasa Estéril 10x10 cm",
+            "presentation": "Paquete con 10 piezas",
+            "genericName": "Gasa de algodón hidrófilo estéril",
+            "active": true
+          },
+          {
+            "id": 12,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "name": "Alcohol Etílico 70%",
+            "presentation": "Botella de 1000 ml",
+            "genericName": "Etanol 70%",
+            "active": true
+          },
+          {
+            "id": 13,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000003",
+            "name": "Venda de gasa 5 cm",
+            "presentation": "Rollo",
+            "genericName": null,
+            "active": false
+          },
+          {
+            "id": 14,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+            "name": "Paracetamol 500 mg",
+            "presentation": "Caja con 20 tabletas",
+            "genericName": "Paracetamol",
+            "active": true
+          }
+        ]
+      },
+      "expected": {
+        "line": "producto",
+        "productId": 13,
+        "syncId": "a1b2c3d4-0000-4000-8000-000000000003"
+      }
+    },
+    {
+      "name": "renglón de la cuenta · insumo · SyncId que no existe aquí: por nombre",
+      "input": {
+        "row": {
+          "SupplyName": "Alcohol Etílico 70% (Botella de 1000 ml)",
+          "ChargedLineKind": "producto",
+          "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-0000000000ff",
+          "ChargedLineId": 11
+        },
+        "products": [
+          {
+            "id": 11,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "name": "Gasa Estéril 10x10 cm",
+            "presentation": "Paquete con 10 piezas",
+            "genericName": "Gasa de algodón hidrófilo estéril",
+            "active": true
+          },
+          {
+            "id": 12,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "name": "Alcohol Etílico 70%",
+            "presentation": "Botella de 1000 ml",
+            "genericName": "Etanol 70%",
+            "active": true
+          },
+          {
+            "id": 13,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000003",
+            "name": "Venda de gasa 5 cm",
+            "presentation": "Rollo",
+            "genericName": null,
+            "active": false
+          },
+          {
+            "id": 14,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+            "name": "Paracetamol 500 mg",
+            "presentation": "Caja con 20 tabletas",
+            "genericName": "Paracetamol",
+            "active": true
+          }
+        ]
+      },
+      "expected": {
+        "line": "producto",
+        "productId": 12,
+        "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+      }
+    },
+    {
+      "name": "renglón de la cuenta · insumo · renglón viejo con el Id de un producto de aquí con el mismo nombre",
+      "input": {
+        "row": {
+          "SupplyName": "gasa esteril 10x10 cm (paquete con 10 piezas)",
+          "ChargedLineKind": null,
+          "ChargedLineSyncId": null,
+          "ChargedLineId": 11
+        },
+        "products": [
+          {
+            "id": 11,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "name": "Gasa Estéril 10x10 cm",
+            "presentation": "Paquete con 10 piezas",
+            "genericName": "Gasa de algodón hidrófilo estéril",
+            "active": true
+          },
+          {
+            "id": 12,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "name": "Alcohol Etílico 70%",
+            "presentation": "Botella de 1000 ml",
+            "genericName": "Etanol 70%",
+            "active": true
+          },
+          {
+            "id": 13,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000003",
+            "name": "Venda de gasa 5 cm",
+            "presentation": "Rollo",
+            "genericName": null,
+            "active": false
+          },
+          {
+            "id": 14,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+            "name": "Paracetamol 500 mg",
+            "presentation": "Caja con 20 tabletas",
+            "genericName": "Paracetamol",
+            "active": true
+          }
+        ],
+        "pcOnly": true
+      },
+      "expected": {
+        "line": "producto",
+        "productId": 11,
+        "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "name": "renglón de la cuenta · insumo · renglón viejo con un Id que aquí es otro producto: por nombre",
+      "input": {
+        "row": {
+          "SupplyName": "Gasa Estéril 10x10 cm (Paquete con 10 piezas)",
+          "ChargedLineKind": null,
+          "ChargedLineSyncId": null,
+          "ChargedLineId": 12
+        },
+        "products": [
+          {
+            "id": 11,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "name": "Gasa Estéril 10x10 cm",
+            "presentation": "Paquete con 10 piezas",
+            "genericName": "Gasa de algodón hidrófilo estéril",
+            "active": true
+          },
+          {
+            "id": 12,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "name": "Alcohol Etílico 70%",
+            "presentation": "Botella de 1000 ml",
+            "genericName": "Etanol 70%",
+            "active": true
+          },
+          {
+            "id": 13,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000003",
+            "name": "Venda de gasa 5 cm",
+            "presentation": "Rollo",
+            "genericName": null,
+            "active": false
+          },
+          {
+            "id": 14,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+            "name": "Paracetamol 500 mg",
+            "presentation": "Caja con 20 tabletas",
+            "genericName": "Paracetamol",
+            "active": true
+          }
+        ]
+      },
+      "expected": {
+        "line": "producto",
+        "productId": 11,
+        "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "name": "renglón de la cuenta · insumo · renglón viejo de un cargo libre (Id negativo), aunque un producto se llame igual",
+      "input": {
+        "row": {
+          "SupplyName": "Gasa Estéril 10x10 cm",
+          "ChargedLineKind": null,
+          "ChargedLineSyncId": null,
+          "ChargedLineId": -1275843
+        },
+        "products": [
+          {
+            "id": 11,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "name": "Gasa Estéril 10x10 cm",
+            "presentation": "Paquete con 10 piezas",
+            "genericName": "Gasa de algodón hidrófilo estéril",
+            "active": true
+          },
+          {
+            "id": 12,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "name": "Alcohol Etílico 70%",
+            "presentation": "Botella de 1000 ml",
+            "genericName": "Etanol 70%",
+            "active": true
+          },
+          {
+            "id": 13,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000003",
+            "name": "Venda de gasa 5 cm",
+            "presentation": "Rollo",
+            "genericName": null,
+            "active": false
+          },
+          {
+            "id": 14,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+            "name": "Paracetamol 500 mg",
+            "presentation": "Caja con 20 tabletas",
+            "genericName": "Paracetamol",
+            "active": true
+          }
+        ]
+      },
+      "expected": {
+        "line": "libre",
+        "name": "Gasa Estéril 10x10 cm",
+        "freeChargeId": -1275843
+      }
+    },
+    {
+      "name": "renglón de la cuenta · insumo · producto que no existía al recibir la consulta: el cargo libre al que se tradujo, tal cual",
+      "input": {
+        "row": {
+          "SupplyName": "Venda de yeso 15 cm (Rollo)",
+          "ChargedLineKind": "producto",
+          "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-0000000000ff",
+          "ChargedLineId": -1263416
+        },
+        "products": [
+          {
+            "id": 11,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "name": "Gasa Estéril 10x10 cm",
+            "presentation": "Paquete con 10 piezas",
+            "genericName": "Gasa de algodón hidrófilo estéril",
+            "active": true
+          },
+          {
+            "id": 12,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "name": "Alcohol Etílico 70%",
+            "presentation": "Botella de 1000 ml",
+            "genericName": "Etanol 70%",
+            "active": true
+          },
+          {
+            "id": 13,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000003",
+            "name": "Venda de gasa 5 cm",
+            "presentation": "Rollo",
+            "genericName": null,
+            "active": false
+          },
+          {
+            "id": 14,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+            "name": "Paracetamol 500 mg",
+            "presentation": "Caja con 20 tabletas",
+            "genericName": "Paracetamol",
+            "active": true
+          }
+        ]
+      },
+      "expected": {
+        "line": "libre",
+        "name": "Venda de yeso 15 cm (Rollo)",
+        "freeChargeId": -1263416
+      }
+    },
+    {
+      "name": "renglón de la cuenta · insumo · renglón anterior a v1.18.7 (sin Id): por nombre, también el genérico",
+      "input": {
+        "row": {
+          "SupplyName": "Etanol 70%",
+          "ChargedLineKind": null,
+          "ChargedLineSyncId": null,
+          "ChargedLineId": 0
+        },
+        "products": [
+          {
+            "id": 11,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "name": "Gasa Estéril 10x10 cm",
+            "presentation": "Paquete con 10 piezas",
+            "genericName": "Gasa de algodón hidrófilo estéril",
+            "active": true
+          },
+          {
+            "id": 12,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "name": "Alcohol Etílico 70%",
+            "presentation": "Botella de 1000 ml",
+            "genericName": "Etanol 70%",
+            "active": true
+          },
+          {
+            "id": 13,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000003",
+            "name": "Venda de gasa 5 cm",
+            "presentation": "Rollo",
+            "genericName": null,
+            "active": false
+          },
+          {
+            "id": 14,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+            "name": "Paracetamol 500 mg",
+            "presentation": "Caja con 20 tabletas",
+            "genericName": "Paracetamol",
+            "active": true
+          }
+        ]
+      },
+      "expected": {
+        "line": "producto",
+        "productId": 12,
+        "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+      }
+    },
+    {
+      "name": "renglón de la cuenta · insumo · nada coincide: cargo libre de su nombre",
+      "input": {
+        "row": {
+          "SupplyName": "Abatelenguas",
+          "ChargedLineKind": null,
+          "ChargedLineSyncId": null,
+          "ChargedLineId": 99
+        },
+        "products": [
+          {
+            "id": 11,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "name": "Gasa Estéril 10x10 cm",
+            "presentation": "Paquete con 10 piezas",
+            "genericName": "Gasa de algodón hidrófilo estéril",
+            "active": true
+          },
+          {
+            "id": 12,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "name": "Alcohol Etílico 70%",
+            "presentation": "Botella de 1000 ml",
+            "genericName": "Etanol 70%",
+            "active": true
+          },
+          {
+            "id": 13,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000003",
+            "name": "Venda de gasa 5 cm",
+            "presentation": "Rollo",
+            "genericName": null,
+            "active": false
+          },
+          {
+            "id": 14,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+            "name": "Paracetamol 500 mg",
+            "presentation": "Caja con 20 tabletas",
+            "genericName": "Paracetamol",
+            "active": true
+          }
+        ]
+      },
+      "expected": {
+        "line": "libre",
+        "name": "Abatelenguas",
+        "freeChargeId": -1020309
+      }
+    },
+    {
+      "name": "renglón de la cuenta · servicio · por el SyncId, aunque su Id local sea otro",
+      "input": {
+        "row": {
+          "ServiceName": "Curación Menor y Asepsia",
+          "ServiceSyncId": "b1b2c3d4-0000-4000-8000-000000000001",
+          "ServiceId": 2
+        },
+        "services": [
+          {
+            "id": 21,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "active": true
+          },
+          {
+            "id": 22,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002",
+            "code": "SERV-004",
+            "name": "Monitoreo de Glucemia Capilar",
+            "active": true
+          },
+          {
+            "id": 23,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003",
+            "code": "SERV-003",
+            "name": "Sutura de Herida Simple",
+            "active": false
+          }
+        ]
+      },
+      "expected": {
+        "line": "servicio",
+        "serviceId": 21,
+        "syncId": "b1b2c3d4-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "name": "renglón de la cuenta · servicio · SyncId que no existe aquí: por nombre normalizado",
+      "input": {
+        "row": {
+          "ServiceName": "monitoreo de glucemia capilar",
+          "ServiceSyncId": "a1b2c3d4-0000-4000-8000-0000000000ff",
+          "ServiceId": 21
+        },
+        "services": [
+          {
+            "id": 21,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "active": true
+          },
+          {
+            "id": 22,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002",
+            "code": "SERV-004",
+            "name": "Monitoreo de Glucemia Capilar",
+            "active": true
+          },
+          {
+            "id": 23,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003",
+            "code": "SERV-003",
+            "name": "Sutura de Herida Simple",
+            "active": false
+          }
+        ]
+      },
+      "expected": {
+        "line": "servicio",
+        "serviceId": 22,
+        "syncId": "b1b2c3d4-0000-4000-8000-000000000002"
+      }
+    },
+    {
+      "name": "renglón de la cuenta · servicio · servicio inactivo: cargo libre",
+      "input": {
+        "row": {
+          "ServiceName": "Sutura de Herida Simple",
+          "ServiceSyncId": "b1b2c3d4-0000-4000-8000-000000000003",
+          "ServiceId": 23
+        },
+        "services": [
+          {
+            "id": 21,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "active": true
+          },
+          {
+            "id": 22,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002",
+            "code": "SERV-004",
+            "name": "Monitoreo de Glucemia Capilar",
+            "active": true
+          },
+          {
+            "id": 23,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003",
+            "code": "SERV-003",
+            "name": "Sutura de Herida Simple",
+            "active": false
+          }
+        ]
+      },
+      "expected": {
+        "line": "libre",
+        "name": "Sutura de Herida Simple",
+        "freeChargeId": -1940479
+      }
+    },
+    {
+      "name": "renglón de la cuenta · servicio · fuera del catálogo (sin SyncId y con Id 0): cargo libre aunque otro se llame igual",
+      "input": {
+        "row": {
+          "ServiceName": "Curación Menor y Asepsia",
+          "ServiceSyncId": null,
+          "ServiceId": 0
+        },
+        "services": [
+          {
+            "id": 21,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "active": true
+          },
+          {
+            "id": 22,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002",
+            "code": "SERV-004",
+            "name": "Monitoreo de Glucemia Capilar",
+            "active": true
+          },
+          {
+            "id": 23,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003",
+            "code": "SERV-003",
+            "name": "Sutura de Herida Simple",
+            "active": false
+          }
+        ]
+      },
+      "expected": {
+        "line": "libre",
+        "name": "Curación Menor y Asepsia",
+        "freeChargeId": -1094935
+      }
+    },
+    {
+      "name": "renglón de la cuenta · servicio · renglón viejo con el Id de un servicio de aquí con el mismo nombre",
+      "input": {
+        "row": {
+          "ServiceName": "Monitoreo de Glucemia Capilar",
+          "ServiceSyncId": null,
+          "ServiceId": 22
+        },
+        "services": [
+          {
+            "id": 21,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "active": true
+          },
+          {
+            "id": 22,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002",
+            "code": "SERV-004",
+            "name": "Monitoreo de Glucemia Capilar",
+            "active": true
+          },
+          {
+            "id": 23,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003",
+            "code": "SERV-003",
+            "name": "Sutura de Herida Simple",
+            "active": false
+          }
+        ]
+      },
+      "expected": {
+        "line": "servicio",
+        "serviceId": 22,
+        "syncId": "b1b2c3d4-0000-4000-8000-000000000002"
+      }
+    },
+    {
+      "name": "renglón de la cuenta · servicio · renglón viejo con un Id que aquí es otro servicio: por nombre",
+      "input": {
+        "row": {
+          "ServiceName": "Monitoreo de Glucemia Capilar",
+          "ServiceSyncId": null,
+          "ServiceId": 21
+        },
+        "services": [
+          {
+            "id": 21,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "active": true
+          },
+          {
+            "id": 22,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002",
+            "code": "SERV-004",
+            "name": "Monitoreo de Glucemia Capilar",
+            "active": true
+          },
+          {
+            "id": 23,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003",
+            "code": "SERV-003",
+            "name": "Sutura de Herida Simple",
+            "active": false
+          }
+        ]
+      },
+      "expected": {
+        "line": "servicio",
+        "serviceId": 22,
+        "syncId": "b1b2c3d4-0000-4000-8000-000000000002"
+      }
+    },
+    {
+      "name": "renglón de la cuenta · servicio · renglón viejo que no está en el catálogo: cargo libre",
+      "input": {
+        "row": {
+          "ServiceName": "Retiro de puntos a domicilio",
+          "ServiceSyncId": null,
+          "ServiceId": 5
+        },
+        "services": [
+          {
+            "id": 21,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "active": true
+          },
+          {
+            "id": 22,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002",
+            "code": "SERV-004",
+            "name": "Monitoreo de Glucemia Capilar",
+            "active": true
+          },
+          {
+            "id": 23,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003",
+            "code": "SERV-003",
+            "name": "Sutura de Herida Simple",
+            "active": false
+          }
+        ]
+      },
+      "expected": {
+        "line": "libre",
+        "name": "Retiro de puntos a domicilio",
+        "freeChargeId": -1396426
+      }
+    },
+    {
+      "name": "insumos de un servicio · empezar · los insumos por defecto por las unidades",
+      "input": {
+        "service": {
+          "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+          "name": "Curación Menor y Asepsia",
+          "price": 250,
+          "defaults": [
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "name": "Gasa Estéril 10x10 cm",
+                "price": 18,
+                "stock": 10
+              },
+              "perUnit": 1
+            },
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "name": "Alcohol Etílico 70%",
+                "price": 50,
+                "stock": 3
+              },
+              "perUnit": 1
+            }
+          ]
+        },
+        "units": 2
+      },
+      "expected": {
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 2,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Alcohol Etílico 70%",
+            "Quantity": 2,
+            "UnitPrice": 50,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          }
+        ],
+        "charges": [
+          {
+            "line": "servicio",
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "pieces": 2
+          },
+          {
+            "line": "producto",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "pieces": 2
+          },
+          {
+            "line": "producto",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "pieces": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "insumos de un servicio · empezar · dos renglones por defecto del mismo producto se suman; uno con Quantity 0 carga 1 por unidad",
+      "input": {
+        "service": {
+          "syncId": "b1b2c3d4-0000-4000-8000-000000000003",
+          "name": "Sutura de Herida Simple",
+          "price": 450,
+          "defaults": [
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "name": "Gasa Estéril 10x10 cm",
+                "price": 18,
+                "stock": 10
+              },
+              "perUnit": 2
+            },
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000005",
+                "name": "Jeringa Desechable 5 ml",
+                "price": 12,
+                "stock": 40
+              },
+              "perUnit": 1
+            },
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "name": "Gasa Estéril 10x10 cm",
+                "price": 18,
+                "stock": 10
+              },
+              "perUnit": 1
+            }
+          ]
+        },
+        "units": 1
+      },
+      "expected": {
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 3,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Jeringa Desechable 5 ml",
+            "Quantity": 1,
+            "UnitPrice": 12,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          }
+        ],
+        "charges": [
+          {
+            "line": "servicio",
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003",
+            "pieces": 1
+          },
+          {
+            "line": "producto",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "pieces": 3
+          },
+          {
+            "line": "producto",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005",
+            "pieces": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "insumos de un servicio · empezar · servicio sin insumos por defecto: lista vacía",
+      "input": {
+        "service": {
+          "syncId": "b1b2c3d4-0000-4000-8000-000000000002",
+          "name": "Monitoreo de Glucemia Capilar",
+          "price": 80,
+          "defaults": []
+        },
+        "units": 1
+      },
+      "expected": {
+        "supplies": [],
+        "charges": [
+          {
+            "line": "servicio",
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002",
+            "pieces": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "insumos de un servicio · empezar · servicio fuera del catálogo (cargo libre): lista vacía",
+      "input": {
+        "service": null,
+        "name": "Retiro de puntos a domicilio",
+        "units": 1
+      },
+      "expected": {
+        "supplies": [],
+        "charges": [
+          {
+            "line": "libre",
+            "name": "Retiro de puntos a domicilio",
+            "pieces": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "insumos de un servicio · escribir · servicio del catálogo con su lista (ChargedLineId es el Id local de la PC)",
+      "input": {
+        "column": "ActiveServicesJson",
+        "service": {
+          "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+          "name": "Curación Menor y Asepsia",
+          "price": 250,
+          "defaults": [
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "name": "Gasa Estéril 10x10 cm",
+                "price": 18,
+                "stock": 10
+              },
+              "perUnit": 1
+            },
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "name": "Alcohol Etílico 70%",
+                "price": 50,
+                "stock": 3
+              },
+              "perUnit": 1
+            }
+          ]
+        },
+        "units": 1,
+        "folio": "CNS-20261014-103015"
+      },
+      "expected": {
+        "RowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+        "ServiceId": 21,
+        "ServiceSyncId": "b1b2c3d4-0000-4000-8000-000000000001",
+        "ServiceCode": "SERV-002",
+        "ServiceName": "Curación Menor y Asepsia",
+        "Category": "Curaciones",
+        "Notes": "Procedimiento clínico en consulta",
+        "Price": 250,
+        "Quantity": 1,
+        "ChargedConsultationFolio": "CNS-20261014-103015",
+        "ChargedUnits": 1,
+        "Supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 1,
+            "UnitPrice": 18,
+            "ChargedLineId": 11,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Alcohol Etílico 70%",
+            "Quantity": 1,
+            "UnitPrice": 50,
+            "ChargedLineId": 12,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          }
+        ]
+      }
+    },
+    {
+      "name": "insumos de un servicio · ajustar · + una pieza",
+      "input": {
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 1,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Alcohol Etílico 70%",
+            "Quantity": 1,
+            "UnitPrice": 50,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          }
+        ],
+        "product": {
+          "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+          "name": "Gasa Estéril 10x10 cm",
+          "price": 18,
+          "stock": 10
+        },
+        "requested": 2,
+        "inAccount": 1
+      },
+      "expected": {
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 2,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Alcohol Etílico 70%",
+            "Quantity": 1,
+            "UnitPrice": 50,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          }
+        ],
+        "charge": 1,
+        "warning": false
+      }
+    },
+    {
+      "name": "insumos de un servicio · ajustar · − una pieza",
+      "input": {
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 2,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Alcohol Etílico 70%",
+            "Quantity": 1,
+            "UnitPrice": 50,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          }
+        ],
+        "product": {
+          "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+          "name": "Gasa Estéril 10x10 cm",
+          "price": 18,
+          "stock": 10
+        },
+        "requested": 1,
+        "inAccount": 2
+      },
+      "expected": {
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 1,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Alcohol Etílico 70%",
+            "Quantity": 1,
+            "UnitPrice": 50,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          }
+        ],
+        "charge": -1,
+        "warning": false
+      }
+    },
+    {
+      "name": "insumos de un servicio · ajustar · la X: el insumo sale de la lista",
+      "input": {
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 1,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Alcohol Etílico 70%",
+            "Quantity": 1,
+            "UnitPrice": 50,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          }
+        ],
+        "product": {
+          "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+          "name": "Alcohol Etílico 70%",
+          "price": 50,
+          "stock": 3
+        },
+        "requested": 0,
+        "inAccount": 1
+      },
+      "expected": {
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 1,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          }
+        ],
+        "charge": -1,
+        "warning": false
+      }
+    },
+    {
+      "name": "insumos de un servicio · ajustar · + sin existencias: carga igual y avisa (revisión 20)",
+      "input": {
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 1,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Alcohol Etílico 70%",
+            "Quantity": 1,
+            "UnitPrice": 50,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          }
+        ],
+        "product": {
+          "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+          "name": "Alcohol Etílico 70%",
+          "price": 50,
+          "stock": 3
+        },
+        "requested": 2,
+        "inAccount": 3
+      },
+      "expected": {
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 1,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Alcohol Etílico 70%",
+            "Quantity": 2,
+            "UnitPrice": 50,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          }
+        ],
+        "charge": 1,
+        "warning": true
+      }
+    },
+    {
+      "name": "insumos de un servicio · ajustar · + varias piezas: carga todas y avisa porque no caben (revisión 20)",
+      "input": {
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 1,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Alcohol Etílico 70%",
+            "Quantity": 1,
+            "UnitPrice": 50,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          }
+        ],
+        "product": {
+          "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+          "name": "Alcohol Etílico 70%",
+          "price": 50,
+          "stock": 3
+        },
+        "requested": 4,
+        "inAccount": 2
+      },
+      "expected": {
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 1,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Alcohol Etílico 70%",
+            "Quantity": 4,
+            "UnitPrice": 50,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          }
+        ],
+        "charge": 3,
+        "warning": true
+      }
+    },
+    {
+      "name": "insumos de un servicio · ajustar · agregar un producto que no tiene: entra al final con una pieza",
+      "input": {
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 1,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Alcohol Etílico 70%",
+            "Quantity": 1,
+            "UnitPrice": 50,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          }
+        ],
+        "product": {
+          "syncId": "a1b2c3d4-0000-4000-8000-000000000005",
+          "name": "Jeringa Desechable 5 ml",
+          "price": 12,
+          "stock": 40
+        },
+        "requested": "add",
+        "inAccount": 0
+      },
+      "expected": {
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 1,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Alcohol Etílico 70%",
+            "Quantity": 1,
+            "UnitPrice": 50,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "SupplyName": "Jeringa Desechable 5 ml",
+            "Quantity": 1,
+            "UnitPrice": 12,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          }
+        ],
+        "charge": 1,
+        "warning": false
+      }
+    },
+    {
+      "name": "insumos de un servicio · ajustar · agregar un producto que ya tiene: una pieza más",
+      "input": {
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 1,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Alcohol Etílico 70%",
+            "Quantity": 1,
+            "UnitPrice": 50,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          }
+        ],
+        "product": {
+          "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+          "name": "Gasa Estéril 10x10 cm",
+          "price": 18,
+          "stock": 10
+        },
+        "requested": "add",
+        "inAccount": 1
+      },
+      "expected": {
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 2,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Alcohol Etílico 70%",
+            "Quantity": 1,
+            "UnitPrice": 50,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          }
+        ],
+        "charge": 1,
+        "warning": false
+      }
+    },
+    {
+      "name": "insumos de un servicio · unidades · una más: suma los insumos por defecto de una unidad y lo ajustado se queda (el alcohol que se quitó vuelve al final)",
+      "input": {
+        "service": {
+          "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+          "name": "Curación Menor y Asepsia",
+          "price": 250,
+          "defaults": [
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "name": "Gasa Estéril 10x10 cm",
+                "price": 18,
+                "stock": 10
+              },
+              "perUnit": 1
+            },
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "name": "Alcohol Etílico 70%",
+                "price": 50,
+                "stock": 3
+              },
+              "perUnit": 1
+            }
+          ]
+        },
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 2,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Jeringa Desechable 5 ml",
+            "Quantity": 1,
+            "UnitPrice": 12,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          }
+        ],
+        "units": {
+          "from": 1,
+          "to": 2
+        }
+      },
+      "expected": {
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 3,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Jeringa Desechable 5 ml",
+            "Quantity": 1,
+            "UnitPrice": 12,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          },
+          {
+            "SupplyName": "Alcohol Etílico 70%",
+            "Quantity": 1,
+            "UnitPrice": 50,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          }
+        ],
+        "charges": [
+          {
+            "line": "servicio",
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "pieces": 1
+          },
+          {
+            "line": "producto",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "pieces": 1
+          },
+          {
+            "line": "producto",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "pieces": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "insumos de un servicio · unidades · una menos: descuenta los de una unidad; lo agregado a mano se queda",
+      "input": {
+        "service": {
+          "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+          "name": "Curación Menor y Asepsia",
+          "price": 250,
+          "defaults": [
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "name": "Gasa Estéril 10x10 cm",
+                "price": 18,
+                "stock": 10
+              },
+              "perUnit": 1
+            },
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "name": "Alcohol Etílico 70%",
+                "price": 50,
+                "stock": 3
+              },
+              "perUnit": 1
+            }
+          ]
+        },
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 3,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Jeringa Desechable 5 ml",
+            "Quantity": 1,
+            "UnitPrice": 12,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          },
+          {
+            "SupplyName": "Alcohol Etílico 70%",
+            "Quantity": 2,
+            "UnitPrice": 50,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          }
+        ],
+        "units": {
+          "from": 2,
+          "to": 1
+        }
+      },
+      "expected": {
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 2,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "SupplyName": "Jeringa Desechable 5 ml",
+            "Quantity": 1,
+            "UnitPrice": 12,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          },
+          {
+            "SupplyName": "Alcohol Etílico 70%",
+            "Quantity": 1,
+            "UnitPrice": 50,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          }
+        ],
+        "charges": [
+          {
+            "line": "servicio",
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "pieces": -1
+          },
+          {
+            "line": "producto",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "pieces": -1
+          },
+          {
+            "line": "producto",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "pieces": -1
+          }
+        ]
+      }
+    },
+    {
+      "name": "insumos de un servicio · unidades · una menos: cada insumo solo hasta lo que tenga la lista",
+      "input": {
+        "service": {
+          "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+          "name": "Curación Menor y Asepsia",
+          "price": 250,
+          "defaults": [
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "name": "Gasa Estéril 10x10 cm",
+                "price": 18,
+                "stock": 10
+              },
+              "perUnit": 1
+            },
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "name": "Alcohol Etílico 70%",
+                "price": 50,
+                "stock": 3
+              },
+              "perUnit": 1
+            }
+          ]
+        },
+        "supplies": [
+          {
+            "SupplyName": "Gasa Estéril 10x10 cm",
+            "Quantity": 1,
+            "UnitPrice": 18,
+            "ChargedLineKind": "producto",
+            "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          }
+        ],
+        "units": {
+          "from": 2,
+          "to": 1
+        }
+      },
+      "expected": {
+        "supplies": [],
+        "charges": [
+          {
+            "line": "servicio",
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "pieces": -1
+          },
+          {
+            "line": "producto",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "pieces": -1
+          }
+        ]
+      }
+    },
+    {
+      "name": "insumos de un servicio · quitar el renglón · con lista: el servicio por sus unidades y cada insumo con sus piezas (lo ajustado incluido)",
+      "input": {
+        "service": {
+          "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+          "name": "Curación Menor y Asepsia",
+          "price": 250,
+          "defaults": [
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "name": "Gasa Estéril 10x10 cm",
+                "price": 18,
+                "stock": 10
+              },
+              "perUnit": 1
+            },
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "name": "Alcohol Etílico 70%",
+                "price": 50,
+                "stock": 3
+              },
+              "perUnit": 1
+            }
+          ]
+        },
+        "currentFolio": "CNS-20261014-103015",
+        "row": {
+          "ChargedConsultationFolio": "CNS-20261014-103015",
+          "ChargedUnits": 1,
+          "Supplies": [
+            {
+              "SupplyName": "Gasa Estéril 10x10 cm",
+              "Quantity": 3,
+              "UnitPrice": 18,
+              "ChargedLineKind": "producto",
+              "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+            },
+            {
+              "SupplyName": "Jeringa Desechable 5 ml",
+              "Quantity": 1,
+              "UnitPrice": 12,
+              "ChargedLineKind": "producto",
+              "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000005"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "charges": [
+          {
+            "line": "servicio",
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "pieces": -1
+          },
+          {
+            "line": "producto",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "pieces": -3
+          },
+          {
+            "line": "producto",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005",
+            "pieces": -1
+          }
+        ]
+      }
+    },
+    {
+      "name": "insumos de un servicio · quitar el renglón · sin lista (revisión 13 o anterior): como antes, el servicio y sus insumos por defecto de hoy por sus unidades",
+      "input": {
+        "service": {
+          "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+          "name": "Curación Menor y Asepsia",
+          "price": 250,
+          "defaults": [
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "name": "Gasa Estéril 10x10 cm",
+                "price": 18,
+                "stock": 10
+              },
+              "perUnit": 1
+            },
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "name": "Alcohol Etílico 70%",
+                "price": 50,
+                "stock": 3
+              },
+              "perUnit": 1
+            }
+          ]
+        },
+        "currentFolio": "CNS-20261014-103015",
+        "row": {
+          "ChargedConsultationFolio": "CNS-20261014-103015",
+          "ChargedUnits": 2,
+          "Supplies": null
+        }
+      },
+      "expected": {
+        "charges": [
+          {
+            "line": "servicio",
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "pieces": -2
+          },
+          {
+            "line": "producto",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "pieces": -2
+          },
+          {
+            "line": "producto",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "pieces": -2
+          }
+        ]
+      }
+    },
+    {
+      "name": "insumos de un servicio · quitar el renglón · de una consulta anterior: no descuenta nada de la consulta en curso",
+      "input": {
+        "service": {
+          "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+          "name": "Curación Menor y Asepsia",
+          "price": 250,
+          "defaults": [
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "name": "Gasa Estéril 10x10 cm",
+                "price": 18,
+                "stock": 10
+              },
+              "perUnit": 1
+            },
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "name": "Alcohol Etílico 70%",
+                "price": 50,
+                "stock": 3
+              },
+              "perUnit": 1
+            }
+          ]
+        },
+        "currentFolio": "CNS-20261014-103015",
+        "row": {
+          "ChargedConsultationFolio": "CNS-20261001-090000",
+          "ChargedUnits": 1,
+          "Supplies": [
+            {
+              "SupplyName": "Gasa Estéril 10x10 cm",
+              "Quantity": 1,
+              "UnitPrice": 18,
+              "ChargedLineKind": "producto",
+              "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001"
+            },
+            {
+              "SupplyName": "Alcohol Etílico 70%",
+              "Quantity": 1,
+              "UnitPrice": 50,
+              "ChargedLineKind": "producto",
+              "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000002"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "charges": []
+      }
+    },
+    {
+      "name": "insumos de un servicio · quitar el renglón · con lista vacía: solo el servicio",
+      "input": {
+        "service": {
+          "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+          "name": "Curación Menor y Asepsia",
+          "price": 250,
+          "defaults": [
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "name": "Gasa Estéril 10x10 cm",
+                "price": 18,
+                "stock": 10
+              },
+              "perUnit": 1
+            },
+            {
+              "product": {
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "name": "Alcohol Etílico 70%",
+                "price": 50,
+                "stock": 3
+              },
+              "perUnit": 1
+            }
+          ]
+        },
+        "currentFolio": "CNS-20261014-103015",
+        "row": {
+          "ChargedConsultationFolio": "CNS-20261014-103015",
+          "ChargedUnits": 1,
+          "Supplies": []
+        }
+      },
+      "expected": {
+        "charges": [
+          {
+            "line": "servicio",
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "pieces": -1
+          }
+        ]
+      }
+    },
+    {
+      "name": "renglón de la cuenta · insumo de un servicio · por el SyncId, aunque su Id local sea otro",
+      "input": {
+        "supply": {
+          "SupplyName": "Gasa Estéril 10x10 cm",
+          "ChargedLineKind": "producto",
+          "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001",
+          "ChargedLineId": 4
+        },
+        "products": [
+          {
+            "id": 11,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "name": "Gasa Estéril 10x10 cm",
+            "active": true
+          },
+          {
+            "id": 12,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "name": "Alcohol Etílico 70%",
+            "active": true
+          },
+          {
+            "id": 16,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005",
+            "name": "Jeringa Desechable 5 ml",
+            "active": true
+          }
+        ]
+      },
+      "expected": {
+        "line": "producto",
+        "productId": 11,
+        "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "name": "renglón de la cuenta · insumo de un servicio · producto que no existía al recibir la consulta: el cargo libre al que se tradujo, tal cual",
+      "input": {
+        "supply": {
+          "SupplyName": "Venda de yeso 15 cm",
+          "ChargedLineKind": "producto",
+          "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-0000000000ff",
+          "ChargedLineId": -1263416
+        },
+        "products": [
+          {
+            "id": 11,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "name": "Gasa Estéril 10x10 cm",
+            "active": true
+          },
+          {
+            "id": 12,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "name": "Alcohol Etílico 70%",
+            "active": true
+          },
+          {
+            "id": 16,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005",
+            "name": "Jeringa Desechable 5 ml",
+            "active": true
+          }
+        ]
+      },
+      "expected": {
+        "line": "libre",
+        "name": "Venda de yeso 15 cm",
+        "freeChargeId": -1263416
+      }
+    },
+    {
+      "name": "renglón de la cuenta · insumo de un servicio · SyncId que no existe aquí: por nombre",
+      "input": {
+        "supply": {
+          "SupplyName": "Jeringa Desechable 5 ml",
+          "ChargedLineKind": "producto",
+          "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-0000000000ff",
+          "ChargedLineId": 0
+        },
+        "products": [
+          {
+            "id": 11,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "name": "Gasa Estéril 10x10 cm",
+            "active": true
+          },
+          {
+            "id": 12,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "name": "Alcohol Etílico 70%",
+            "active": true
+          },
+          {
+            "id": 16,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005",
+            "name": "Jeringa Desechable 5 ml",
+            "active": true
+          }
+        ]
+      },
+      "expected": {
+        "line": "producto",
+        "productId": 16,
+        "syncId": "a1b2c3d4-0000-4000-8000-000000000005"
+      }
+    },
+    {
+      "name": "renglón de la cuenta · insumo de un servicio · cargo libre: el de su nombre",
+      "input": {
+        "supply": {
+          "SupplyName": "Férula de aluminio a la medida",
+          "ChargedLineKind": "libre",
+          "ChargedLineSyncId": null,
+          "ChargedLineId": 0
+        },
+        "products": [
+          {
+            "id": 11,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+            "name": "Gasa Estéril 10x10 cm",
+            "active": true
+          },
+          {
+            "id": 12,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+            "name": "Alcohol Etílico 70%",
+            "active": true
+          },
+          {
+            "id": 16,
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005",
+            "name": "Jeringa Desechable 5 ml",
+            "active": true
+          }
+        ]
+      },
+      "expected": {
+        "line": "libre",
+        "name": "Férula de aluminio a la medida",
+        "freeChargeId": -1959291
+      }
+    },
+    {
+      "name": "insumos de un servicio · leer y volver a escribir · la lista y los campos desconocidos de cada insumo se quedan",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "column": "ActiveServicesJson",
+        "json": "[{\"RowId\":\"6f9619ff-8b86-d011-b42d-00c04fc964ff\",\"ServiceId\":21,\"ServiceSyncId\":\"b1b2c3d4-0000-4000-8000-000000000001\",\"ServiceCode\":\"SERV-002\",\"ServiceName\":\"Curación Menor y Asepsia\",\"Category\":\"Curaciones\",\"Notes\":\"\",\"Price\":250,\"Quantity\":1,\"ChargedConsultationFolio\":\"CNS-20261014-103015\",\"ChargedUnits\":1,\"Supplies\":[{\"SupplyName\":\"Gasa Estéril 10x10 cm\",\"Quantity\":2,\"UnitPrice\":18,\"ChargedLineKind\":\"producto\",\"ChargedLineSyncId\":\"a1b2c3d4-0000-4000-8000-000000000001\",\"Lote\":{\"Id\":\"L-7\",\"Caduca\":\"2027-01\"}},{\"SupplyName\":\"Férula\",\"Quantity\":1,\"UnitPrice\":35,\"ChargedLineKind\":\"libre\"}],\"Futuro\":true}]"
+      },
+      "expected": [
+        {
+          "RowId": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+          "ServiceId": 21,
+          "ServiceSyncId": "b1b2c3d4-0000-4000-8000-000000000001",
+          "ServiceCode": "SERV-002",
+          "ServiceName": "Curación Menor y Asepsia",
+          "Category": "Curaciones",
+          "Notes": "",
+          "Price": 250,
+          "Quantity": 1,
+          "ChargedConsultationFolio": "CNS-20261014-103015",
+          "ChargedUnits": 1,
+          "Supplies": [
+            {
+              "SupplyName": "Gasa Estéril 10x10 cm",
+              "Quantity": 2,
+              "UnitPrice": 18,
+              "ChargedLineKind": "producto",
+              "ChargedLineSyncId": "a1b2c3d4-0000-4000-8000-000000000001",
+              "Lote": {
+                "Id": "L-7",
+                "Caduca": "2027-01"
+              }
+            },
+            {
+              "SupplyName": "Férula",
+              "Quantity": 1,
+              "UnitPrice": 35,
+              "ChargedLineKind": "libre"
+            }
+          ],
+          "Futuro": true
+        }
+      ]
+    }
+  ]
+}

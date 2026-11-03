@@ -1,0 +1,1074 @@
+{
+  "scenario": "generation-fence",
+  "covers": [
+    "8.9"
+  ],
+  "contract": 20,
+  "protocol": 3,
+  "generatedBy": "tests/TPVC.Tests/TursoSyncEndToEndTests.Scenarios.cs (TPVC_WRITE_GOLDEN=1 lo regenera)",
+  "notes": [
+    "A guarda un respaldo (paso 7); después B registra un paciente y lo sube, A cambia un precio y lo sube, y B registra otro paciente que no alcanza a subir.",
+    "A restaura el respaldo y reemplaza la nube con él (pcOnly): generación nueva, la nube queda igual al respaldo (sin el paciente de B ni el precio nuevo).",
+    "B ve otra generación en la primera instrucción: guarda lo que no había subido (saved 1), se vacía y baja la nube nueva una sola vez. «Volver a aplicar» (reapplySaved) escribe lo guardado como una edición nueva (pending 1) que sube en la siguiente sincronización. Lo que B ya había subido antes del reemplazo (su primer paciente) se perdió con él, igual que el precio nuevo de A: A los guarda al reemplazar (su archivo de lo perdido y saved 2 desde el paso 14, para «Volver a aplicar» si el médico quiere); este escenario no los vuelve a aplicar."
+  ],
+  "devices": [
+    {
+      "name": "A",
+      "deviceId": "device-a",
+      "role": "WindowsDesktop",
+      "engine": "pc"
+    },
+    {
+      "name": "B",
+      "deviceId": "device-b",
+      "role": "AndroidTablet",
+      "engine": "kotlin"
+    }
+  ],
+  "watch": {
+    "Patients": [
+      "RecordNumber",
+      "FullName"
+    ],
+    "Products": [
+      "Price"
+    ]
+  },
+  "steps": [
+    {
+      "n": 1,
+      "device": "A",
+      "op": "create",
+      "table": "Categories",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000601",
+        "Name": "Analgésicos",
+        "Icon": "Pill"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "Products": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {},
+          "Products": {},
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "Products": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 2,
+      "device": "A",
+      "op": "create",
+      "table": "Products",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000602",
+        "Code": "PARA-500",
+        "Name": "Paracetamol 500 mg",
+        "CategorySyncId": "10000000-0000-4000-8000-000000000601",
+        "Price": "35.5",
+        "CurrentStock": "12"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "Products": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {},
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 2,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "Products": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 3,
+      "device": "A",
+      "op": "create",
+      "table": "Patients",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000603",
+        "RecordNumber": "EXP-2020-004",
+        "FullName": "Ana Pérez Núñez"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "Products": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 3,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "Products": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 4,
+      "device": "A",
+      "op": "fullSync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "Products": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 5,
+      "device": "B",
+      "op": "join",
+      "result": {
+        "ok": true
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "Products": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 6,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 7,
+      "device": "A",
+      "op": "backup",
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 8,
+      "device": "B",
+      "op": "create",
+      "table": "Patients",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000604",
+        "RecordNumber": "EXP-2020-005",
+        "FullName": "Paciente De B Después Del Respaldo"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000604": {
+              "RecordNumber": "EXP-2020-005",
+              "FullName": "Paciente De B Después Del Respaldo"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 9,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000604": {
+              "RecordNumber": "EXP-2020-005",
+              "FullName": "Paciente De B Después Del Respaldo"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000604": {
+              "RecordNumber": "EXP-2020-005",
+              "FullName": "Paciente De B Después Del Respaldo"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 10,
+      "device": "A",
+      "op": "edit",
+      "table": "Products",
+      "syncId": "10000000-0000-4000-8000-000000000602",
+      "set": {
+        "Price": "99.5"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000604": {
+              "RecordNumber": "EXP-2020-005",
+              "FullName": "Paciente De B Después Del Respaldo"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "99.5"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000604": {
+              "RecordNumber": "EXP-2020-005",
+              "FullName": "Paciente De B Después Del Respaldo"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 11,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000604": {
+              "RecordNumber": "EXP-2020-005",
+              "FullName": "Paciente De B Después Del Respaldo"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "99.5"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000604": {
+              "RecordNumber": "EXP-2020-005",
+              "FullName": "Paciente De B Después Del Respaldo"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "99.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000604": {
+              "RecordNumber": "EXP-2020-005",
+              "FullName": "Paciente De B Después Del Respaldo"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 12,
+      "device": "B",
+      "op": "create",
+      "table": "Patients",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000605",
+        "RecordNumber": "EXP-2020-006",
+        "FullName": "Paciente De B Sin Subir"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000604": {
+              "RecordNumber": "EXP-2020-005",
+              "FullName": "Paciente De B Después Del Respaldo"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "99.5"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000604": {
+              "RecordNumber": "EXP-2020-005",
+              "FullName": "Paciente De B Después Del Respaldo"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "99.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000604": {
+              "RecordNumber": "EXP-2020-005",
+              "FullName": "Paciente De B Después Del Respaldo"
+            },
+            "10000000-0000-4000-8000-000000000605": {
+              "RecordNumber": "EXP-2020-006",
+              "FullName": "Paciente De B Sin Subir"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 13,
+      "device": "A",
+      "op": "restoreBackup",
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000604": {
+              "RecordNumber": "EXP-2020-005",
+              "FullName": "Paciente De B Después Del Respaldo"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "99.5"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 3,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000604": {
+              "RecordNumber": "EXP-2020-005",
+              "FullName": "Paciente De B Después Del Respaldo"
+            },
+            "10000000-0000-4000-8000-000000000605": {
+              "RecordNumber": "EXP-2020-006",
+              "FullName": "Paciente De B Sin Subir"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 14,
+      "device": "A",
+      "op": "replaceCloud",
+      "result": {
+        "ok": true
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 2
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000604": {
+              "RecordNumber": "EXP-2020-005",
+              "FullName": "Paciente De B Después Del Respaldo"
+            },
+            "10000000-0000-4000-8000-000000000605": {
+              "RecordNumber": "EXP-2020-006",
+              "FullName": "Paciente De B Sin Subir"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 15,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 2
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 1
+        }
+      }
+    },
+    {
+      "n": 16,
+      "device": "B",
+      "op": "reapplySaved",
+      "result": {
+        "ok": true
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 2
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000605": {
+              "RecordNumber": "EXP-2020-006",
+              "FullName": "Paciente De B Sin Subir"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 17,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000605": {
+              "RecordNumber": "EXP-2020-006",
+              "FullName": "Paciente De B Sin Subir"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 2
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000605": {
+              "RecordNumber": "EXP-2020-006",
+              "FullName": "Paciente De B Sin Subir"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 18,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000605": {
+              "RecordNumber": "EXP-2020-006",
+              "FullName": "Paciente De B Sin Subir"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000605": {
+              "RecordNumber": "EXP-2020-006",
+              "FullName": "Paciente De B Sin Subir"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 2
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000603": {
+              "RecordNumber": "EXP-2020-004",
+              "FullName": "Ana Pérez Núñez"
+            },
+            "10000000-0000-4000-8000-000000000605": {
+              "RecordNumber": "EXP-2020-006",
+              "FullName": "Paciente De B Sin Subir"
+            }
+          },
+          "Products": {
+            "10000000-0000-4000-8000-000000000602": {
+              "Price": "35.5"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,3040 @@
+{
+  "rule": "sheet-charges",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Lo que las hojas de la consulta cargan a la cuenta (ViewModels/Patients/State/ConsultationAccount.cs, corrido tal cual con una consulta abierta y sin base; las reglas puras están en ConsultationAccountRules, PatientSheetRows y ServiceRowSupplies). Los productos y servicios son el catálogo de este equipo (defaultProducts: los insumos por defecto de un servicio, por Id del producto y piezas por unidad). Cada paso lleva la cuenta después de él: cada renglón como 'producto' o 'servicio' (por su SyncId) o 'libre' (por su nombre), con el código, nombre, genérico, presentación, unidad, precio y piezas que escribe la PC, y el total con el honorario (consultation-account.json).",
+    "prescribe (agregar a la receta con «Se surte aquí» por defecto): el producto elegido si el renglón sigue siendo ese producto (catalog-matching.json, product-matches-name), si no el del nombre (find-by-name); queda marcado y se carga con el nombre del renglón y sus piezas (consultation-account.json, prescription-quantity) solo si ese producto tiene existencias (consultation-account.json, dispense-default; decisión del médico del 2026-10-22: con 0 o en negativo queda desmarcado y sin cargo); con existencias que no alcanzan para el renglón se carga igual, con el aviso (revisión 20: un inventario mal contado nunca impide cobrar). tick-dispense (la casilla marcada a mano): se carga si es del inventario, tenga o no existencias, con el aviso. 'charged' es lo que queda en DispenseInClinic y 'warning' el aviso de existencias (stockWarning de checkout.json, con lo que ya está en la cuenta de ese producto) o null. unprescribe descuenta las piezas del producto que encuentra por nombre.",
+    "add-supply: el producto elegido o el del nombre; con producto se carga con el nombre del renglón; sin producto, un cargo libre ('INSUMO', 'Material clínico', 'Piezas', su precio) solo si el precio es mayor que 0 (si no, no se carga y la PC avisa). 'line' es lo que anota el renglón (ChargedLineKind y ChargedLineSyncId: synced-json-columns.json). remove-supply descuenta las piezas que cargó, del mismo renglón de la cuenta.",
+    "add-service: el servicio del catálogo del renglón (PatientSheetRows.ResolveService: el activo con su SyncId; sin SyncId ni Id local, cargo libre; si no, el del Id viejo con el mismo nombre normalizado o el primero con ese nombre normalizado) se carga por sus unidades ('Servicio Clínico • categoría', 'Duración: N min', 'Servicio') y cada insumo por defecto por sus piezas × unidades, que forman la lista del renglón (revisión 14, ServiceRowSupplies.AddUnits: synced-json-columns.json); sin servicio, un cargo libre con su precio (si es mayor que 0) y la lista vacía. Las existencias nunca frenan lo que se carga (revisión 20; antes había tope al agregar a mano): si no alcanzan, la PC avisa sin bloquear. summary es el resumen de la lista que muestra la hoja.",
+    "service-units (+ / −): con lista, una unidad más carga el servicio y los insumos por defecto de esa unidad (se suman a la lista); una menos descuenta el servicio y las piezas por defecto de esa unidad, cada insumo hasta lo que tenga la lista (lo agregado a mano se queda). service-supply-add: una pieza más de un producto en la lista (o uno nuevo). service-supply-remove: la X de un insumo de la lista. remove-service (la X del renglón): descuenta el servicio por sus unidades cargadas y cada insumo de la lista como quedó."
+  ],
+  "cases": [
+    {
+      "name": "receta que se surte aquí: el producto elegido, por nombre o por el renglón normado; sin existencias suficientes se carga igual (revisión 20)",
+      "input": {
+        "products": [
+          {
+            "id": 11,
+            "code": "CUR-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Gasa de algodón",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 10,
+            "category": "Material de curación",
+            "price": "18.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "id": 12,
+            "code": "ANT-001",
+            "name": "Alcohol Etílico 70%",
+            "genericName": "Etanol",
+            "presentation": "Botella de 1000 ml",
+            "stock": 3,
+            "category": "Antisépticos",
+            "price": "65.50",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 14,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 2,
+            "category": "Medicamentos",
+            "price": "45.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004"
+          },
+          {
+            "id": 15,
+            "code": "MED-002",
+            "name": "Tempra",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas 500 mg",
+            "stock": 9,
+            "category": "Medicamentos",
+            "price": "89.90",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          }
+        ],
+        "services": [
+          {
+            "id": 21,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones",
+            "price": "250.00",
+            "minutes": 20,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "defaultProducts": [
+              {
+                "productId": 11,
+                "quantity": 2
+              },
+              {
+                "productId": 12,
+                "quantity": 1
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "code": "SERV-004",
+            "name": "Glucemia capilar",
+            "category": "Diagnóstico",
+            "price": "80.00",
+            "minutes": 10,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta",
+            "price": "350.00",
+            "minutes": 25,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003"
+          }
+        ],
+        "feeOverrideId": null,
+        "ops": [
+          {
+            "op": "prescribe",
+            "medicineName": "Paracetamol 500 mg",
+            "recommendedQuantity": 2,
+            "knownProductId": 14
+          },
+          {
+            "op": "prescribe",
+            "medicineName": "Paracetamol 500 mg tabletas (Tempra)",
+            "recommendedQuantity": 1,
+            "knownProductId": null
+          },
+          {
+            "op": "prescribe",
+            "medicineName": "Paracetamol 500 mg",
+            "recommendedQuantity": 1,
+            "knownProductId": null
+          },
+          {
+            "op": "prescribe",
+            "medicineName": "Ibuprofeno 400 mg",
+            "recommendedQuantity": 1,
+            "knownProductId": null
+          },
+          {
+            "op": "prescribe",
+            "medicineName": "Tempra",
+            "recommendedQuantity": 10,
+            "knownProductId": 15
+          }
+        ]
+      },
+      "expected": [
+        {
+          "op": "prescribe",
+          "charged": true,
+          "warning": null,
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+                "code": "MED-001",
+                "name": "Paracetamol 500 mg",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas",
+                "unit": "Piezas",
+                "unitPrice": "45.00",
+                "quantity": 2
+              }
+            ],
+            "total": "440.00"
+          }
+        },
+        {
+          "op": "prescribe",
+          "charged": true,
+          "warning": null,
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+                "code": "MED-001",
+                "name": "Paracetamol 500 mg",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas",
+                "unit": "Piezas",
+                "unitPrice": "45.00",
+                "quantity": 2
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000005",
+                "code": "MED-002",
+                "name": "Paracetamol 500 mg tabletas (Tempra)",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas 500 mg",
+                "unit": "Piezas",
+                "unitPrice": "89.90",
+                "quantity": 1
+              }
+            ],
+            "total": "529.90"
+          }
+        },
+        {
+          "op": "prescribe",
+          "charged": true,
+          "warning": "Existencias insuficientes: Paracetamol 500 mg (quedan 2, se cobran 3). Revise el inventario.",
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+                "code": "MED-001",
+                "name": "Paracetamol 500 mg",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas",
+                "unit": "Piezas",
+                "unitPrice": "45.00",
+                "quantity": 3
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000005",
+                "code": "MED-002",
+                "name": "Paracetamol 500 mg tabletas (Tempra)",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas 500 mg",
+                "unit": "Piezas",
+                "unitPrice": "89.90",
+                "quantity": 1
+              }
+            ],
+            "total": "574.90"
+          }
+        },
+        {
+          "op": "prescribe",
+          "charged": false,
+          "warning": null,
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+                "code": "MED-001",
+                "name": "Paracetamol 500 mg",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas",
+                "unit": "Piezas",
+                "unitPrice": "45.00",
+                "quantity": 3
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000005",
+                "code": "MED-002",
+                "name": "Paracetamol 500 mg tabletas (Tempra)",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas 500 mg",
+                "unit": "Piezas",
+                "unitPrice": "89.90",
+                "quantity": 1
+              }
+            ],
+            "total": "574.90"
+          }
+        },
+        {
+          "op": "prescribe",
+          "charged": true,
+          "warning": "Existencias insuficientes: Tempra (quedan 9, se cobran 11). Revise el inventario.",
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+                "code": "MED-001",
+                "name": "Paracetamol 500 mg",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas",
+                "unit": "Piezas",
+                "unitPrice": "45.00",
+                "quantity": 3
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000005",
+                "code": "MED-002",
+                "name": "Paracetamol 500 mg tabletas (Tempra)",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas 500 mg",
+                "unit": "Piezas",
+                "unitPrice": "89.90",
+                "quantity": 11
+              }
+            ],
+            "total": "1473.90"
+          }
+        }
+      ]
+    },
+    {
+      "name": "quitar un medicamento de la receta descuenta sus piezas",
+      "input": {
+        "products": [
+          {
+            "id": 11,
+            "code": "CUR-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Gasa de algodón",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 10,
+            "category": "Material de curación",
+            "price": "18.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "id": 12,
+            "code": "ANT-001",
+            "name": "Alcohol Etílico 70%",
+            "genericName": "Etanol",
+            "presentation": "Botella de 1000 ml",
+            "stock": 3,
+            "category": "Antisépticos",
+            "price": "65.50",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 14,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 2,
+            "category": "Medicamentos",
+            "price": "45.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004"
+          },
+          {
+            "id": 15,
+            "code": "MED-002",
+            "name": "Tempra",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas 500 mg",
+            "stock": 9,
+            "category": "Medicamentos",
+            "price": "89.90",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          }
+        ],
+        "services": [
+          {
+            "id": 21,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones",
+            "price": "250.00",
+            "minutes": 20,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "defaultProducts": [
+              {
+                "productId": 11,
+                "quantity": 2
+              },
+              {
+                "productId": 12,
+                "quantity": 1
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "code": "SERV-004",
+            "name": "Glucemia capilar",
+            "category": "Diagnóstico",
+            "price": "80.00",
+            "minutes": 10,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta",
+            "price": "350.00",
+            "minutes": 25,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003"
+          }
+        ],
+        "feeOverrideId": null,
+        "ops": [
+          {
+            "op": "prescribe",
+            "medicineName": "Tempra",
+            "recommendedQuantity": 3,
+            "knownProductId": 15
+          },
+          {
+            "op": "unprescribe",
+            "row": 0,
+            "value": 0
+          }
+        ]
+      },
+      "expected": [
+        {
+          "op": "prescribe",
+          "charged": true,
+          "warning": null,
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000005",
+                "code": "MED-002",
+                "name": "Tempra",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas 500 mg",
+                "unit": "Piezas",
+                "unitPrice": "89.90",
+                "quantity": 3
+              }
+            ],
+            "total": "619.70"
+          }
+        },
+        {
+          "op": "unprescribe",
+          "account": {
+            "items": [],
+            "total": "350.00"
+          }
+        }
+      ]
+    },
+    {
+      "name": "insumos: del inventario con su nombre, por nombre, cargo libre con precio y sin precio (se anota pero no se cobra)",
+      "input": {
+        "products": [
+          {
+            "id": 11,
+            "code": "CUR-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Gasa de algodón",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 10,
+            "category": "Material de curación",
+            "price": "18.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "id": 12,
+            "code": "ANT-001",
+            "name": "Alcohol Etílico 70%",
+            "genericName": "Etanol",
+            "presentation": "Botella de 1000 ml",
+            "stock": 3,
+            "category": "Antisépticos",
+            "price": "65.50",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 14,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 2,
+            "category": "Medicamentos",
+            "price": "45.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004"
+          },
+          {
+            "id": 15,
+            "code": "MED-002",
+            "name": "Tempra",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas 500 mg",
+            "stock": 9,
+            "category": "Medicamentos",
+            "price": "89.90",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          }
+        ],
+        "services": [
+          {
+            "id": 21,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones",
+            "price": "250.00",
+            "minutes": 20,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "defaultProducts": [
+              {
+                "productId": 11,
+                "quantity": 2
+              },
+              {
+                "productId": 12,
+                "quantity": 1
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "code": "SERV-004",
+            "name": "Glucemia capilar",
+            "category": "Diagnóstico",
+            "price": "80.00",
+            "minutes": 10,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta",
+            "price": "350.00",
+            "minutes": 25,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003"
+          }
+        ],
+        "feeOverrideId": null,
+        "ops": [
+          {
+            "op": "add-supply",
+            "supplyName": "Gasa Estéril 10x10 cm",
+            "quantity": 2,
+            "unitPrice": "0",
+            "productId": 11
+          },
+          {
+            "op": "add-supply",
+            "supplyName": "alcohol etílico 70%",
+            "quantity": 1,
+            "unitPrice": "0",
+            "productId": null
+          },
+          {
+            "op": "add-supply",
+            "supplyName": "Guantes de nitrilo",
+            "quantity": 4,
+            "unitPrice": "3.50",
+            "productId": null
+          },
+          {
+            "op": "add-supply",
+            "supplyName": "Cubrebocas",
+            "quantity": 2,
+            "unitPrice": "0",
+            "productId": null
+          },
+          {
+            "op": "add-supply",
+            "supplyName": "Guantes de nitrilo",
+            "quantity": 1,
+            "unitPrice": "3.50",
+            "productId": null
+          }
+        ]
+      },
+      "expected": [
+        {
+          "op": "add-supply",
+          "charged": true,
+          "line": {
+            "kind": "producto",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "code": "CUR-001",
+                "name": "Gasa Estéril 10x10 cm",
+                "genericName": "Gasa de algodón",
+                "presentation": "Sobre con 5 piezas",
+                "unit": "Piezas",
+                "unitPrice": "18.00",
+                "quantity": 2
+              }
+            ],
+            "total": "386.00"
+          }
+        },
+        {
+          "op": "add-supply",
+          "charged": true,
+          "line": {
+            "kind": "producto",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "code": "CUR-001",
+                "name": "Gasa Estéril 10x10 cm",
+                "genericName": "Gasa de algodón",
+                "presentation": "Sobre con 5 piezas",
+                "unit": "Piezas",
+                "unitPrice": "18.00",
+                "quantity": 2
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "code": "ANT-001",
+                "name": "alcohol etílico 70%",
+                "genericName": "Etanol",
+                "presentation": "Botella de 1000 ml",
+                "unit": "Piezas",
+                "unitPrice": "65.50",
+                "quantity": 1
+              }
+            ],
+            "total": "451.50"
+          }
+        },
+        {
+          "op": "add-supply",
+          "charged": true,
+          "line": {
+            "kind": "libre",
+            "syncId": null
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "code": "CUR-001",
+                "name": "Gasa Estéril 10x10 cm",
+                "genericName": "Gasa de algodón",
+                "presentation": "Sobre con 5 piezas",
+                "unit": "Piezas",
+                "unitPrice": "18.00",
+                "quantity": 2
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "code": "ANT-001",
+                "name": "alcohol etílico 70%",
+                "genericName": "Etanol",
+                "presentation": "Botella de 1000 ml",
+                "unit": "Piezas",
+                "unitPrice": "65.50",
+                "quantity": 1
+              },
+              {
+                "kind": "libre",
+                "syncId": null,
+                "code": "INSUMO",
+                "name": "Guantes de nitrilo",
+                "genericName": "Material clínico",
+                "presentation": null,
+                "unit": "Piezas",
+                "unitPrice": "3.50",
+                "quantity": 4
+              }
+            ],
+            "total": "465.50"
+          }
+        },
+        {
+          "op": "add-supply",
+          "charged": false,
+          "line": {
+            "kind": null,
+            "syncId": null
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "code": "CUR-001",
+                "name": "Gasa Estéril 10x10 cm",
+                "genericName": "Gasa de algodón",
+                "presentation": "Sobre con 5 piezas",
+                "unit": "Piezas",
+                "unitPrice": "18.00",
+                "quantity": 2
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "code": "ANT-001",
+                "name": "alcohol etílico 70%",
+                "genericName": "Etanol",
+                "presentation": "Botella de 1000 ml",
+                "unit": "Piezas",
+                "unitPrice": "65.50",
+                "quantity": 1
+              },
+              {
+                "kind": "libre",
+                "syncId": null,
+                "code": "INSUMO",
+                "name": "Guantes de nitrilo",
+                "genericName": "Material clínico",
+                "presentation": null,
+                "unit": "Piezas",
+                "unitPrice": "3.50",
+                "quantity": 4
+              }
+            ],
+            "total": "465.50"
+          }
+        },
+        {
+          "op": "add-supply",
+          "charged": true,
+          "line": {
+            "kind": "libre",
+            "syncId": null
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "code": "CUR-001",
+                "name": "Gasa Estéril 10x10 cm",
+                "genericName": "Gasa de algodón",
+                "presentation": "Sobre con 5 piezas",
+                "unit": "Piezas",
+                "unitPrice": "18.00",
+                "quantity": 2
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "code": "ANT-001",
+                "name": "alcohol etílico 70%",
+                "genericName": "Etanol",
+                "presentation": "Botella de 1000 ml",
+                "unit": "Piezas",
+                "unitPrice": "65.50",
+                "quantity": 1
+              },
+              {
+                "kind": "libre",
+                "syncId": null,
+                "code": "INSUMO",
+                "name": "Guantes de nitrilo",
+                "genericName": "Material clínico",
+                "presentation": null,
+                "unit": "Piezas",
+                "unitPrice": "3.50",
+                "quantity": 5
+              }
+            ],
+            "total": "469.00"
+          }
+        }
+      ]
+    },
+    {
+      "name": "quitar un insumo descuenta lo que cargó",
+      "input": {
+        "products": [
+          {
+            "id": 11,
+            "code": "CUR-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Gasa de algodón",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 10,
+            "category": "Material de curación",
+            "price": "18.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "id": 12,
+            "code": "ANT-001",
+            "name": "Alcohol Etílico 70%",
+            "genericName": "Etanol",
+            "presentation": "Botella de 1000 ml",
+            "stock": 3,
+            "category": "Antisépticos",
+            "price": "65.50",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 14,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 2,
+            "category": "Medicamentos",
+            "price": "45.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004"
+          },
+          {
+            "id": 15,
+            "code": "MED-002",
+            "name": "Tempra",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas 500 mg",
+            "stock": 9,
+            "category": "Medicamentos",
+            "price": "89.90",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          }
+        ],
+        "services": [
+          {
+            "id": 21,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones",
+            "price": "250.00",
+            "minutes": 20,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "defaultProducts": [
+              {
+                "productId": 11,
+                "quantity": 2
+              },
+              {
+                "productId": 12,
+                "quantity": 1
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "code": "SERV-004",
+            "name": "Glucemia capilar",
+            "category": "Diagnóstico",
+            "price": "80.00",
+            "minutes": 10,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta",
+            "price": "350.00",
+            "minutes": 25,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003"
+          }
+        ],
+        "feeOverrideId": null,
+        "ops": [
+          {
+            "op": "add-supply",
+            "supplyName": "Gasa Estéril 10x10 cm",
+            "quantity": 3,
+            "unitPrice": "0",
+            "productId": 11
+          },
+          {
+            "op": "add-supply",
+            "supplyName": "Guantes de nitrilo",
+            "quantity": 2,
+            "unitPrice": "3.50",
+            "productId": null
+          },
+          {
+            "op": "remove-supply",
+            "row": 0,
+            "value": 0
+          },
+          {
+            "op": "remove-supply",
+            "row": 1,
+            "value": 0
+          }
+        ]
+      },
+      "expected": [
+        {
+          "op": "add-supply",
+          "charged": true,
+          "line": {
+            "kind": "producto",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "code": "CUR-001",
+                "name": "Gasa Estéril 10x10 cm",
+                "genericName": "Gasa de algodón",
+                "presentation": "Sobre con 5 piezas",
+                "unit": "Piezas",
+                "unitPrice": "18.00",
+                "quantity": 3
+              }
+            ],
+            "total": "404.00"
+          }
+        },
+        {
+          "op": "add-supply",
+          "charged": true,
+          "line": {
+            "kind": "libre",
+            "syncId": null
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "code": "CUR-001",
+                "name": "Gasa Estéril 10x10 cm",
+                "genericName": "Gasa de algodón",
+                "presentation": "Sobre con 5 piezas",
+                "unit": "Piezas",
+                "unitPrice": "18.00",
+                "quantity": 3
+              },
+              {
+                "kind": "libre",
+                "syncId": null,
+                "code": "INSUMO",
+                "name": "Guantes de nitrilo",
+                "genericName": "Material clínico",
+                "presentation": null,
+                "unit": "Piezas",
+                "unitPrice": "3.50",
+                "quantity": 2
+              }
+            ],
+            "total": "411.00"
+          }
+        },
+        {
+          "op": "remove-supply",
+          "account": {
+            "items": [
+              {
+                "kind": "libre",
+                "syncId": null,
+                "code": "INSUMO",
+                "name": "Guantes de nitrilo",
+                "genericName": "Material clínico",
+                "presentation": null,
+                "unit": "Piezas",
+                "unitPrice": "3.50",
+                "quantity": 2
+              }
+            ],
+            "total": "357.00"
+          }
+        },
+        {
+          "op": "remove-supply",
+          "account": {
+            "items": [],
+            "total": "350.00"
+          }
+        }
+      ]
+    },
+    {
+      "name": "servicio del catálogo: el servicio por sus unidades y sus insumos por defecto, que forman su lista",
+      "input": {
+        "products": [
+          {
+            "id": 11,
+            "code": "CUR-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Gasa de algodón",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 10,
+            "category": "Material de curación",
+            "price": "18.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "id": 12,
+            "code": "ANT-001",
+            "name": "Alcohol Etílico 70%",
+            "genericName": "Etanol",
+            "presentation": "Botella de 1000 ml",
+            "stock": 3,
+            "category": "Antisépticos",
+            "price": "65.50",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 14,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 2,
+            "category": "Medicamentos",
+            "price": "45.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004"
+          },
+          {
+            "id": 15,
+            "code": "MED-002",
+            "name": "Tempra",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas 500 mg",
+            "stock": 9,
+            "category": "Medicamentos",
+            "price": "89.90",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          }
+        ],
+        "services": [
+          {
+            "id": 21,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones",
+            "price": "250.00",
+            "minutes": 20,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "defaultProducts": [
+              {
+                "productId": 11,
+                "quantity": 2
+              },
+              {
+                "productId": 12,
+                "quantity": 1
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "code": "SERV-004",
+            "name": "Glucemia capilar",
+            "category": "Diagnóstico",
+            "price": "80.00",
+            "minutes": 10,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta",
+            "price": "350.00",
+            "minutes": 25,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003"
+          }
+        ],
+        "feeOverrideId": null,
+        "ops": [
+          {
+            "op": "add-service",
+            "serviceName": "Curación Menor y Asepsia",
+            "serviceSyncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "serviceId": 0,
+            "serviceCode": "",
+            "category": "",
+            "price": "0",
+            "quantity": 2
+          }
+        ]
+      },
+      "expected": [
+        {
+          "op": "add-service",
+          "charged": true,
+          "row": {
+            "supplies": [
+              {
+                "name": "Gasa Estéril 10x10 cm",
+                "quantity": 4,
+                "unitPrice": "18.00",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+              },
+              {
+                "name": "Alcohol Etílico 70%",
+                "quantity": 2,
+                "unitPrice": "65.50",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+              }
+            ],
+            "summary": "Gasa Estéril 10x10 cm ×4 · Alcohol Etílico 70% ×2"
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "servicio",
+                "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+                "code": "SERV-002",
+                "name": "Curación Menor y Asepsia",
+                "genericName": "Servicio Clínico • Curaciones",
+                "presentation": "Duración: 20 min",
+                "unit": "Servicio",
+                "unitPrice": "250.00",
+                "quantity": 2
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "code": "CUR-001",
+                "name": "Gasa Estéril 10x10 cm",
+                "genericName": "Gasa de algodón",
+                "presentation": "Sobre con 5 piezas",
+                "unit": "Piezas",
+                "unitPrice": "18.00",
+                "quantity": 4
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "code": "ANT-001",
+                "name": "Alcohol Etílico 70%",
+                "genericName": "Etanol",
+                "presentation": "Botella de 1000 ml",
+                "unit": "Piezas",
+                "unitPrice": "65.50",
+                "quantity": 2
+              }
+            ],
+            "total": "1053.00"
+          }
+        }
+      ]
+    },
+    {
+      "name": "servicio con un SyncId que aquí no existe: por su nombre normalizado",
+      "input": {
+        "products": [
+          {
+            "id": 11,
+            "code": "CUR-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Gasa de algodón",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 10,
+            "category": "Material de curación",
+            "price": "18.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "id": 12,
+            "code": "ANT-001",
+            "name": "Alcohol Etílico 70%",
+            "genericName": "Etanol",
+            "presentation": "Botella de 1000 ml",
+            "stock": 3,
+            "category": "Antisépticos",
+            "price": "65.50",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 14,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 2,
+            "category": "Medicamentos",
+            "price": "45.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004"
+          },
+          {
+            "id": 15,
+            "code": "MED-002",
+            "name": "Tempra",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas 500 mg",
+            "stock": 9,
+            "category": "Medicamentos",
+            "price": "89.90",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          }
+        ],
+        "services": [
+          {
+            "id": 21,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones",
+            "price": "250.00",
+            "minutes": 20,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "defaultProducts": [
+              {
+                "productId": 11,
+                "quantity": 2
+              },
+              {
+                "productId": 12,
+                "quantity": 1
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "code": "SERV-004",
+            "name": "Glucemia capilar",
+            "category": "Diagnóstico",
+            "price": "80.00",
+            "minutes": 10,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta",
+            "price": "350.00",
+            "minutes": 25,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003"
+          }
+        ],
+        "feeOverrideId": null,
+        "ops": [
+          {
+            "op": "add-service",
+            "serviceName": "curación menor y asepsia",
+            "serviceSyncId": "b1b2c3d4-0000-4000-8000-0000000000ff",
+            "serviceId": 0,
+            "serviceCode": "",
+            "category": "",
+            "price": "0",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": [
+        {
+          "op": "add-service",
+          "charged": true,
+          "row": {
+            "supplies": [
+              {
+                "name": "Gasa Estéril 10x10 cm",
+                "quantity": 2,
+                "unitPrice": "18.00",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+              },
+              {
+                "name": "Alcohol Etílico 70%",
+                "quantity": 1,
+                "unitPrice": "65.50",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+              }
+            ],
+            "summary": "Gasa Estéril 10x10 cm ×2 · Alcohol Etílico 70% ×1"
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "servicio",
+                "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+                "code": "SERV-002",
+                "name": "Curación Menor y Asepsia",
+                "genericName": "Servicio Clínico • Curaciones",
+                "presentation": "Duración: 20 min",
+                "unit": "Servicio",
+                "unitPrice": "250.00",
+                "quantity": 1
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "code": "CUR-001",
+                "name": "Gasa Estéril 10x10 cm",
+                "genericName": "Gasa de algodón",
+                "presentation": "Sobre con 5 piezas",
+                "unit": "Piezas",
+                "unitPrice": "18.00",
+                "quantity": 2
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "code": "ANT-001",
+                "name": "Alcohol Etílico 70%",
+                "genericName": "Etanol",
+                "presentation": "Botella de 1000 ml",
+                "unit": "Piezas",
+                "unitPrice": "65.50",
+                "quantity": 1
+              }
+            ],
+            "total": "701.50"
+          }
+        }
+      ]
+    },
+    {
+      "name": "renglón viejo con el Id local y el mismo nombre",
+      "input": {
+        "products": [
+          {
+            "id": 11,
+            "code": "CUR-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Gasa de algodón",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 10,
+            "category": "Material de curación",
+            "price": "18.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "id": 12,
+            "code": "ANT-001",
+            "name": "Alcohol Etílico 70%",
+            "genericName": "Etanol",
+            "presentation": "Botella de 1000 ml",
+            "stock": 3,
+            "category": "Antisépticos",
+            "price": "65.50",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 14,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 2,
+            "category": "Medicamentos",
+            "price": "45.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004"
+          },
+          {
+            "id": 15,
+            "code": "MED-002",
+            "name": "Tempra",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas 500 mg",
+            "stock": 9,
+            "category": "Medicamentos",
+            "price": "89.90",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          }
+        ],
+        "services": [
+          {
+            "id": 21,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones",
+            "price": "250.00",
+            "minutes": 20,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "defaultProducts": [
+              {
+                "productId": 11,
+                "quantity": 2
+              },
+              {
+                "productId": 12,
+                "quantity": 1
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "code": "SERV-004",
+            "name": "Glucemia capilar",
+            "category": "Diagnóstico",
+            "price": "80.00",
+            "minutes": 10,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta",
+            "price": "350.00",
+            "minutes": 25,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003"
+          }
+        ],
+        "feeOverrideId": null,
+        "ops": [
+          {
+            "op": "add-service",
+            "serviceName": "Curación Menor y Asepsia",
+            "serviceSyncId": null,
+            "serviceId": 21,
+            "serviceCode": "",
+            "category": "",
+            "price": "0",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": [
+        {
+          "op": "add-service",
+          "charged": true,
+          "row": {
+            "supplies": [
+              {
+                "name": "Gasa Estéril 10x10 cm",
+                "quantity": 2,
+                "unitPrice": "18.00",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+              },
+              {
+                "name": "Alcohol Etílico 70%",
+                "quantity": 1,
+                "unitPrice": "65.50",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+              }
+            ],
+            "summary": "Gasa Estéril 10x10 cm ×2 · Alcohol Etílico 70% ×1"
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "servicio",
+                "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+                "code": "SERV-002",
+                "name": "Curación Menor y Asepsia",
+                "genericName": "Servicio Clínico • Curaciones",
+                "presentation": "Duración: 20 min",
+                "unit": "Servicio",
+                "unitPrice": "250.00",
+                "quantity": 1
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "code": "CUR-001",
+                "name": "Gasa Estéril 10x10 cm",
+                "genericName": "Gasa de algodón",
+                "presentation": "Sobre con 5 piezas",
+                "unit": "Piezas",
+                "unitPrice": "18.00",
+                "quantity": 2
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "code": "ANT-001",
+                "name": "Alcohol Etílico 70%",
+                "genericName": "Etanol",
+                "presentation": "Botella de 1000 ml",
+                "unit": "Piezas",
+                "unitPrice": "65.50",
+                "quantity": 1
+              }
+            ],
+            "total": "701.50"
+          }
+        }
+      ]
+    },
+    {
+      "name": "sin SyncId ni Id es un cargo libre aunque el nombre exista: sin precio no se cobra",
+      "input": {
+        "products": [
+          {
+            "id": 11,
+            "code": "CUR-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Gasa de algodón",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 10,
+            "category": "Material de curación",
+            "price": "18.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "id": 12,
+            "code": "ANT-001",
+            "name": "Alcohol Etílico 70%",
+            "genericName": "Etanol",
+            "presentation": "Botella de 1000 ml",
+            "stock": 3,
+            "category": "Antisépticos",
+            "price": "65.50",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 14,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 2,
+            "category": "Medicamentos",
+            "price": "45.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004"
+          },
+          {
+            "id": 15,
+            "code": "MED-002",
+            "name": "Tempra",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas 500 mg",
+            "stock": 9,
+            "category": "Medicamentos",
+            "price": "89.90",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          }
+        ],
+        "services": [
+          {
+            "id": 21,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones",
+            "price": "250.00",
+            "minutes": 20,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "defaultProducts": [
+              {
+                "productId": 11,
+                "quantity": 2
+              },
+              {
+                "productId": 12,
+                "quantity": 1
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "code": "SERV-004",
+            "name": "Glucemia capilar",
+            "category": "Diagnóstico",
+            "price": "80.00",
+            "minutes": 10,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta",
+            "price": "350.00",
+            "minutes": 25,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003"
+          }
+        ],
+        "feeOverrideId": null,
+        "ops": [
+          {
+            "op": "add-service",
+            "serviceName": "Curación Menor y Asepsia",
+            "serviceSyncId": null,
+            "serviceId": 0,
+            "serviceCode": "",
+            "category": "",
+            "price": "0",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": [
+        {
+          "op": "add-service",
+          "charged": false,
+          "row": {
+            "supplies": null,
+            "summary": ""
+          },
+          "account": {
+            "items": [],
+            "total": "350.00"
+          }
+        }
+      ]
+    },
+    {
+      "name": "servicio fuera del catálogo: cargo libre con precio, o nada sin precio",
+      "input": {
+        "products": [
+          {
+            "id": 11,
+            "code": "CUR-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Gasa de algodón",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 10,
+            "category": "Material de curación",
+            "price": "18.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "id": 12,
+            "code": "ANT-001",
+            "name": "Alcohol Etílico 70%",
+            "genericName": "Etanol",
+            "presentation": "Botella de 1000 ml",
+            "stock": 3,
+            "category": "Antisépticos",
+            "price": "65.50",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 14,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 2,
+            "category": "Medicamentos",
+            "price": "45.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004"
+          },
+          {
+            "id": 15,
+            "code": "MED-002",
+            "name": "Tempra",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas 500 mg",
+            "stock": 9,
+            "category": "Medicamentos",
+            "price": "89.90",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          }
+        ],
+        "services": [
+          {
+            "id": 21,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones",
+            "price": "250.00",
+            "minutes": 20,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "defaultProducts": [
+              {
+                "productId": 11,
+                "quantity": 2
+              },
+              {
+                "productId": 12,
+                "quantity": 1
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "code": "SERV-004",
+            "name": "Glucemia capilar",
+            "category": "Diagnóstico",
+            "price": "80.00",
+            "minutes": 10,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta",
+            "price": "350.00",
+            "minutes": 25,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003"
+          }
+        ],
+        "feeOverrideId": null,
+        "ops": [
+          {
+            "op": "add-service",
+            "serviceName": "Lavado ótico",
+            "serviceSyncId": null,
+            "serviceId": 0,
+            "serviceCode": "",
+            "category": "Procedimientos",
+            "price": "200.00",
+            "quantity": 1
+          },
+          {
+            "op": "add-service",
+            "serviceName": "Retiro de puntos",
+            "serviceSyncId": null,
+            "serviceId": 0,
+            "serviceCode": "",
+            "category": "Procedimientos",
+            "price": "0",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": [
+        {
+          "op": "add-service",
+          "charged": true,
+          "row": {
+            "supplies": [],
+            "summary": ""
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "libre",
+                "syncId": null,
+                "code": "CARGO",
+                "name": "Lavado ótico",
+                "genericName": "Servicio Clínico • Procedimientos",
+                "presentation": null,
+                "unit": "Servicio",
+                "unitPrice": "200.00",
+                "quantity": 1
+              }
+            ],
+            "total": "550.00"
+          }
+        },
+        {
+          "op": "add-service",
+          "charged": false,
+          "row": {
+            "supplies": null,
+            "summary": ""
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "libre",
+                "syncId": null,
+                "code": "CARGO",
+                "name": "Lavado ótico",
+                "genericName": "Servicio Clínico • Procedimientos",
+                "presentation": null,
+                "unit": "Servicio",
+                "unitPrice": "200.00",
+                "quantity": 1
+              }
+            ],
+            "total": "550.00"
+          }
+        }
+      ]
+    },
+    {
+      "name": "una unidad más y una menos ajustan el servicio y su lista; lo ajustado a mano se queda",
+      "input": {
+        "products": [
+          {
+            "id": 11,
+            "code": "CUR-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Gasa de algodón",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 10,
+            "category": "Material de curación",
+            "price": "18.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "id": 12,
+            "code": "ANT-001",
+            "name": "Alcohol Etílico 70%",
+            "genericName": "Etanol",
+            "presentation": "Botella de 1000 ml",
+            "stock": 3,
+            "category": "Antisépticos",
+            "price": "65.50",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 14,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 2,
+            "category": "Medicamentos",
+            "price": "45.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004"
+          },
+          {
+            "id": 15,
+            "code": "MED-002",
+            "name": "Tempra",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas 500 mg",
+            "stock": 9,
+            "category": "Medicamentos",
+            "price": "89.90",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          }
+        ],
+        "services": [
+          {
+            "id": 21,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones",
+            "price": "250.00",
+            "minutes": 20,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "defaultProducts": [
+              {
+                "productId": 11,
+                "quantity": 2
+              },
+              {
+                "productId": 12,
+                "quantity": 1
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "code": "SERV-004",
+            "name": "Glucemia capilar",
+            "category": "Diagnóstico",
+            "price": "80.00",
+            "minutes": 10,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta",
+            "price": "350.00",
+            "minutes": 25,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003"
+          }
+        ],
+        "feeOverrideId": null,
+        "ops": [
+          {
+            "op": "add-service",
+            "serviceName": "Curación Menor y Asepsia",
+            "serviceSyncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "serviceId": 0,
+            "serviceCode": "",
+            "category": "",
+            "price": "0",
+            "quantity": 1
+          },
+          {
+            "op": "service-units",
+            "row": 0,
+            "value": 1
+          },
+          {
+            "op": "service-supply-add",
+            "row": 0,
+            "value": 12
+          },
+          {
+            "op": "service-units",
+            "row": 0,
+            "value": -1
+          }
+        ]
+      },
+      "expected": [
+        {
+          "op": "add-service",
+          "charged": true,
+          "row": {
+            "supplies": [
+              {
+                "name": "Gasa Estéril 10x10 cm",
+                "quantity": 2,
+                "unitPrice": "18.00",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+              },
+              {
+                "name": "Alcohol Etílico 70%",
+                "quantity": 1,
+                "unitPrice": "65.50",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+              }
+            ],
+            "summary": "Gasa Estéril 10x10 cm ×2 · Alcohol Etílico 70% ×1"
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "servicio",
+                "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+                "code": "SERV-002",
+                "name": "Curación Menor y Asepsia",
+                "genericName": "Servicio Clínico • Curaciones",
+                "presentation": "Duración: 20 min",
+                "unit": "Servicio",
+                "unitPrice": "250.00",
+                "quantity": 1
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "code": "CUR-001",
+                "name": "Gasa Estéril 10x10 cm",
+                "genericName": "Gasa de algodón",
+                "presentation": "Sobre con 5 piezas",
+                "unit": "Piezas",
+                "unitPrice": "18.00",
+                "quantity": 2
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "code": "ANT-001",
+                "name": "Alcohol Etílico 70%",
+                "genericName": "Etanol",
+                "presentation": "Botella de 1000 ml",
+                "unit": "Piezas",
+                "unitPrice": "65.50",
+                "quantity": 1
+              }
+            ],
+            "total": "701.50"
+          }
+        },
+        {
+          "op": "service-units",
+          "charged": true,
+          "row": {
+            "supplies": [
+              {
+                "name": "Gasa Estéril 10x10 cm",
+                "quantity": 4,
+                "unitPrice": "18.00",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+              },
+              {
+                "name": "Alcohol Etílico 70%",
+                "quantity": 2,
+                "unitPrice": "65.50",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+              }
+            ],
+            "summary": "Gasa Estéril 10x10 cm ×4 · Alcohol Etílico 70% ×2"
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "servicio",
+                "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+                "code": "SERV-002",
+                "name": "Curación Menor y Asepsia",
+                "genericName": "Servicio Clínico • Curaciones",
+                "presentation": "Duración: 20 min",
+                "unit": "Servicio",
+                "unitPrice": "250.00",
+                "quantity": 2
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "code": "CUR-001",
+                "name": "Gasa Estéril 10x10 cm",
+                "genericName": "Gasa de algodón",
+                "presentation": "Sobre con 5 piezas",
+                "unit": "Piezas",
+                "unitPrice": "18.00",
+                "quantity": 4
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "code": "ANT-001",
+                "name": "Alcohol Etílico 70%",
+                "genericName": "Etanol",
+                "presentation": "Botella de 1000 ml",
+                "unit": "Piezas",
+                "unitPrice": "65.50",
+                "quantity": 2
+              }
+            ],
+            "total": "1053.00"
+          }
+        },
+        {
+          "op": "service-supply-add",
+          "charged": true,
+          "row": {
+            "supplies": [
+              {
+                "name": "Gasa Estéril 10x10 cm",
+                "quantity": 4,
+                "unitPrice": "18.00",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+              },
+              {
+                "name": "Alcohol Etílico 70%",
+                "quantity": 3,
+                "unitPrice": "65.50",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+              }
+            ],
+            "summary": "Gasa Estéril 10x10 cm ×4 · Alcohol Etílico 70% ×3"
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "servicio",
+                "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+                "code": "SERV-002",
+                "name": "Curación Menor y Asepsia",
+                "genericName": "Servicio Clínico • Curaciones",
+                "presentation": "Duración: 20 min",
+                "unit": "Servicio",
+                "unitPrice": "250.00",
+                "quantity": 2
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "code": "CUR-001",
+                "name": "Gasa Estéril 10x10 cm",
+                "genericName": "Gasa de algodón",
+                "presentation": "Sobre con 5 piezas",
+                "unit": "Piezas",
+                "unitPrice": "18.00",
+                "quantity": 4
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "code": "ANT-001",
+                "name": "Alcohol Etílico 70%",
+                "genericName": "Etanol",
+                "presentation": "Botella de 1000 ml",
+                "unit": "Piezas",
+                "unitPrice": "65.50",
+                "quantity": 3
+              }
+            ],
+            "total": "1118.50"
+          }
+        },
+        {
+          "op": "service-units",
+          "charged": true,
+          "row": {
+            "supplies": [
+              {
+                "name": "Gasa Estéril 10x10 cm",
+                "quantity": 2,
+                "unitPrice": "18.00",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+              },
+              {
+                "name": "Alcohol Etílico 70%",
+                "quantity": 2,
+                "unitPrice": "65.50",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+              }
+            ],
+            "summary": "Gasa Estéril 10x10 cm ×2 · Alcohol Etílico 70% ×2"
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "servicio",
+                "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+                "code": "SERV-002",
+                "name": "Curación Menor y Asepsia",
+                "genericName": "Servicio Clínico • Curaciones",
+                "presentation": "Duración: 20 min",
+                "unit": "Servicio",
+                "unitPrice": "250.00",
+                "quantity": 1
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "code": "CUR-001",
+                "name": "Gasa Estéril 10x10 cm",
+                "genericName": "Gasa de algodón",
+                "presentation": "Sobre con 5 piezas",
+                "unit": "Piezas",
+                "unitPrice": "18.00",
+                "quantity": 2
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "code": "ANT-001",
+                "name": "Alcohol Etílico 70%",
+                "genericName": "Etanol",
+                "presentation": "Botella de 1000 ml",
+                "unit": "Piezas",
+                "unitPrice": "65.50",
+                "quantity": 2
+              }
+            ],
+            "total": "767.00"
+          }
+        }
+      ]
+    },
+    {
+      "name": "quitar el renglón descuenta el servicio y su lista como quedó",
+      "input": {
+        "products": [
+          {
+            "id": 11,
+            "code": "CUR-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Gasa de algodón",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 10,
+            "category": "Material de curación",
+            "price": "18.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "id": 12,
+            "code": "ANT-001",
+            "name": "Alcohol Etílico 70%",
+            "genericName": "Etanol",
+            "presentation": "Botella de 1000 ml",
+            "stock": 3,
+            "category": "Antisépticos",
+            "price": "65.50",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 14,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 2,
+            "category": "Medicamentos",
+            "price": "45.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004"
+          },
+          {
+            "id": 15,
+            "code": "MED-002",
+            "name": "Tempra",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas 500 mg",
+            "stock": 9,
+            "category": "Medicamentos",
+            "price": "89.90",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          }
+        ],
+        "services": [
+          {
+            "id": 21,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones",
+            "price": "250.00",
+            "minutes": 20,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "defaultProducts": [
+              {
+                "productId": 11,
+                "quantity": 2
+              },
+              {
+                "productId": 12,
+                "quantity": 1
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "code": "SERV-004",
+            "name": "Glucemia capilar",
+            "category": "Diagnóstico",
+            "price": "80.00",
+            "minutes": 10,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta",
+            "price": "350.00",
+            "minutes": 25,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003"
+          }
+        ],
+        "feeOverrideId": null,
+        "ops": [
+          {
+            "op": "add-service",
+            "serviceName": "Curación Menor y Asepsia",
+            "serviceSyncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "serviceId": 0,
+            "serviceCode": "",
+            "category": "",
+            "price": "0",
+            "quantity": 1
+          },
+          {
+            "op": "service-supply-remove",
+            "row": 0,
+            "value": 11
+          },
+          {
+            "op": "prescribe",
+            "medicineName": "Tempra",
+            "recommendedQuantity": 1,
+            "knownProductId": 15
+          },
+          {
+            "op": "remove-service",
+            "row": 0,
+            "value": 0
+          }
+        ]
+      },
+      "expected": [
+        {
+          "op": "add-service",
+          "charged": true,
+          "row": {
+            "supplies": [
+              {
+                "name": "Gasa Estéril 10x10 cm",
+                "quantity": 2,
+                "unitPrice": "18.00",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+              },
+              {
+                "name": "Alcohol Etílico 70%",
+                "quantity": 1,
+                "unitPrice": "65.50",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+              }
+            ],
+            "summary": "Gasa Estéril 10x10 cm ×2 · Alcohol Etílico 70% ×1"
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "servicio",
+                "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+                "code": "SERV-002",
+                "name": "Curación Menor y Asepsia",
+                "genericName": "Servicio Clínico • Curaciones",
+                "presentation": "Duración: 20 min",
+                "unit": "Servicio",
+                "unitPrice": "250.00",
+                "quantity": 1
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "code": "CUR-001",
+                "name": "Gasa Estéril 10x10 cm",
+                "genericName": "Gasa de algodón",
+                "presentation": "Sobre con 5 piezas",
+                "unit": "Piezas",
+                "unitPrice": "18.00",
+                "quantity": 2
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "code": "ANT-001",
+                "name": "Alcohol Etílico 70%",
+                "genericName": "Etanol",
+                "presentation": "Botella de 1000 ml",
+                "unit": "Piezas",
+                "unitPrice": "65.50",
+                "quantity": 1
+              }
+            ],
+            "total": "701.50"
+          }
+        },
+        {
+          "op": "service-supply-remove",
+          "row": {
+            "supplies": [
+              {
+                "name": "Alcohol Etílico 70%",
+                "quantity": 1,
+                "unitPrice": "65.50",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+              }
+            ],
+            "summary": "Alcohol Etílico 70% ×1"
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "servicio",
+                "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+                "code": "SERV-002",
+                "name": "Curación Menor y Asepsia",
+                "genericName": "Servicio Clínico • Curaciones",
+                "presentation": "Duración: 20 min",
+                "unit": "Servicio",
+                "unitPrice": "250.00",
+                "quantity": 1
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "code": "ANT-001",
+                "name": "Alcohol Etílico 70%",
+                "genericName": "Etanol",
+                "presentation": "Botella de 1000 ml",
+                "unit": "Piezas",
+                "unitPrice": "65.50",
+                "quantity": 1
+              }
+            ],
+            "total": "665.50"
+          }
+        },
+        {
+          "op": "prescribe",
+          "charged": true,
+          "warning": null,
+          "account": {
+            "items": [
+              {
+                "kind": "servicio",
+                "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+                "code": "SERV-002",
+                "name": "Curación Menor y Asepsia",
+                "genericName": "Servicio Clínico • Curaciones",
+                "presentation": "Duración: 20 min",
+                "unit": "Servicio",
+                "unitPrice": "250.00",
+                "quantity": 1
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "code": "ANT-001",
+                "name": "Alcohol Etílico 70%",
+                "genericName": "Etanol",
+                "presentation": "Botella de 1000 ml",
+                "unit": "Piezas",
+                "unitPrice": "65.50",
+                "quantity": 1
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000005",
+                "code": "MED-002",
+                "name": "Tempra",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas 500 mg",
+                "unit": "Piezas",
+                "unitPrice": "89.90",
+                "quantity": 1
+              }
+            ],
+            "total": "755.40"
+          }
+        },
+        {
+          "op": "remove-service",
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000005",
+                "code": "MED-002",
+                "name": "Tempra",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas 500 mg",
+                "unit": "Piezas",
+                "unitPrice": "89.90",
+                "quantity": 1
+              }
+            ],
+            "total": "439.90"
+          }
+        }
+      ]
+    },
+    {
+      "name": "las existencias no frenan los insumos por defecto de un servicio (el alcohol tiene 3)",
+      "input": {
+        "products": [
+          {
+            "id": 11,
+            "code": "CUR-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Gasa de algodón",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 10,
+            "category": "Material de curación",
+            "price": "18.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "id": 12,
+            "code": "ANT-001",
+            "name": "Alcohol Etílico 70%",
+            "genericName": "Etanol",
+            "presentation": "Botella de 1000 ml",
+            "stock": 3,
+            "category": "Antisépticos",
+            "price": "65.50",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 14,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 2,
+            "category": "Medicamentos",
+            "price": "45.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004"
+          },
+          {
+            "id": 15,
+            "code": "MED-002",
+            "name": "Tempra",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas 500 mg",
+            "stock": 9,
+            "category": "Medicamentos",
+            "price": "89.90",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          }
+        ],
+        "services": [
+          {
+            "id": 21,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones",
+            "price": "250.00",
+            "minutes": 20,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "defaultProducts": [
+              {
+                "productId": 11,
+                "quantity": 2
+              },
+              {
+                "productId": 12,
+                "quantity": 1
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "code": "SERV-004",
+            "name": "Glucemia capilar",
+            "category": "Diagnóstico",
+            "price": "80.00",
+            "minutes": 10,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta",
+            "price": "350.00",
+            "minutes": 25,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003"
+          }
+        ],
+        "feeOverrideId": null,
+        "ops": [
+          {
+            "op": "add-service",
+            "serviceName": "Curación Menor y Asepsia",
+            "serviceSyncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "serviceId": 0,
+            "serviceCode": "",
+            "category": "",
+            "price": "0",
+            "quantity": 4
+          }
+        ]
+      },
+      "expected": [
+        {
+          "op": "add-service",
+          "charged": true,
+          "row": {
+            "supplies": [
+              {
+                "name": "Gasa Estéril 10x10 cm",
+                "quantity": 8,
+                "unitPrice": "18.00",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+              },
+              {
+                "name": "Alcohol Etílico 70%",
+                "quantity": 4,
+                "unitPrice": "65.50",
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+              }
+            ],
+            "summary": "Gasa Estéril 10x10 cm ×8 · Alcohol Etílico 70% ×4"
+          },
+          "account": {
+            "items": [
+              {
+                "kind": "servicio",
+                "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+                "code": "SERV-002",
+                "name": "Curación Menor y Asepsia",
+                "genericName": "Servicio Clínico • Curaciones",
+                "presentation": "Duración: 20 min",
+                "unit": "Servicio",
+                "unitPrice": "250.00",
+                "quantity": 4
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000001",
+                "code": "CUR-001",
+                "name": "Gasa Estéril 10x10 cm",
+                "genericName": "Gasa de algodón",
+                "presentation": "Sobre con 5 piezas",
+                "unit": "Piezas",
+                "unitPrice": "18.00",
+                "quantity": 8
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000002",
+                "code": "ANT-001",
+                "name": "Alcohol Etílico 70%",
+                "genericName": "Etanol",
+                "presentation": "Botella de 1000 ml",
+                "unit": "Piezas",
+                "unitPrice": "65.50",
+                "quantity": 4
+              }
+            ],
+            "total": "1756.00"
+          }
+        }
+      ]
+    },
+    {
+      "name": "se surte aquí por defecto: marcado con existencias, desmarcado con 0 o en negativo, y marcado a mano se carga con el aviso",
+      "input": {
+        "products": [
+          {
+            "id": 11,
+            "code": "CUR-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Gasa de algodón",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 10,
+            "category": "Material de curación",
+            "price": "18.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000001"
+          },
+          {
+            "id": 12,
+            "code": "ANT-001",
+            "name": "Alcohol Etílico 70%",
+            "genericName": "Etanol",
+            "presentation": "Botella de 1000 ml",
+            "stock": 3,
+            "category": "Antisépticos",
+            "price": "65.50",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 14,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 2,
+            "category": "Medicamentos",
+            "price": "45.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000004"
+          },
+          {
+            "id": 15,
+            "code": "MED-002",
+            "name": "Tempra",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas 500 mg",
+            "stock": 9,
+            "category": "Medicamentos",
+            "price": "89.90",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000005"
+          },
+          {
+            "id": 16,
+            "code": "MED-003",
+            "name": "Ibuprofeno 400 mg",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "55.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000006"
+          },
+          {
+            "id": 17,
+            "code": "MED-004",
+            "name": "Omeprazol 20 mg",
+            "genericName": "Omeprazol",
+            "presentation": "Caja con 14 cápsulas",
+            "stock": -2,
+            "category": "Medicamentos",
+            "price": "60.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000007"
+          },
+          {
+            "id": 18,
+            "code": "MED-005",
+            "name": "Ketorolaco 30 mg ampolletas",
+            "genericName": "Ketorolaco",
+            "presentation": "Caja con 3 ampolletas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "90.00",
+            "syncId": "a1b2c3d4-0000-4000-8000-000000000008",
+            "unitsPerPackage": 3,
+            "openedUnitsRemaining": 2
+          }
+        ],
+        "services": [
+          {
+            "id": 21,
+            "code": "SERV-002",
+            "name": "Curación Menor y Asepsia",
+            "category": "Curaciones",
+            "price": "250.00",
+            "minutes": 20,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000001",
+            "defaultProducts": [
+              {
+                "productId": 11,
+                "quantity": 2
+              },
+              {
+                "productId": 12,
+                "quantity": 1
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "code": "SERV-004",
+            "name": "Glucemia capilar",
+            "category": "Diagnóstico",
+            "price": "80.00",
+            "minutes": 10,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000002"
+          },
+          {
+            "id": 1,
+            "code": "SERV-001",
+            "name": "Consulta Médica General",
+            "category": "Consulta",
+            "price": "350.00",
+            "minutes": 25,
+            "syncId": "b1b2c3d4-0000-4000-8000-000000000003"
+          }
+        ],
+        "feeOverrideId": null,
+        "ops": [
+          {
+            "op": "prescribe",
+            "medicineName": "Paracetamol 500 mg",
+            "recommendedQuantity": 1,
+            "knownProductId": 14
+          },
+          {
+            "op": "prescribe",
+            "medicineName": "Ibuprofeno 400 mg",
+            "recommendedQuantity": 1,
+            "knownProductId": 16
+          },
+          {
+            "op": "prescribe",
+            "medicineName": "Omeprazol 20 mg",
+            "recommendedQuantity": 1,
+            "knownProductId": null
+          },
+          {
+            "op": "prescribe",
+            "medicineName": "Ketorolaco 30 mg ampolletas",
+            "recommendedQuantity": 1,
+            "knownProductId": 18
+          },
+          {
+            "op": "prescribe",
+            "medicineName": "Naproxeno 250 mg",
+            "recommendedQuantity": 1,
+            "knownProductId": null
+          },
+          {
+            "op": "prescribe",
+            "medicineName": "Paracetamol 500 mg",
+            "recommendedQuantity": 3,
+            "knownProductId": 14
+          },
+          {
+            "op": "tick-dispense",
+            "row": 1,
+            "value": 0
+          },
+          {
+            "op": "tick-dispense",
+            "row": 2,
+            "value": 0
+          },
+          {
+            "op": "tick-dispense",
+            "row": 4,
+            "value": 0
+          }
+        ]
+      },
+      "expected": [
+        {
+          "op": "prescribe",
+          "charged": true,
+          "warning": null,
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+                "code": "MED-001",
+                "name": "Paracetamol 500 mg",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas",
+                "unit": "Piezas",
+                "unitPrice": "45.00",
+                "quantity": 1
+              }
+            ],
+            "total": "395.00"
+          }
+        },
+        {
+          "op": "prescribe",
+          "charged": false,
+          "warning": null,
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+                "code": "MED-001",
+                "name": "Paracetamol 500 mg",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas",
+                "unit": "Piezas",
+                "unitPrice": "45.00",
+                "quantity": 1
+              }
+            ],
+            "total": "395.00"
+          }
+        },
+        {
+          "op": "prescribe",
+          "charged": false,
+          "warning": null,
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+                "code": "MED-001",
+                "name": "Paracetamol 500 mg",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas",
+                "unit": "Piezas",
+                "unitPrice": "45.00",
+                "quantity": 1
+              }
+            ],
+            "total": "395.00"
+          }
+        },
+        {
+          "op": "prescribe",
+          "charged": true,
+          "warning": "Existencias insuficientes: Ketorolaco 30 mg ampolletas (quedan 0, se cobran 1). Revise el inventario.",
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+                "code": "MED-001",
+                "name": "Paracetamol 500 mg",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas",
+                "unit": "Piezas",
+                "unitPrice": "45.00",
+                "quantity": 1
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000008",
+                "code": "MED-005",
+                "name": "Ketorolaco 30 mg ampolletas",
+                "genericName": "Ketorolaco",
+                "presentation": "Caja con 3 ampolletas",
+                "unit": "Piezas",
+                "unitPrice": "90.00",
+                "quantity": 1
+              }
+            ],
+            "total": "485.00"
+          }
+        },
+        {
+          "op": "prescribe",
+          "charged": false,
+          "warning": null,
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+                "code": "MED-001",
+                "name": "Paracetamol 500 mg",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas",
+                "unit": "Piezas",
+                "unitPrice": "45.00",
+                "quantity": 1
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000008",
+                "code": "MED-005",
+                "name": "Ketorolaco 30 mg ampolletas",
+                "genericName": "Ketorolaco",
+                "presentation": "Caja con 3 ampolletas",
+                "unit": "Piezas",
+                "unitPrice": "90.00",
+                "quantity": 1
+              }
+            ],
+            "total": "485.00"
+          }
+        },
+        {
+          "op": "prescribe",
+          "charged": true,
+          "warning": "Existencias insuficientes: Paracetamol 500 mg (quedan 2, se cobran 4). Revise el inventario.",
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+                "code": "MED-001",
+                "name": "Paracetamol 500 mg",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas",
+                "unit": "Piezas",
+                "unitPrice": "45.00",
+                "quantity": 4
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000008",
+                "code": "MED-005",
+                "name": "Ketorolaco 30 mg ampolletas",
+                "genericName": "Ketorolaco",
+                "presentation": "Caja con 3 ampolletas",
+                "unit": "Piezas",
+                "unitPrice": "90.00",
+                "quantity": 1
+              }
+            ],
+            "total": "620.00"
+          }
+        },
+        {
+          "op": "tick-dispense",
+          "charged": true,
+          "warning": "Existencias insuficientes: Ibuprofeno 400 mg (quedan 0, se cobran 1). Revise el inventario.",
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+                "code": "MED-001",
+                "name": "Paracetamol 500 mg",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas",
+                "unit": "Piezas",
+                "unitPrice": "45.00",
+                "quantity": 4
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000008",
+                "code": "MED-005",
+                "name": "Ketorolaco 30 mg ampolletas",
+                "genericName": "Ketorolaco",
+                "presentation": "Caja con 3 ampolletas",
+                "unit": "Piezas",
+                "unitPrice": "90.00",
+                "quantity": 1
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000006",
+                "code": "MED-003",
+                "name": "Ibuprofeno 400 mg",
+                "genericName": "Ibuprofeno",
+                "presentation": "Caja con 10 tabletas",
+                "unit": "Piezas",
+                "unitPrice": "55.00",
+                "quantity": 1
+              }
+            ],
+            "total": "675.00"
+          }
+        },
+        {
+          "op": "tick-dispense",
+          "charged": true,
+          "warning": "Existencias insuficientes: Omeprazol 20 mg (quedan −2, se cobran 1). Revise el inventario.",
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+                "code": "MED-001",
+                "name": "Paracetamol 500 mg",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas",
+                "unit": "Piezas",
+                "unitPrice": "45.00",
+                "quantity": 4
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000008",
+                "code": "MED-005",
+                "name": "Ketorolaco 30 mg ampolletas",
+                "genericName": "Ketorolaco",
+                "presentation": "Caja con 3 ampolletas",
+                "unit": "Piezas",
+                "unitPrice": "90.00",
+                "quantity": 1
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000006",
+                "code": "MED-003",
+                "name": "Ibuprofeno 400 mg",
+                "genericName": "Ibuprofeno",
+                "presentation": "Caja con 10 tabletas",
+                "unit": "Piezas",
+                "unitPrice": "55.00",
+                "quantity": 1
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000007",
+                "code": "MED-004",
+                "name": "Omeprazol 20 mg",
+                "genericName": "Omeprazol",
+                "presentation": "Caja con 14 cápsulas",
+                "unit": "Piezas",
+                "unitPrice": "60.00",
+                "quantity": 1
+              }
+            ],
+            "total": "735.00"
+          }
+        },
+        {
+          "op": "tick-dispense",
+          "charged": false,
+          "warning": null,
+          "account": {
+            "items": [
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000004",
+                "code": "MED-001",
+                "name": "Paracetamol 500 mg",
+                "genericName": "Paracetamol",
+                "presentation": "Caja con 20 tabletas",
+                "unit": "Piezas",
+                "unitPrice": "45.00",
+                "quantity": 4
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000008",
+                "code": "MED-005",
+                "name": "Ketorolaco 30 mg ampolletas",
+                "genericName": "Ketorolaco",
+                "presentation": "Caja con 3 ampolletas",
+                "unit": "Piezas",
+                "unitPrice": "90.00",
+                "quantity": 1
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000006",
+                "code": "MED-003",
+                "name": "Ibuprofeno 400 mg",
+                "genericName": "Ibuprofeno",
+                "presentation": "Caja con 10 tabletas",
+                "unit": "Piezas",
+                "unitPrice": "55.00",
+                "quantity": 1
+              },
+              {
+                "kind": "producto",
+                "syncId": "a1b2c3d4-0000-4000-8000-000000000007",
+                "code": "MED-004",
+                "name": "Omeprazol 20 mg",
+                "genericName": "Omeprazol",
+                "presentation": "Caja con 14 cápsulas",
+                "unit": "Piezas",
+                "unitPrice": "60.00",
+                "quantity": 1
+              }
+            ],
+            "total": "735.00"
+          }
+        }
+      ]
+    }
+  ]
+}

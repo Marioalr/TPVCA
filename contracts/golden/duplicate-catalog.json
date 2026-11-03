@@ -1,0 +1,877 @@
+{
+  "rule": "duplicate-catalog",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Catálogo repetido entre equipos (Services/Rules/CatalogDuplicateRules; decisión del médico del 2026-10-22: la tablet es una copia de la PC y da de alta productos, servicios y categorías). Cada registro es su SyncId con LWW por fila: dos equipos que dan de alta lo mismo sin verse dejan dos filas. Esta regla solo las encuentra para avisar; nunca une, borra ni renombra nada. 'compare' da el motivo: None, Code, Name o CodeAndName.",
+    "kind: 'producto' (Products), 'servicio' (ClinicalServices) o 'categoria' (Categories). Solo se comparan dos del mismo tipo, los dos con IsActive (las categorías no tienen baja: siempre activas) y con nombre, y nunca el mismo SyncId (el catálogo sembrado lleva SyncId fijos, uuid5.json: dos equipos que siembran tienen la misma fila).",
+    "code: el código sin espacios en los extremos (String.trim en Kotlin) y en mayúsculas invariantes (uppercase(Locale.ROOT)); vacío, null (no se compara). Una categoría no tiene código.",
+    "name: el nombre con la normalización de duplicate-patients.json ('name': Services/TextSearch.Normalize y los espacios seguidos como uno). En un producto, si su presentación normalizada no está vacía, el nombre lleva ' | ' y la presentación: otra presentación es otro producto.",
+    "pairs: los pares de posibles duplicados en que está alguno de 'involving' (los SyncId que acaban de bajar, no en la primera descarga: filas creadas aquí por la bajada, o a las que les cambió Code, Name, Presentation o IsActive; un cambio de precio o de existencias no cuenta), cada par una vez [tipo, SyncId menor, SyncId mayor, motivo], ordenados por tipo (producto, servicio, categoría) y luego por SyncId en minúsculas (orden ordinal).",
+    "El aviso es de cada equipo (no viaja) y se queda hasta que se descarta, como los de duplicate-patients.json: su llave es 'catalogo:<tipo>:<SyncId menor>:<SyncId mayor>'; al mostrarse se quita el par que ya no aplica (uno se borró, se desactivó o ya no se parece). Kotlin decide dónde mostrarlo (en la PC, arriba de Productos)."
+  ],
+  "cases": [
+    {
+      "name": "código · producto ' med-900 '",
+      "input": {
+        "check": "code",
+        "item": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000201",
+          "Code": " med-900 ",
+          "Name": "x",
+          "Presentation": null,
+          "IsActive": true
+        }
+      },
+      "expected": "MED-900"
+    },
+    {
+      "name": "código · producto ''",
+      "input": {
+        "check": "code",
+        "item": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000202",
+          "Code": "",
+          "Name": "x",
+          "Presentation": null,
+          "IsActive": true
+        }
+      },
+      "expected": null
+    },
+    {
+      "name": "código · servicio 'serv-006'",
+      "input": {
+        "check": "code",
+        "item": {
+          "kind": "servicio",
+          "SyncId": "c0000000-0000-4000-8000-000000000303",
+          "Code": "serv-006",
+          "Name": "x",
+          "Presentation": null,
+          "IsActive": true
+        }
+      },
+      "expected": "SERV-006"
+    },
+    {
+      "name": "código · categoria ''",
+      "input": {
+        "check": "code",
+        "item": {
+          "kind": "categoria",
+          "SyncId": "c0000000-0000-4000-8000-000000000404",
+          "Code": null,
+          "Name": "x",
+          "Presentation": null,
+          "IsActive": true
+        }
+      },
+      "expected": null
+    },
+    {
+      "name": "nombre · producto '  Omeprazol  '",
+      "input": {
+        "check": "name",
+        "item": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000201",
+          "Code": "",
+          "Name": "  Omeprazol  ",
+          "Presentation": "Caja 14 Cápsulas",
+          "IsActive": true
+        }
+      },
+      "expected": "omeprazol | caja 14 capsulas"
+    },
+    {
+      "name": "nombre · producto 'Gasas'",
+      "input": {
+        "check": "name",
+        "item": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000202",
+          "Code": "",
+          "Name": "Gasas",
+          "Presentation": " ",
+          "IsActive": true
+        }
+      },
+      "expected": "gasas"
+    },
+    {
+      "name": "nombre · servicio 'Lavado de  oído'",
+      "input": {
+        "check": "name",
+        "item": {
+          "kind": "servicio",
+          "SyncId": "c0000000-0000-4000-8000-000000000303",
+          "Code": "",
+          "Name": "Lavado de  oído",
+          "Presentation": null,
+          "IsActive": true
+        }
+      },
+      "expected": "lavado de oido"
+    },
+    {
+      "name": "nombre · categoria 'Ñame'",
+      "input": {
+        "check": "name",
+        "item": {
+          "kind": "categoria",
+          "SyncId": "c0000000-0000-4000-8000-000000000404",
+          "Code": null,
+          "Name": "Ñame",
+          "Presentation": null,
+          "IsActive": true
+        }
+      },
+      "expected": "name"
+    },
+    {
+      "name": "par · mismo código con espacios y minúsculas",
+      "input": {
+        "check": "compare",
+        "a": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000201",
+          "Code": "MED-900",
+          "Name": "Ketorolaco",
+          "Presentation": null,
+          "IsActive": true
+        },
+        "b": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000202",
+          "Code": " med-900 ",
+          "Name": "Ketorolaco trometamina",
+          "Presentation": null,
+          "IsActive": true
+        }
+      },
+      "expected": "Code"
+    },
+    {
+      "name": "par · mismo nombre y presentación sin acentos ni mayúsculas",
+      "input": {
+        "check": "compare",
+        "a": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000201",
+          "Code": "MED-901",
+          "Name": "Omeprazol",
+          "Presentation": "Caja 14 cápsulas",
+          "IsActive": true
+        },
+        "b": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000202",
+          "Code": "MED-950",
+          "Name": "OMEPRAZOL",
+          "Presentation": "caja  14 capsulas",
+          "IsActive": true
+        }
+      },
+      "expected": "Name"
+    },
+    {
+      "name": "par · mismo código y mismo nombre",
+      "input": {
+        "check": "compare",
+        "a": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000201",
+          "Code": "MED-1",
+          "Name": "Paracetamol",
+          "Presentation": "Caja 10",
+          "IsActive": true
+        },
+        "b": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000202",
+          "Code": "med-1",
+          "Name": "Paracetamol",
+          "Presentation": "Caja 10",
+          "IsActive": true
+        }
+      },
+      "expected": "CodeAndName"
+    },
+    {
+      "name": "par · mismo nombre, otra presentación: otro producto",
+      "input": {
+        "check": "compare",
+        "a": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000201",
+          "Code": "MED-1",
+          "Name": "Omeprazol",
+          "Presentation": "Caja 14 cápsulas",
+          "IsActive": true
+        },
+        "b": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000202",
+          "Code": "MED-2",
+          "Name": "Omeprazol",
+          "Presentation": "Caja 28 cápsulas",
+          "IsActive": true
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "par · mismo nombre, una sin presentación: otro producto",
+      "input": {
+        "check": "compare",
+        "a": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000201",
+          "Code": "MED-1",
+          "Name": "Omeprazol",
+          "Presentation": "Caja 14 cápsulas",
+          "IsActive": true
+        },
+        "b": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000202",
+          "Code": "MED-2",
+          "Name": "Omeprazol",
+          "Presentation": null,
+          "IsActive": true
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "par · mismo nombre, las dos sin presentación",
+      "input": {
+        "check": "compare",
+        "a": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000201",
+          "Code": "MED-1",
+          "Name": "Gasas",
+          "Presentation": null,
+          "IsActive": true
+        },
+        "b": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000202",
+          "Code": "CUR-9",
+          "Name": "gasas",
+          "Presentation": "  ",
+          "IsActive": true
+        }
+      },
+      "expected": "Name"
+    },
+    {
+      "name": "par · un guion cuenta en el nombre",
+      "input": {
+        "check": "compare",
+        "a": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000201",
+          "Code": "MED-1",
+          "Name": "Ácido acetilsalicílico",
+          "Presentation": null,
+          "IsActive": true
+        },
+        "b": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000202",
+          "Code": "MED-2",
+          "Name": "Ácido acetil-salicílico",
+          "Presentation": null,
+          "IsActive": true
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "par · código vacío no se compara",
+      "input": {
+        "check": "compare",
+        "a": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000201",
+          "Code": "",
+          "Name": "Jeringa 3 ml",
+          "Presentation": null,
+          "IsActive": true
+        },
+        "b": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000202",
+          "Code": "  ",
+          "Name": "Jeringa 5 ml",
+          "Presentation": null,
+          "IsActive": true
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "par · uno inactivo no cuenta",
+      "input": {
+        "check": "compare",
+        "a": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000201",
+          "Code": "MED-900",
+          "Name": "Ketorolaco",
+          "Presentation": null,
+          "IsActive": true
+        },
+        "b": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000202",
+          "Code": "MED-900",
+          "Name": "Ketorolaco",
+          "Presentation": null,
+          "IsActive": false
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "par · el mismo registro (mismo SyncId) no es duplicado de sí mismo",
+      "input": {
+        "check": "compare",
+        "a": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000201",
+          "Code": "MED-900",
+          "Name": "Ketorolaco",
+          "Presentation": null,
+          "IsActive": true
+        },
+        "b": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000201",
+          "Code": "MED-900",
+          "Name": "Ketorolaco",
+          "Presentation": null,
+          "IsActive": true
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "par · sin nombre no cuenta",
+      "input": {
+        "check": "compare",
+        "a": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000201",
+          "Code": "MED-900",
+          "Name": " ",
+          "Presentation": null,
+          "IsActive": true
+        },
+        "b": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000202",
+          "Code": "MED-900",
+          "Name": "",
+          "Presentation": null,
+          "IsActive": true
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "par · dos servicios con el mismo SERV-006",
+      "input": {
+        "check": "compare",
+        "a": {
+          "kind": "servicio",
+          "SyncId": "c0000000-0000-4000-8000-000000000301",
+          "Code": "SERV-006",
+          "Name": "Retiro de puntos",
+          "Presentation": null,
+          "IsActive": true
+        },
+        "b": {
+          "kind": "servicio",
+          "SyncId": "c0000000-0000-4000-8000-000000000302",
+          "Code": "SERV-006",
+          "Name": "Lavado de oído",
+          "Presentation": null,
+          "IsActive": true
+        }
+      },
+      "expected": "Code"
+    },
+    {
+      "name": "par · dos servicios con el mismo nombre",
+      "input": {
+        "check": "compare",
+        "a": {
+          "kind": "servicio",
+          "SyncId": "c0000000-0000-4000-8000-000000000301",
+          "Code": "SERV-006",
+          "Name": "Lavado de oído",
+          "Presentation": null,
+          "IsActive": true
+        },
+        "b": {
+          "kind": "servicio",
+          "SyncId": "c0000000-0000-4000-8000-000000000302",
+          "Code": "SERV-007",
+          "Name": "LAVADO DE OIDO",
+          "Presentation": null,
+          "IsActive": true
+        }
+      },
+      "expected": "Name"
+    },
+    {
+      "name": "par · un producto y un servicio con el mismo código no se comparan",
+      "input": {
+        "check": "compare",
+        "a": {
+          "kind": "producto",
+          "SyncId": "c0000000-0000-4000-8000-000000000201",
+          "Code": "SERV-006",
+          "Name": "Retiro de puntos",
+          "Presentation": null,
+          "IsActive": true
+        },
+        "b": {
+          "kind": "servicio",
+          "SyncId": "c0000000-0000-4000-8000-000000000302",
+          "Code": "SERV-006",
+          "Name": "Retiro de puntos",
+          "Presentation": null,
+          "IsActive": true
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "par · dos categorías con el mismo nombre",
+      "input": {
+        "check": "compare",
+        "a": {
+          "kind": "categoria",
+          "SyncId": "c0000000-0000-4000-8000-000000000401",
+          "Code": null,
+          "Name": "Medicamentos y Fármacos",
+          "Presentation": null,
+          "IsActive": true
+        },
+        "b": {
+          "kind": "categoria",
+          "SyncId": "c0000000-0000-4000-8000-000000000402",
+          "Code": null,
+          "Name": "medicamentos y farmacos",
+          "Presentation": null,
+          "IsActive": true
+        }
+      },
+      "expected": "Name"
+    },
+    {
+      "name": "par · la categoría sembrada en dos equipos es la misma fila (SyncId fijo)",
+      "input": {
+        "check": "compare",
+        "a": {
+          "kind": "categoria",
+          "SyncId": "c92671a9-3965-595a-83c3-23341b2de912",
+          "Code": null,
+          "Name": "Material de Curación",
+          "Presentation": null,
+          "IsActive": true
+        },
+        "b": {
+          "kind": "categoria",
+          "SyncId": "c92671a9-3965-595a-83c3-23341b2de912",
+          "Code": null,
+          "Name": "Material de Curación",
+          "Presentation": null,
+          "IsActive": true
+        }
+      },
+      "expected": "None"
+    },
+    {
+      "name": "pares · llegó el producto 2",
+      "input": {
+        "check": "pairs",
+        "catalog": [
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000201",
+            "Code": "MED-900",
+            "Name": "Ketorolaco",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000202",
+            "Code": "med-900",
+            "Name": "Ketorolaco trometamina",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000203",
+            "Code": "MED-901",
+            "Name": "Omeprazol",
+            "Presentation": "Caja 14",
+            "IsActive": true
+          },
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000204",
+            "Code": "MED-950",
+            "Name": "omeprazol",
+            "Presentation": "caja 14",
+            "IsActive": true
+          },
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000205",
+            "Code": "MED-951",
+            "Name": "Omeprazol",
+            "Presentation": "Caja 14",
+            "IsActive": false
+          },
+          {
+            "kind": "servicio",
+            "SyncId": "c0000000-0000-4000-8000-000000000301",
+            "Code": "SERV-006",
+            "Name": "Retiro de puntos",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "servicio",
+            "SyncId": "c0000000-0000-4000-8000-000000000302",
+            "Code": "SERV-006",
+            "Name": "Lavado de oído",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "categoria",
+            "SyncId": "c0000000-0000-4000-8000-000000000401",
+            "Code": null,
+            "Name": "Insumos",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "categoria",
+            "SyncId": "c0000000-0000-4000-8000-000000000402",
+            "Code": null,
+            "Name": "INSUMOS",
+            "Presentation": null,
+            "IsActive": true
+          }
+        ],
+        "involving": [
+          "c0000000-0000-4000-8000-000000000202"
+        ]
+      },
+      "expected": [
+        [
+          "producto",
+          "c0000000-0000-4000-8000-000000000201",
+          "c0000000-0000-4000-8000-000000000202",
+          "Code"
+        ]
+      ]
+    },
+    {
+      "name": "pares · llegaron el producto 4 y el 5 (el 5 está inactivo)",
+      "input": {
+        "check": "pairs",
+        "catalog": [
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000201",
+            "Code": "MED-900",
+            "Name": "Ketorolaco",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000202",
+            "Code": "med-900",
+            "Name": "Ketorolaco trometamina",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000203",
+            "Code": "MED-901",
+            "Name": "Omeprazol",
+            "Presentation": "Caja 14",
+            "IsActive": true
+          },
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000204",
+            "Code": "MED-950",
+            "Name": "omeprazol",
+            "Presentation": "caja 14",
+            "IsActive": true
+          },
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000205",
+            "Code": "MED-951",
+            "Name": "Omeprazol",
+            "Presentation": "Caja 14",
+            "IsActive": false
+          },
+          {
+            "kind": "servicio",
+            "SyncId": "c0000000-0000-4000-8000-000000000301",
+            "Code": "SERV-006",
+            "Name": "Retiro de puntos",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "servicio",
+            "SyncId": "c0000000-0000-4000-8000-000000000302",
+            "Code": "SERV-006",
+            "Name": "Lavado de oído",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "categoria",
+            "SyncId": "c0000000-0000-4000-8000-000000000401",
+            "Code": null,
+            "Name": "Insumos",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "categoria",
+            "SyncId": "c0000000-0000-4000-8000-000000000402",
+            "Code": null,
+            "Name": "INSUMOS",
+            "Presentation": null,
+            "IsActive": true
+          }
+        ],
+        "involving": [
+          "c0000000-0000-4000-8000-000000000204",
+          "c0000000-0000-4000-8000-000000000205"
+        ]
+      },
+      "expected": [
+        [
+          "producto",
+          "c0000000-0000-4000-8000-000000000203",
+          "c0000000-0000-4000-8000-000000000204",
+          "Name"
+        ]
+      ]
+    },
+    {
+      "name": "pares · llegaron el servicio 2 y la categoría 2",
+      "input": {
+        "check": "pairs",
+        "catalog": [
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000201",
+            "Code": "MED-900",
+            "Name": "Ketorolaco",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000202",
+            "Code": "med-900",
+            "Name": "Ketorolaco trometamina",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000203",
+            "Code": "MED-901",
+            "Name": "Omeprazol",
+            "Presentation": "Caja 14",
+            "IsActive": true
+          },
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000204",
+            "Code": "MED-950",
+            "Name": "omeprazol",
+            "Presentation": "caja 14",
+            "IsActive": true
+          },
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000205",
+            "Code": "MED-951",
+            "Name": "Omeprazol",
+            "Presentation": "Caja 14",
+            "IsActive": false
+          },
+          {
+            "kind": "servicio",
+            "SyncId": "c0000000-0000-4000-8000-000000000301",
+            "Code": "SERV-006",
+            "Name": "Retiro de puntos",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "servicio",
+            "SyncId": "c0000000-0000-4000-8000-000000000302",
+            "Code": "SERV-006",
+            "Name": "Lavado de oído",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "categoria",
+            "SyncId": "c0000000-0000-4000-8000-000000000401",
+            "Code": null,
+            "Name": "Insumos",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "categoria",
+            "SyncId": "c0000000-0000-4000-8000-000000000402",
+            "Code": null,
+            "Name": "INSUMOS",
+            "Presentation": null,
+            "IsActive": true
+          }
+        ],
+        "involving": [
+          "c0000000-0000-4000-8000-000000000302",
+          "c0000000-0000-4000-8000-000000000402"
+        ]
+      },
+      "expected": [
+        [
+          "servicio",
+          "c0000000-0000-4000-8000-000000000301",
+          "c0000000-0000-4000-8000-000000000302",
+          "Code"
+        ],
+        [
+          "categoria",
+          "c0000000-0000-4000-8000-000000000401",
+          "c0000000-0000-4000-8000-000000000402",
+          "Name"
+        ]
+      ]
+    },
+    {
+      "name": "pares · llegó el producto 1 (también tiene par)",
+      "input": {
+        "check": "pairs",
+        "catalog": [
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000201",
+            "Code": "MED-900",
+            "Name": "Ketorolaco",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000202",
+            "Code": "med-900",
+            "Name": "Ketorolaco trometamina",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000203",
+            "Code": "MED-901",
+            "Name": "Omeprazol",
+            "Presentation": "Caja 14",
+            "IsActive": true
+          },
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000204",
+            "Code": "MED-950",
+            "Name": "omeprazol",
+            "Presentation": "caja 14",
+            "IsActive": true
+          },
+          {
+            "kind": "producto",
+            "SyncId": "c0000000-0000-4000-8000-000000000205",
+            "Code": "MED-951",
+            "Name": "Omeprazol",
+            "Presentation": "Caja 14",
+            "IsActive": false
+          },
+          {
+            "kind": "servicio",
+            "SyncId": "c0000000-0000-4000-8000-000000000301",
+            "Code": "SERV-006",
+            "Name": "Retiro de puntos",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "servicio",
+            "SyncId": "c0000000-0000-4000-8000-000000000302",
+            "Code": "SERV-006",
+            "Name": "Lavado de oído",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "categoria",
+            "SyncId": "c0000000-0000-4000-8000-000000000401",
+            "Code": null,
+            "Name": "Insumos",
+            "Presentation": null,
+            "IsActive": true
+          },
+          {
+            "kind": "categoria",
+            "SyncId": "c0000000-0000-4000-8000-000000000402",
+            "Code": null,
+            "Name": "INSUMOS",
+            "Presentation": null,
+            "IsActive": true
+          }
+        ],
+        "involving": [
+          "c0000000-0000-4000-8000-000000000201"
+        ]
+      },
+      "expected": [
+        [
+          "producto",
+          "c0000000-0000-4000-8000-000000000201",
+          "c0000000-0000-4000-8000-000000000202",
+          "Code"
+        ]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "rule": "link-qr",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Texto del QR: 'tpvc-link:1:' + base64url sin relleno (RFC 4648 §5: '-' y '_', sin '=') del JSON compacto {\"u\":url,\"t\":token,\"n\":consultorio} en UTF-8, con las claves en ese orden y los acentos sin escapar.",
+    "Al leer: se quitan los espacios de los extremos; si el prefijo o la versión no coinciden, el base64 o el JSON no se pueden leer, o faltan 'u' o 't', 'expected' es null y el equipo pide pegar la URL y el token a mano. 'n' puede faltar o ir vacío.",
+    "El QR lleva el token completo: la PC lo muestra solo a pedido y lo cierra a los 2 minutos; nunca va al portapapeles ni al registro.",
+    "Después de leerlo, el equipo escribe su latido con Platform 'Android' y el rol que pide, muestra los últimos 6 caracteres de su DeviceId en mayúsculas y espera su fila de DeviceRegistry (regla 'Equipos' de sync/schema.json)."
+  ],
+  "cases": [
+    {
+      "name": "generar · con acentos y eñe",
+      "input": {
+        "u": "libsql://consultorio-ejemplo.aws-us-east-2.turso.io",
+        "t": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NjAwMDAwMDB9.c2lnbmF0dXJhLWRlLWVqZW1wbG8",
+        "n": "Consultorio Médico Peña"
+      },
+      "expected": "tpvc-link:1:eyJ1IjoibGlic3FsOi8vY29uc3VsdG9yaW8tZWplbXBsby5hd3MtdXMtZWFzdC0yLnR1cnNvLmlvIiwidCI6ImV5SmhiR2NpT2lKRlpFUlRRU0lzSW5SNWNDSTZJa3BYVkNKOS5leUpoSWpvaWNuY2lMQ0pwWVhRaU9qRTNOakF3TURBd01EQjkuYzJsbmJtRjBkWEpoTFdSbExXVnFaVzF3Ykc4IiwibiI6IkNvbnN1bHRvcmlvIE3DqWRpY28gUGXDsWEifQ"
+    },
+    {
+      "name": "generar · sin nombre de consultorio",
+      "input": {
+        "u": "libsql://consultorio-ejemplo.aws-us-east-2.turso.io",
+        "t": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NjAwMDAwMDB9.c2lnbmF0dXJhLWRlLWVqZW1wbG8",
+        "n": ""
+      },
+      "expected": "tpvc-link:1:eyJ1IjoibGlic3FsOi8vY29uc3VsdG9yaW8tZWplbXBsby5hd3MtdXMtZWFzdC0yLnR1cnNvLmlvIiwidCI6ImV5SmhiR2NpT2lKRlpFUlRRU0lzSW5SNWNDSTZJa3BYVkNKOS5leUpoSWpvaWNuY2lMQ0pwWVhRaU9qRTNOakF3TURBd01EQjkuYzJsbmJtRjBkWEpoTFdSbExXVnFaVzF3Ykc4IiwibiI6IiJ9"
+    },
+    {
+      "name": "leer · otro prefijo",
+      "input": {
+        "text": "https://consultorio-ejemplo.turso.io"
+      },
+      "expected": null
+    },
+    {
+      "name": "leer · otra versión",
+      "input": {
+        "text": "tpvc-link:2:eyJ1IjoieCIsInQiOiJ5In0"
+      },
+      "expected": null
+    },
+    {
+      "name": "leer · no es base64",
+      "input": {
+        "text": "tpvc-link:1:%%%"
+      },
+      "expected": null
+    },
+    {
+      "name": "leer · sin token",
+      "input": {
+        "text": "tpvc-link:1:eyJ1IjoibGlic3FsOi8veC50dXJzby5pbyIsIm4iOiIifQ"
+      },
+      "expected": null
+    },
+    {
+      "name": "leer · vacío",
+      "input": {
+        "text": ""
+      },
+      "expected": null
+    }
+  ]
+}

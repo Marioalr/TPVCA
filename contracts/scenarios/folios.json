@@ -1,0 +1,1023 @@
+{
+  "scenario": "folios",
+  "covers": [
+    "8.16",
+    "8.17",
+    "8.22"
+  ],
+  "contract": 20,
+  "protocol": 3,
+  "generatedBy": "tests/TPVC.Tests/TursoSyncEndToEndTests.Scenarios.cs (TPVC_WRITE_GOLDEN=1 lo regenera)",
+  "notes": [
+    "Con conexión (pasos 4 a 6), cada expediente nuevo toma el siguiente número de FolioCounters en la nube (folio.take de hrana/statements.json): A, B y A dan 001, 002 y 003 sin sincronizar entre ellos.",
+    "Sin red (pasos 7 a 9), B usa su código: EXP-<year>-<code:B>-001 (golden/folios.json). <code:B> es P2 en la PC (otra computadora) y T1 en la tablet.",
+    "A, la PC principal, regulariza (pcOnly, paso 13) mientras B edita el teléfono de ese paciente sin haber bajado nada (paso 12): A le da el siguiente número (004) y guarda el folio con letra en OriginalFolio. Al bajar, B combina por campo (8.22): quedan el folio regularizado y el teléfono de B, en los dos."
+  ],
+  "devices": [
+    {
+      "name": "A",
+      "deviceId": "device-a",
+      "role": "WindowsDesktop",
+      "engine": "pc"
+    },
+    {
+      "name": "B",
+      "deviceId": "device-b",
+      "role": "AndroidTablet",
+      "engine": "kotlin"
+    }
+  ],
+  "watch": {
+    "Patients": [
+      "RecordNumber",
+      "OriginalFolio",
+      "FullName",
+      "Phone"
+    ]
+  },
+  "steps": [
+    {
+      "n": 1,
+      "device": "A",
+      "op": "fullSync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 2,
+      "device": "B",
+      "op": "join",
+      "result": {
+        "ok": true
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 3,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 4,
+      "device": "A",
+      "op": "newPatient",
+      "syncId": "10000000-0000-4000-8000-000000000701",
+      "fullName": "Paciente Uno En A",
+      "result": {
+        "recordNumber": "EXP-<year>-001"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 5,
+      "device": "B",
+      "op": "newPatient",
+      "syncId": "10000000-0000-4000-8000-000000000702",
+      "fullName": "Paciente Dos En B",
+      "result": {
+        "recordNumber": "EXP-<year>-002"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 6,
+      "device": "A",
+      "op": "newPatient",
+      "syncId": "10000000-0000-4000-8000-000000000703",
+      "fullName": "Paciente Tres En A",
+      "result": {
+        "recordNumber": "EXP-<year>-003"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            }
+          },
+          "pending": 2,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 7,
+      "op": "network",
+      "online": false,
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            }
+          },
+          "pending": 2,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 8,
+      "device": "B",
+      "op": "newPatient",
+      "syncId": "10000000-0000-4000-8000-000000000704",
+      "fullName": "Paciente Sin Red En B",
+      "result": {
+        "recordNumber": "EXP-<year>-<code:B>-001"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            }
+          },
+          "pending": 2,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-<code:B>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Sin Red En B",
+              "Phone": ""
+            }
+          },
+          "pending": 2,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 9,
+      "op": "network",
+      "online": true,
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            }
+          },
+          "pending": 2,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-<code:B>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Sin Red En B",
+              "Phone": ""
+            }
+          },
+          "pending": 2,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 10,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-<code:B>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Sin Red En B",
+              "Phone": ""
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            }
+          },
+          "pending": 2,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-<code:B>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Sin Red En B",
+              "Phone": ""
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 11,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-<code:B>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Sin Red En B",
+              "Phone": ""
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-<code:B>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Sin Red En B",
+              "Phone": ""
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-<code:B>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Sin Red En B",
+              "Phone": ""
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 12,
+      "device": "B",
+      "op": "edit",
+      "table": "Patients",
+      "syncId": "10000000-0000-4000-8000-000000000704",
+      "set": {
+        "Phone": "5512345678"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-<code:B>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Sin Red En B",
+              "Phone": ""
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-<code:B>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Sin Red En B",
+              "Phone": ""
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-<code:B>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Sin Red En B",
+              "Phone": "5512345678"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 13,
+      "device": "A",
+      "op": "regularizeFolios",
+      "result": {
+        "outcome": "Done",
+        "patients": 1,
+        "sales": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-<code:B>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Sin Red En B",
+              "Phone": ""
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-004",
+              "OriginalFolio": "EXP-<year>-<code:B>-001",
+              "FullName": "Paciente Sin Red En B",
+              "Phone": ""
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-<code:B>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Sin Red En B",
+              "Phone": "5512345678"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 14,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-004",
+              "OriginalFolio": "EXP-<year>-<code:B>-001",
+              "FullName": "Paciente Sin Red En B",
+              "Phone": ""
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-004",
+              "OriginalFolio": "EXP-<year>-<code:B>-001",
+              "FullName": "Paciente Sin Red En B",
+              "Phone": ""
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-<code:B>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Sin Red En B",
+              "Phone": "5512345678"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 15,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-004",
+              "OriginalFolio": "EXP-<year>-<code:B>-001",
+              "FullName": "Paciente Sin Red En B",
+              "Phone": "5512345678"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-004",
+              "OriginalFolio": "EXP-<year>-<code:B>-001",
+              "FullName": "Paciente Sin Red En B",
+              "Phone": ""
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-004",
+              "OriginalFolio": "EXP-<year>-<code:B>-001",
+              "FullName": "Paciente Sin Red En B",
+              "Phone": "5512345678"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 16,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-004",
+              "OriginalFolio": "EXP-<year>-<code:B>-001",
+              "FullName": "Paciente Sin Red En B",
+              "Phone": "5512345678"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-004",
+              "OriginalFolio": "EXP-<year>-<code:B>-001",
+              "FullName": "Paciente Sin Red En B",
+              "Phone": "5512345678"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000701": {
+              "RecordNumber": "EXP-<year>-001",
+              "OriginalFolio": null,
+              "FullName": "Paciente Uno En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000702": {
+              "RecordNumber": "EXP-<year>-002",
+              "OriginalFolio": null,
+              "FullName": "Paciente Dos En B",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000703": {
+              "RecordNumber": "EXP-<year>-003",
+              "OriginalFolio": null,
+              "FullName": "Paciente Tres En A",
+              "Phone": ""
+            },
+            "10000000-0000-4000-8000-000000000704": {
+              "RecordNumber": "EXP-<year>-004",
+              "OriginalFolio": "EXP-<year>-<code:B>-001",
+              "FullName": "Paciente Sin Red En B",
+              "Phone": "5512345678"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    }
+  ]
+}

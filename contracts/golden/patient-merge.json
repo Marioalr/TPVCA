@@ -1,0 +1,1934 @@
+{
+  "rule": "patient-merge",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Combinación por campo al bajar una fila de Patients que ya existe aquí (Services/Rules/PatientMerge, paso 8.22; regla «Pacientes por campo» de contracts/sync/schema.json). 'local' y 'remote': UpdatedAtUtc, el texto de FieldStampsJson y los valores de las columnas que se combinan ('columns': las de Patients que viajan, menos las derivadas y FieldStampsJson; aquí unas cuantas), cada uno como valor canónico (contracts/golden/canonical-json.json); en una hoja, el texto guardado.",
+    "Cada versión se normaliza (field-stamps.json, 'state'): marcas nunca mayores que su fila, y su piso '#piso' (en una escritura sin marcas, la que tiene un UpdatedAtUtc mayor que su llave 'UpdatedAtUtc' o no la tiene, su UpdatedAtUtc: escribió la fila completa). Por campo gana la marca mayor, y la de un campo vale al menos el piso de su versión; sin piso ni marca, la mínima. Marcas iguales y valores distintos: gana el texto canónico mayor en orden ordinal (unidades UTF-16).",
+    "Hojas por RowId: un renglón que una versión tiene vale al menos su piso (su marca de quitado, la suya); uno que no tiene cuenta como quitado en el mayor entre su piso y su propia marca de quitado (su marca de renglón, la suya; su marca de quitado, al menos el piso). La marca de un renglón y la de quitado son la mayor de los dos lados; vive si está en alguna de las dos hojas y su marca es mayor que la de quitado (iguales: quitado; sin marca de quitado: vive). Su contenido es el del lado con la marca mayor (iguales: el texto canónico mayor). Orden: con los renglones vivos, la lista del lado con la marca de orden ('<hoja>', al menos el piso) mayor (iguales: la de texto canónico mayor, como arreglo JSON de los RowId) y al final los que solo tiene el otro lado, en su orden. Los arreglos solo llevan renglones vivos.",
+    "Después: el piso del resultado es el mayor de los dos; las llaves desconocidas, con la marca mayor; las conocidas que no rebasan el piso no se guardan; se purgan los quitados viejos; y se compara por significado ({\"stamps\":…,\"values\":…} canónico con el estado normalizado y purgado; las hojas como arreglos canónicos). differsFromRemote: el resultado sube con UpdatedAtUtc = max(local, remote) + 1 ms y FieldStampsJson con 'UpdatedAtUtc' igual. Si no, se queda la fila de la nube tal cual: su UpdatedAtUtc y su texto de FieldStampsJson. Dos filas sin marcas iguales no suben nada.",
+    "'values' en 'expected' es canónico (las hojas como arreglos de renglones canónicos): el texto que escribe cada equipo puede ser otro. 'sources': de dónde sale el valor que se guarda: local (se queda el de aquí; también si los dos dicen lo mismo), remote (el de la nube, tal como llegó; en una hoja que dice lo mismo que la de la nube pero con otro texto, el de la nube) o merged (una hoja con renglones de los dos lados, escrita de nuevo). 'stamps' es el estado combinado (con '#piso', sin 'UpdatedAtUtc').",
+    "Las columnas derivadas (contracts/sync/schema.json, 'derived') no se combinan ni se tocan. En la PC, la edad (Age) con fecha de nacimiento se compara al día en los dos lados (se calcula con BirthDate), no por el número guardado."
+  ],
+  "cases": [
+    {
+      "name": "alergias en la tablet y teléfono en la PC: sobreviven los dos y el resultado sube",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:20.0000000",
+          "fieldStampsJson": "{\"Phone\":\"2026-10-14 15:00:20.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:20.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5511112222"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+          "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Penicilina",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [],
+          "Allergies": "Penicilina",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5511112222"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "local",
+          "Allergies": "remote",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "Allergies": "2026-10-14 15:00:10.0000000",
+          "Phone": "2026-10-14 15:00:20.0000000"
+        },
+        "differsFromRemote": true,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:00:20.0010000",
+        "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"Phone\":\"2026-10-14 15:00:20.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:20.0010000\"}"
+      }
+    },
+    {
+      "name": "gana la marca del campo, no la de la fila",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:30.0000000",
+          "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:05.0000000\",\"Phone\":\"2026-10-14 15:00:30.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:30.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Sulfas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5511112222"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+          "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Penicilina",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [],
+          "Allergies": "Penicilina",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5511112222"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "local",
+          "Allergies": "remote",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "Allergies": "2026-10-14 15:00:10.0000000",
+          "Phone": "2026-10-14 15:00:30.0000000"
+        },
+        "differsFromRemote": true,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:00:30.0010000",
+        "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"Phone\":\"2026-10-14 15:00:30.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:30.0010000\"}"
+      }
+    },
+    {
+      "name": "una marca que falta cuenta como la mínima",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:30.0000000",
+          "fieldStampsJson": "{\"Phone\":\"2026-10-14 15:00:30.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:30.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Sulfas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5511112222"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+          "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Penicilina",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [],
+          "Allergies": "Penicilina",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5511112222"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "local",
+          "Allergies": "remote",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "Allergies": "2026-10-14 15:00:10.0000000",
+          "Phone": "2026-10-14 15:00:30.0000000"
+        },
+        "differsFromRemote": true,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:00:30.0010000",
+        "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"Phone\":\"2026-10-14 15:00:30.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:30.0010000\"}"
+      }
+    },
+    {
+      "name": "marcas iguales y valores distintos: gana el texto canónico mayor en orden ordinal ('Ácido' va después de 'Agua')",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+          "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Agua",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+          "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Ácido",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [],
+          "Allergies": "Ácido",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5598761234"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "local",
+          "Allergies": "remote",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "Allergies": "2026-10-14 15:00:10.0000000"
+        },
+        "differsFromRemote": false,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+        "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}"
+      }
+    },
+    {
+      "name": "escritura sin marcas de una PC v1.38: lo que difiere cuenta con su UpdatedAtUtc (como el LWW por fila)",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:40.0000000",
+          "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"FullName\":\"2026-10-14 15:00:45.0000000\",\"Phone\":\"2026-10-14 15:00:30.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:40.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Penicilina",
+            "FullName": "Rodríguez Silva, María",
+            "IsActive": true,
+            "Phone": "5511111111"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:50.0000000",
+          "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Ninguna",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5500000000"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [],
+          "Allergies": "Ninguna",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5500000000"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "local",
+          "Allergies": "remote",
+          "FullName": "remote",
+          "IsActive": "local",
+          "Phone": "remote"
+        },
+        "stamps": {
+          "#piso": "2026-10-14 15:00:50.0000000"
+        },
+        "differsFromRemote": false,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:00:50.0000000",
+        "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}"
+      }
+    },
+    {
+      "name": "una edición de aquí posterior a la escritura sin marcas se queda",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:01:00.0000000",
+          "fieldStampsJson": "{\"Phone\":\"2026-10-14 15:01:00.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:01:00.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Penicilina",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5511111111"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:50.0000000",
+          "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Ninguna",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5500000000"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [],
+          "Allergies": "Ninguna",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5511111111"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "local",
+          "Allergies": "remote",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "#piso": "2026-10-14 15:00:50.0000000",
+          "Phone": "2026-10-14 15:01:00.0000000"
+        },
+        "differsFromRemote": true,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:01:00.0010000",
+        "fieldStampsJson": "{\"#piso\":\"2026-10-14 15:00:50.0000000\",\"Phone\":\"2026-10-14 15:01:00.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:01:00.0010000\"}"
+      }
+    },
+    {
+      "name": "dos filas sin marcas (antes de actualizar): el LWW por fila, y las marcas quedan escritas",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:05.0000000",
+          "fieldStampsJson": null,
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "A",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:06.0000000",
+          "fieldStampsJson": "",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "B",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [],
+          "Allergies": "B",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5598761234"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "local",
+          "Allergies": "remote",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "#piso": "2026-10-14 15:00:06.0000000"
+        },
+        "differsFromRemote": false,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:00:06.0000000",
+        "fieldStampsJson": ""
+      }
+    },
+    {
+      "name": "una marca mayor que su fila (reparada por estar en el futuro) cuenta como la fila",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+          "fieldStampsJson": "{\"Allergies\":\"2026-10-14 16:00:00.0000000\",\"UpdatedAtUtc\":\"2026-10-14 16:00:00.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Futuro",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:20.0000000",
+          "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:20.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:20.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Presente",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [],
+          "Allergies": "Presente",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5598761234"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "local",
+          "Allergies": "remote",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "Allergies": "2026-10-14 15:00:20.0000000"
+        },
+        "differsFromRemote": false,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:00:20.0000000",
+        "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:20.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:20.0000000\"}"
+      }
+    },
+    {
+      "name": "la misma hoja escrita por otro equipo (otro orden de llaves, minúsculas, 10.0, sin lo que vale por omisión): no hay nada que subir",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+          "fieldStampsJson": "{\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":10,\"ChargedLineId\":7}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+          "fieldStampsJson": "{\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"quantity\":1,\"supplyName\":\"Gasa\",\"rowId\":\"a0000000-0000-4000-8000-000000000001\",\"unitPrice\":10.0,\"ChargedUnits\":0}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000001",
+              "SupplyName": "Gasa",
+              "Instructions": "",
+              "Quantity": 1,
+              "UnitPrice": 10,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            }
+          ],
+          "Allergies": "Negadas",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5598761234"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "remote",
+          "Allergies": "local",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001": "2026-10-14 15:00:10.0000000"
+        },
+        "differsFromRemote": false,
+        "differsFromLocal": false,
+        "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+        "fieldStampsJson": "{\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}"
+      }
+    },
+    {
+      "name": "un renglón agregado en cada equipo a la misma hoja: los dos sobreviven, en el orden del lado con la marca de orden mayor",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:20.0000000",
+          "fieldStampsJson": "{\"ActiveSuppliesJson\":\"2026-10-14 15:00:20.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001\":\"2026-10-14 15:00:01.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:00:20.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:20.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5},{\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"SupplyName\":\"Venda\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+          "fieldStampsJson": "{\"ActiveSuppliesJson\":\"2026-10-14 15:00:10.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001\":\"2026-10-14 15:00:01.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000003\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5},{\"RowId\":\"a0000000-0000-4000-8000-000000000003\",\"SupplyName\":\"Alcohol\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000001",
+              "SupplyName": "Gasa",
+              "Instructions": "",
+              "Quantity": 1,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            },
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000002",
+              "SupplyName": "Venda",
+              "Instructions": "",
+              "Quantity": 1,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            },
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000003",
+              "SupplyName": "Alcohol",
+              "Instructions": "",
+              "Quantity": 1,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            }
+          ],
+          "Allergies": "Negadas",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5598761234"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "merged",
+          "Allergies": "local",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "ActiveSuppliesJson": "2026-10-14 15:00:20.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001": "2026-10-14 15:00:01.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002": "2026-10-14 15:00:20.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000003": "2026-10-14 15:00:10.0000000"
+        },
+        "differsFromRemote": true,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:00:20.0010000",
+        "fieldStampsJson": "{\"ActiveSuppliesJson\":\"2026-10-14 15:00:20.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001\":\"2026-10-14 15:00:01.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:00:20.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000003\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:20.0010000\"}"
+      }
+    },
+    {
+      "name": "quitar le gana a una edición anterior",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:20.0000000",
+          "fieldStampsJson": "{\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001\":\"2026-10-14 15:00:01.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:00:20.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:20.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5},{\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"SupplyName\":\"Venda\",\"Instructions\":\"\",\"Quantity\":3,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:30.0000000",
+          "fieldStampsJson": "{\"ActiveSuppliesJson\":\"2026-10-14 15:00:30.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001\":\"2026-10-14 15:00:01.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:00:01.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado\":\"2026-10-14 15:00:30.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:30.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000001",
+              "SupplyName": "Gasa",
+              "Instructions": "",
+              "Quantity": 1,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            }
+          ],
+          "Allergies": "Negadas",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5598761234"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "remote",
+          "Allergies": "local",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "ActiveSuppliesJson": "2026-10-14 15:00:30.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001": "2026-10-14 15:00:01.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002": "2026-10-14 15:00:20.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado": "2026-10-14 15:00:30.0000000"
+        },
+        "differsFromRemote": true,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:00:30.0010000",
+        "fieldStampsJson": "{\"ActiveSuppliesJson\":\"2026-10-14 15:00:30.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001\":\"2026-10-14 15:00:01.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:00:20.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado\":\"2026-10-14 15:00:30.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:30.0010000\"}"
+      }
+    },
+    {
+      "name": "una edición posterior le gana a quitar",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:40.0000000",
+          "fieldStampsJson": "{\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001\":\"2026-10-14 15:00:01.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:00:40.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:40.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5},{\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"SupplyName\":\"Venda\",\"Instructions\":\"\",\"Quantity\":3,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:30.0000000",
+          "fieldStampsJson": "{\"ActiveSuppliesJson\":\"2026-10-14 15:00:30.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001\":\"2026-10-14 15:00:01.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:00:01.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado\":\"2026-10-14 15:00:30.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:30.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000001",
+              "SupplyName": "Gasa",
+              "Instructions": "",
+              "Quantity": 1,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            },
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000002",
+              "SupplyName": "Venda",
+              "Instructions": "",
+              "Quantity": 3,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            }
+          ],
+          "Allergies": "Negadas",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5598761234"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "local",
+          "Allergies": "local",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "ActiveSuppliesJson": "2026-10-14 15:00:30.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001": "2026-10-14 15:00:01.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002": "2026-10-14 15:00:40.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado": "2026-10-14 15:00:30.0000000"
+        },
+        "differsFromRemote": true,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:00:40.0010000",
+        "fieldStampsJson": "{\"ActiveSuppliesJson\":\"2026-10-14 15:00:30.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001\":\"2026-10-14 15:00:01.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:00:40.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado\":\"2026-10-14 15:00:30.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:40.0010000\"}"
+      }
+    },
+    {
+      "name": "con la misma marca, gana quitar",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:30.0000000",
+          "fieldStampsJson": "{\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001\":\"2026-10-14 15:00:01.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:00:30.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:30.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5},{\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"SupplyName\":\"Venda\",\"Instructions\":\"\",\"Quantity\":3,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:30.0000000",
+          "fieldStampsJson": "{\"ActiveSuppliesJson\":\"2026-10-14 15:00:30.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001\":\"2026-10-14 15:00:01.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado\":\"2026-10-14 15:00:30.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:30.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000001",
+              "SupplyName": "Gasa",
+              "Instructions": "",
+              "Quantity": 1,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            }
+          ],
+          "Allergies": "Negadas",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5598761234"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "remote",
+          "Allergies": "local",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "ActiveSuppliesJson": "2026-10-14 15:00:30.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001": "2026-10-14 15:00:01.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002": "2026-10-14 15:00:30.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado": "2026-10-14 15:00:30.0000000"
+        },
+        "differsFromRemote": true,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:00:30.0010000",
+        "fieldStampsJson": "{\"ActiveSuppliesJson\":\"2026-10-14 15:00:30.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001\":\"2026-10-14 15:00:01.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:00:30.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado\":\"2026-10-14 15:00:30.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:30.0010000\"}"
+      }
+    },
+    {
+      "name": "una hoja sin marcas (PC v1.38) que no tiene un renglón lo quitó con su UpdatedAtUtc; lo que tiene, lo tiene desde entonces",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:20.0000000",
+          "fieldStampsJson": "{\"ActiveSuppliesJson\":\"2026-10-14 15:00:20.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000001\":\"2026-10-14 15:00:01.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:00:20.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:20.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5},{\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"SupplyName\":\"Venda\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:25.0000000",
+          "fieldStampsJson": "{\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":4,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000001",
+              "SupplyName": "Gasa",
+              "Instructions": "",
+              "Quantity": 4,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            }
+          ],
+          "Allergies": "Negadas",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5598761234"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "remote",
+          "Allergies": "local",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "#piso": "2026-10-14 15:00:25.0000000"
+        },
+        "differsFromRemote": false,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:00:25.0000000",
+        "fieldStampsJson": "{\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}"
+      }
+    },
+    {
+      "name": "marcas de orden iguales: gana la lista de RowId vivos con el texto canónico mayor; lo del otro lado va al final",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+          "fieldStampsJson": "{\"ActiveSuppliesJson\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5},{\"RowId\":\"a0000000-0000-4000-8000-000000000003\",\"SupplyName\":\"Alcohol\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+          "fieldStampsJson": "{\"ActiveSuppliesJson\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"SupplyName\":\"Venda\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5},{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000002",
+              "SupplyName": "Venda",
+              "Instructions": "",
+              "Quantity": 1,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            },
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000001",
+              "SupplyName": "Gasa",
+              "Instructions": "",
+              "Quantity": 1,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            },
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000003",
+              "SupplyName": "Alcohol",
+              "Instructions": "",
+              "Quantity": 1,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            }
+          ],
+          "Allergies": "Negadas",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5598761234"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "merged",
+          "Allergies": "local",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "ActiveSuppliesJson": "2026-10-14 15:00:10.0000000"
+        },
+        "differsFromRemote": true,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:00:10.0010000",
+        "fieldStampsJson": "{\"ActiveSuppliesJson\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0010000\"}"
+      }
+    },
+    {
+      "name": "llaves desconocidas: se conservan con la marca mayor, y si la nube ya lo tiene todo se queda su texto tal cual",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:09.0000000",
+          "fieldStampsJson": "{\"ColumnaDeUnaVersionNueva\":\"2026-10-14 15:00:04.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:09.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+          "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"ColumnaDeUnaVersionNueva\":\"2026-10-14 15:00:08.0000000\",\"Otra/llave\":\"2026-10-14 15:00:09.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Látex",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [],
+          "Allergies": "Látex",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5598761234"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "local",
+          "Allergies": "remote",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "Allergies": "2026-10-14 15:00:10.0000000",
+          "ColumnaDeUnaVersionNueva": "2026-10-14 15:00:08.0000000",
+          "Otra/llave": "2026-10-14 15:00:09.0000000"
+        },
+        "differsFromRemote": false,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+        "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"ColumnaDeUnaVersionNueva\":\"2026-10-14 15:00:08.0000000\",\"Otra/llave\":\"2026-10-14 15:00:09.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}"
+      }
+    },
+    {
+      "name": "un renglón quitado más de 90 días antes de la marca más nueva se purga",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:20.0000000",
+          "fieldStampsJson": "{\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:00:01.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado\":\"2026-10-14 15:00:02.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:20.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2027-01-12 15:00:10.0000000",
+          "fieldStampsJson": "{\"Allergies\":\"2027-01-12 15:00:10.0000000\",\"UpdatedAtUtc\":\"2027-01-12 15:00:10.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Látex",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [],
+          "Allergies": "Látex",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5598761234"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "local",
+          "Allergies": "remote",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "Allergies": "2027-01-12 15:00:10.0000000"
+        },
+        "differsFromRemote": false,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2027-01-12 15:00:10.0000000",
+        "fieldStampsJson": "{\"Allergies\":\"2027-01-12 15:00:10.0000000\",\"UpdatedAtUtc\":\"2027-01-12 15:00:10.0000000\"}"
+      }
+    },
+    {
+      "name": "la versión de aquí ya incluye la de la nube: el resultado es la de aquí y sube",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:31.0000000",
+          "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"Phone\":\"2026-10-14 15:00:31.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:31.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Penicilina",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5511112222"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+          "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Penicilina",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [],
+          "Allergies": "Penicilina",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5511112222"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "local",
+          "Allergies": "local",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "Allergies": "2026-10-14 15:00:10.0000000",
+          "Phone": "2026-10-14 15:00:31.0000000"
+        },
+        "differsFromRemote": true,
+        "differsFromLocal": false,
+        "updatedAtUtc": "2026-10-14 15:00:31.0010000",
+        "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"Phone\":\"2026-10-14 15:00:31.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:31.0010000\"}"
+      }
+    },
+    {
+      "name": "copia vieja sin marcas contra fila recién marcada: gana la fila; un renglón quitado antes de marcar no revive",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:09.0000000",
+          "fieldStampsJson": null,
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5},{\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"SupplyName\":\"Venda\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:20.0000000",
+          "fieldStampsJson": "{\"#piso\":\"2026-10-14 15:00:10.0000000\",\"Phone\":\"2026-10-14 15:00:20.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:20.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5}]",
+            "Allergies": "Penicilina",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5511112222"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000001",
+              "SupplyName": "Gasa",
+              "Instructions": "",
+              "Quantity": 1,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            }
+          ],
+          "Allergies": "Penicilina",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5511112222"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "remote",
+          "Allergies": "remote",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "remote"
+        },
+        "stamps": {
+          "#piso": "2026-10-14 15:00:10.0000000",
+          "Phone": "2026-10-14 15:00:20.0000000"
+        },
+        "differsFromRemote": false,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:00:20.0000000",
+        "fieldStampsJson": "{\"#piso\":\"2026-10-14 15:00:10.0000000\",\"Phone\":\"2026-10-14 15:00:20.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:20.0000000\"}"
+      }
+    },
+    {
+      "name": "primera escritura marcada sobre una fila sin marcas: lo que la fila tenía cuenta desde su piso",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:12.0000000",
+          "fieldStampsJson": "{\"#piso\":\"2026-10-14 15:00:10.0000000\",\"Phone\":\"2026-10-14 15:00:12.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:12.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5},{\"RowId\":\"a0000000-0000-4000-8000-000000000003\",\"SupplyName\":\"Alcohol\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5}]",
+            "Allergies": "Látex",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5511112222"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:11.0000000",
+          "fieldStampsJson": "{\"#piso\":\"2026-10-14 15:00:09.0000000\",\"FullName\":\"2026-10-14 15:00:11.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:11.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000001",
+              "SupplyName": "Gasa",
+              "Instructions": "",
+              "Quantity": 1,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            },
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000003",
+              "SupplyName": "Alcohol",
+              "Instructions": "",
+              "Quantity": 1,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            }
+          ],
+          "Allergies": "Látex",
+          "FullName": "Rodríguez Silva, María",
+          "IsActive": true,
+          "Phone": "5511112222"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "local",
+          "Allergies": "local",
+          "FullName": "remote",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "#piso": "2026-10-14 15:00:10.0000000",
+          "FullName": "2026-10-14 15:00:11.0000000",
+          "Phone": "2026-10-14 15:00:12.0000000"
+        },
+        "differsFromRemote": true,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:00:12.0010000",
+        "fieldStampsJson": "{\"#piso\":\"2026-10-14 15:00:10.0000000\",\"FullName\":\"2026-10-14 15:00:11.0000000\",\"Phone\":\"2026-10-14 15:00:12.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:12.0010000\"}"
+      }
+    },
+    {
+      "name": "la misma versión sin marcas al actualizar (otro texto, mismo significado): no hay nada que subir",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+          "fieldStampsJson": null,
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"SupplyName\":\"Gasa\",\"Quantity\":1}]",
+            "Allergies": "Penicilina",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+          "fieldStampsJson": "",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"Quantity\":1,\"RowId\":\"d88a6927-7e69-5b4a-ae14-5a5984e25278\",\"SupplyName\":\"Gasa\",\"UnitPrice\":0.0}]",
+            "Allergies": "Penicilina",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [
+            {
+              "RowId": "d88a6927-7e69-5b4a-ae14-5a5984e25278",
+              "SupplyName": "Gasa",
+              "Instructions": "",
+              "Quantity": 1,
+              "UnitPrice": 0,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            }
+          ],
+          "Allergies": "Penicilina",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5598761234"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "remote",
+          "Allergies": "local",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "#piso": "2026-10-14 15:00:10.0000000"
+        },
+        "differsFromRemote": false,
+        "differsFromLocal": false,
+        "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+        "fieldStampsJson": ""
+      }
+    },
+    {
+      "name": "con piso en los dos: un renglón que esta versión no tiene cuenta como quitado en su propia marca de quitado si rebasa el piso (no en el piso)",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:02:00.0000000",
+          "fieldStampsJson": "{\"#piso\":\"2026-10-14 15:01:40.0000000\",\"ActiveSuppliesJson\":\"2026-10-14 15:02:00.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:01:45.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado\":\"2026-10-14 15:02:00.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:02:00.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:01:45.0000000",
+          "fieldStampsJson": "{\"#piso\":\"2026-10-14 15:01:40.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:01:45.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:01:45.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5},{\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"SupplyName\":\"Venda\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000001",
+              "SupplyName": "Gasa",
+              "Instructions": "",
+              "Quantity": 1,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            }
+          ],
+          "Allergies": "Negadas",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5598761234"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "local",
+          "Allergies": "local",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "#piso": "2026-10-14 15:01:40.0000000",
+          "ActiveSuppliesJson": "2026-10-14 15:02:00.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002": "2026-10-14 15:01:45.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado": "2026-10-14 15:02:00.0000000"
+        },
+        "differsFromRemote": true,
+        "differsFromLocal": false,
+        "updatedAtUtc": "2026-10-14 15:02:00.0010000",
+        "fieldStampsJson": "{\"#piso\":\"2026-10-14 15:01:40.0000000\",\"ActiveSuppliesJson\":\"2026-10-14 15:02:00.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:01:45.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado\":\"2026-10-14 15:02:00.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:02:00.0010000\"}"
+      }
+    },
+    {
+      "name": "con piso en los dos: un renglón quitado aquí después de que la otra versión lo editó sigue quitado",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:02:00.0000000",
+          "fieldStampsJson": "{\"#piso\":\"2026-10-14 15:01:40.0000000\",\"ActiveSuppliesJson\":\"2026-10-14 15:02:00.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado\":\"2026-10-14 15:02:00.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:02:00.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:01:50.0000000",
+          "fieldStampsJson": "{\"#piso\":\"2026-10-14 15:01:40.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:01:50.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:01:50.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5},{\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"SupplyName\":\"Venda\",\"Instructions\":\"\",\"Quantity\":3,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000001",
+              "SupplyName": "Gasa",
+              "Instructions": "",
+              "Quantity": 1,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            }
+          ],
+          "Allergies": "Negadas",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5598761234"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "local",
+          "Allergies": "local",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "#piso": "2026-10-14 15:01:40.0000000",
+          "ActiveSuppliesJson": "2026-10-14 15:02:00.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002": "2026-10-14 15:01:50.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado": "2026-10-14 15:02:00.0000000"
+        },
+        "differsFromRemote": true,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:02:00.0010000",
+        "fieldStampsJson": "{\"#piso\":\"2026-10-14 15:01:40.0000000\",\"ActiveSuppliesJson\":\"2026-10-14 15:02:00.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:01:50.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado\":\"2026-10-14 15:02:00.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:02:00.0010000\"}"
+      }
+    },
+    {
+      "name": "con piso en los dos: una edición posterior en la otra versión le gana al quitado de esta",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:02:00.0000000",
+          "fieldStampsJson": "{\"#piso\":\"2026-10-14 15:01:40.0000000\",\"ActiveSuppliesJson\":\"2026-10-14 15:02:00.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado\":\"2026-10-14 15:02:00.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:02:00.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:02:10.0000000",
+          "fieldStampsJson": "{\"#piso\":\"2026-10-14 15:01:40.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:02:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:02:10.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5},{\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"SupplyName\":\"Venda\",\"Instructions\":\"\",\"Quantity\":3,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000001",
+              "SupplyName": "Gasa",
+              "Instructions": "",
+              "Quantity": 1,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            },
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000002",
+              "SupplyName": "Venda",
+              "Instructions": "",
+              "Quantity": 3,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            }
+          ],
+          "Allergies": "Negadas",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5598761234"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "remote",
+          "Allergies": "local",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "#piso": "2026-10-14 15:01:40.0000000",
+          "ActiveSuppliesJson": "2026-10-14 15:02:00.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002": "2026-10-14 15:02:10.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado": "2026-10-14 15:02:00.0000000"
+        },
+        "differsFromRemote": true,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:02:10.0010000",
+        "fieldStampsJson": "{\"#piso\":\"2026-10-14 15:01:40.0000000\",\"ActiveSuppliesJson\":\"2026-10-14 15:02:00.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:02:10.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado\":\"2026-10-14 15:02:00.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:02:10.0010000\"}"
+      }
+    },
+    {
+      "name": "con piso en los dos, del otro lado: la nube no tiene el renglón y lo quitó después de su piso; sigue quitado y no hay nada que subir",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:01:45.0000000",
+          "fieldStampsJson": "{\"#piso\":\"2026-10-14 15:01:40.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:01:45.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:01:45.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5},{\"RowId\":\"a0000000-0000-4000-8000-000000000002\",\"SupplyName\":\"Venda\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:02:00.0000000",
+          "fieldStampsJson": "{\"#piso\":\"2026-10-14 15:01:40.0000000\",\"ActiveSuppliesJson\":\"2026-10-14 15:02:00.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:01:45.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado\":\"2026-10-14 15:02:00.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:02:00.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "[{\"RowId\":\"a0000000-0000-4000-8000-000000000001\",\"SupplyName\":\"Gasa\",\"Instructions\":\"\",\"Quantity\":1,\"UnitPrice\":12.5}]",
+            "Allergies": "Negadas",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [
+            {
+              "RowId": "a0000000-0000-4000-8000-000000000001",
+              "SupplyName": "Gasa",
+              "Instructions": "",
+              "Quantity": 1,
+              "UnitPrice": 12.5,
+              "ChargedConsultationFolio": null,
+              "ChargedUnits": 0,
+              "ChargedLineKind": null,
+              "ChargedLineSyncId": null
+            }
+          ],
+          "Allergies": "Negadas",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5598761234"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "remote",
+          "Allergies": "local",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "#piso": "2026-10-14 15:01:40.0000000",
+          "ActiveSuppliesJson": "2026-10-14 15:02:00.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002": "2026-10-14 15:01:45.0000000",
+          "ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado": "2026-10-14 15:02:00.0000000"
+        },
+        "differsFromRemote": false,
+        "differsFromLocal": true,
+        "updatedAtUtc": "2026-10-14 15:02:00.0000000",
+        "fieldStampsJson": "{\"#piso\":\"2026-10-14 15:01:40.0000000\",\"ActiveSuppliesJson\":\"2026-10-14 15:02:00.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002\":\"2026-10-14 15:01:45.0000000\",\"ActiveSuppliesJson/a0000000-0000-4000-8000-000000000002/quitado\":\"2026-10-14 15:02:00.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:02:00.0000000\"}"
+      }
+    },
+    {
+      "name": "nada nuevo: se queda la versión de la nube tal cual (marca y texto de FieldStampsJson)",
+      "input": {
+        "patientSyncId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "columns": [
+          "ActivePrescriptionJson",
+          "ActiveSuppliesJson",
+          "Allergies",
+          "FullName",
+          "IsActive",
+          "Phone"
+        ],
+        "local": {
+          "updatedAtUtc": "2026-10-14 15:00:10.0000000",
+          "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:10.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Penicilina",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        },
+        "remote": {
+          "updatedAtUtc": "2026-10-14 15:00:12.0000000",
+          "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:12.0000000\"}",
+          "values": {
+            "ActivePrescriptionJson": "",
+            "ActiveSuppliesJson": "",
+            "Allergies": "Penicilina",
+            "FullName": "Rodríguez Silva, María Elena",
+            "IsActive": true,
+            "Phone": "5598761234"
+          }
+        }
+      },
+      "expected": {
+        "values": {
+          "ActivePrescriptionJson": [],
+          "ActiveSuppliesJson": [],
+          "Allergies": "Penicilina",
+          "FullName": "Rodríguez Silva, María Elena",
+          "IsActive": true,
+          "Phone": "5598761234"
+        },
+        "sources": {
+          "ActivePrescriptionJson": "local",
+          "ActiveSuppliesJson": "local",
+          "Allergies": "local",
+          "FullName": "local",
+          "IsActive": "local",
+          "Phone": "local"
+        },
+        "stamps": {
+          "Allergies": "2026-10-14 15:00:10.0000000"
+        },
+        "differsFromRemote": false,
+        "differsFromLocal": false,
+        "updatedAtUtc": "2026-10-14 15:00:12.0000000",
+        "fieldStampsJson": "{\"Allergies\":\"2026-10-14 15:00:10.0000000\",\"UpdatedAtUtc\":\"2026-10-14 15:00:12.0000000\"}"
+      }
+    }
+  ]
+}

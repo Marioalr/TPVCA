@@ -1,0 +1,170 @@
+{
+  "rule": "uuid5",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "UUID versión 5 de RFC 4122 (SHA-1 del espacio de nombres en orden de red + el nombre en UTF-8). 'expected' en minúsculas con guiones.",
+    "Espacios de nombres: dns y url de RFC 4122; tpvc = uuid5(url, \"https://github.com/Marioalr/TPVC/sync\"), fijo para siempre.",
+    "Catálogo sembrado por la PC (paso 8.8; Kotlin nunca siembra): 'Category:<nombre>', 'ClinicalService:<código>', 'ServiceDefaultProduct:<código del servicio>|<código del producto>'.",
+    "Derivados: nombre = prefix + los syncIds en minúsculas unidos con ':' (un SyncId leído en mayúsculas da lo mismo).",
+    "Devoluciones al cancelar un ticket (paso 8.19, regla «Existencias» de schema.json): con Sales.LedgerVersion 1, una por salida con 'return:' + SyncId de la salida; con 0 (venta anterior), una por producto con 'return:' + SyncId de la venta + ':' + SyncId del producto. Dos equipos que cancelan el mismo ticket escriben la misma fila.",
+    "Cerrar un lote (paso 8.19): la parte con su lote con 'close:' + SyncId del lote y la parte sin lote con 'close-rest:' + SyncId del lote; dos equipos que cierran el mismo lote escriben las mismas filas."
+  ],
+  "cases": [
+    {
+      "name": "RFC 4122 · DNS · python.org",
+      "input": {
+        "namespace": "dns",
+        "namespaceId": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+        "name": "python.org"
+      },
+      "expected": "886313e1-3b8a-5372-9b90-0c9aee199e5d"
+    },
+    {
+      "name": "el espacio de nombres de TPVC",
+      "input": {
+        "namespace": "url",
+        "namespaceId": "6ba7b811-9dad-11d1-80b4-00c04fd430c8",
+        "name": "https://github.com/Marioalr/TPVC/sync"
+      },
+      "expected": "ff997a05-ea47-5008-a4c1-6d022b9f1a6f"
+    },
+    {
+      "name": "TPVC · categoría con acentos (UTF-8)",
+      "input": {
+        "namespace": "tpvc",
+        "namespaceId": "ff997a05-ea47-5008-a4c1-6d022b9f1a6f",
+        "name": "Category:Analgésicos y antipiréticos"
+      },
+      "expected": "629f5cf6-740f-5607-9967-60cb64ad3831"
+    },
+    {
+      "name": "TPVC · servicio por código",
+      "input": {
+        "namespace": "tpvc",
+        "namespaceId": "ff997a05-ea47-5008-a4c1-6d022b9f1a6f",
+        "name": "ClinicalService:SERV-001"
+      },
+      "expected": "1b7a70eb-8209-5cf0-a419-512a7b95a7f2"
+    },
+    {
+      "name": "TPVC · categoría sembrada",
+      "input": {
+        "namespace": "tpvc",
+        "namespaceId": "ff997a05-ea47-5008-a4c1-6d022b9f1a6f",
+        "name": "Category:Material de Curación"
+      },
+      "expected": "c92671a9-3965-595a-83c3-23341b2de912"
+    },
+    {
+      "name": "TPVC · insumo por defecto de un servicio sembrado",
+      "input": {
+        "namespace": "tpvc",
+        "namespaceId": "ff997a05-ea47-5008-a4c1-6d022b9f1a6f",
+        "name": "ServiceDefaultProduct:SERV-002|CUR-001"
+      },
+      "expected": "aea79718-d4f5-5d43-8678-66923b6af612"
+    },
+    {
+      "name": "TPVC · nombre vacío",
+      "input": {
+        "namespace": "tpvc",
+        "namespaceId": "ff997a05-ea47-5008-a4c1-6d022b9f1a6f",
+        "name": ""
+      },
+      "expected": "b5bc6569-ebbb-545c-86fa-7a5b070fb024"
+    },
+    {
+      "name": "derivado · SyncId en minúsculas",
+      "input": {
+        "namespace": "tpvc",
+        "prefix": "return:",
+        "syncIds": [
+          "0f8fad5b-d9cb-469f-a165-70867728950e"
+        ]
+      },
+      "expected": "280ca983-2aab-5d02-8aa9-8a709cee4c4a"
+    },
+    {
+      "name": "derivado · el mismo SyncId en mayúsculas da lo mismo",
+      "input": {
+        "namespace": "tpvc",
+        "prefix": "return:",
+        "syncIds": [
+          "0F8FAD5B-D9CB-469F-A165-70867728950E"
+        ]
+      },
+      "expected": "280ca983-2aab-5d02-8aa9-8a709cee4c4a"
+    },
+    {
+      "name": "derivado · dos SyncId (uno en mayúsculas)",
+      "input": {
+        "namespace": "tpvc",
+        "prefix": "return:",
+        "syncIds": [
+          "0f8fad5b-d9cb-469f-a165-70867728950e",
+          "7C9E6679-7425-40DE-944B-E07FC1F90AE7"
+        ]
+      },
+      "expected": "ce8a7afc-d195-5cd3-8323-d9aa0272ebe2"
+    },
+    {
+      "name": "derivado · saldo inicial",
+      "input": {
+        "namespace": "tpvc",
+        "prefix": "opening:v1:",
+        "syncIds": [
+          "7C9E6679-7425-40DE-944B-E07FC1F90AE7"
+        ]
+      },
+      "expected": "397fd870-510b-50b8-9cb4-a046864cb978"
+    },
+    {
+      "name": "devolución · venta con LedgerVersion 1: return:<SyncId de la salida> (en mayúsculas da lo mismo)",
+      "input": {
+        "namespace": "tpvc",
+        "prefix": "return:",
+        "syncIds": [
+          "5B6C1F0E-2A44-4D7B-9E31-8F0A6C2D9B47"
+        ]
+      },
+      "expected": "fe760613-c21e-5eec-9798-e668e3e56868"
+    },
+    {
+      "name": "devolución · venta con LedgerVersion 0: return:<SyncId de la venta>:<SyncId del producto>",
+      "input": {
+        "namespace": "tpvc",
+        "prefix": "return:",
+        "syncIds": [
+          "a1d3c5e7-0b2f-4c6e-8a9d-1e3f5a7c9b0d",
+          "c0ffee00-1234-4abc-9def-0123456789ab"
+        ]
+      },
+      "expected": "4197aedb-48b8-5556-a356-7bd9d4e81be9"
+    },
+    {
+      "name": "cerrar un lote · la parte con su lote: close:<SyncId del lote>",
+      "input": {
+        "namespace": "tpvc",
+        "prefix": "close:",
+        "syncIds": [
+          "e8b1d2c4-6f7a-4b3c-9d0e-1f2a3b4c5d6e"
+        ]
+      },
+      "expected": "6127d50b-14d6-54cb-b051-4036a326c524"
+    },
+    {
+      "name": "cerrar un lote · la parte sin lote: close-rest:<SyncId del lote>",
+      "input": {
+        "namespace": "tpvc",
+        "prefix": "close-rest:",
+        "syncIds": [
+          "e8b1d2c4-6f7a-4b3c-9d0e-1f2a3b4c5d6e"
+        ]
+      },
+      "expected": "7f937c91-0b27-55e1-8e4e-e1281ba0cb67"
+    }
+  ]
+}

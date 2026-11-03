@@ -1,0 +1,239 @@
+{
+  "rule": "ticket-text",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Services/Documents/TicketText.cs: el ticket en 42 columnas, renglón por renglón; lo mismo que imprime la PC en la impresora térmica (sus textos salen de aquí).",
+    "Cabecera centrada (relleno a la izquierda de (42 − largo) / 2 espacios, sin relleno a la derecha): el consultorio en mayúsculas ('CONSULTORIO MÉDICO TPVC' si no hay), el médico ('Dr. Titular' si no hay) con ' • Céd. ' y la cédula, domicilio y 'Tel: ' + teléfono si los hay. Un renglón largo se parte por palabras a 42; una palabra más larga se corta.",
+    "Partidas: Cant (4, a la derecha), Descripción (17, partida por palabras; el resto en renglones solo con la descripción), P.U. y Total (9 cada uno, a la derecha), con un espacio entre columnas y sin espacios al final.",
+    "Importes de las partidas: '$' + F2 (sin miles; un tercer decimal se redondea con el medio hacia arriba: 0.125 da 0.13). Total pagado: '$' + N2 con miles + ' MXN'. Fecha 'dd/MM/yyyy HH:mm' en la hora del consultorio.",
+    "Separadores de 42 '-' y '='. El pie va centrado.",
+    "Paso 8.17: con 'originalFolio' (un ticket cobrado sin conexión que la PC principal ya regularizó), debajo del folio va 'FOLIO SIN CONEXIÓN: ' + ese folio; null si no lo hay."
+  ],
+  "cases": [
+    {
+      "name": "venta corta con el perfil completo",
+      "input": {
+        "receipt": {
+          "folio": "TKT-20261011-001",
+          "date": "2026-10-11 17:05",
+          "patientName": "María José Pérez López",
+          "paymentMethod": "Efectivo",
+          "cashier": "Dra. María del Cielo Alberto Galicia",
+          "items": [
+            {
+              "name": "Consulta general",
+              "quantity": 1,
+              "unitPrice": "500"
+            },
+            {
+              "name": "Paracetamol 500 mg",
+              "quantity": 2,
+              "unitPrice": "12.5"
+            }
+          ],
+          "originalFolio": null
+        },
+        "profile": {
+          "clinicName": "Consultorio Médico Santa Lucía",
+          "doctorName": "Dra. María del Cielo Alberto Galicia",
+          "professionalLicense": "15632243",
+          "address": "Av. Siempre Viva 742, Col. Centro, Ciudad de México",
+          "phone": "55 1234 5678"
+        }
+      },
+      "expected": [
+        "      CONSULTORIO MÉDICO SANTA LUCÍA",
+        "  Dra. María del Cielo Alberto Galicia •",
+        "              Céd. 15632243",
+        "Av. Siempre Viva 742, Col. Centro, Ciudad",
+        "                de México",
+        "            Tel: 55 1234 5678",
+        "------------------------------------------",
+        "FOLIO:    TKT-20261011-001",
+        "FECHA:    11/10/2026 17:05",
+        "PACIENTE: María José Pérez López",
+        "PAGO:     Efectivo",
+        "ATENDIÓ:  Dra. María del Cielo Alberto",
+        "Galicia",
+        "==========================================",
+        "Cant Descripción            P.U.     Total",
+        "   1 Consulta general    $500.00   $500.00",
+        "   2 Paracetamol 500      $12.50    $25.00",
+        "     mg",
+        "------------------------------------------",
+        "TOTAL DE ARTÍCULOS: 3",
+        "TOTAL PAGADO:       $525.00 MXN",
+        "==========================================",
+        "   ¡Gracias por su visita y confianza!",
+        "Comprobante de atención médica y farmacia"
+      ]
+    },
+    {
+      "name": "descripción larga partida en renglones e importes con miles y punto medio",
+      "input": {
+        "receipt": {
+          "folio": "TKT-20261011-002",
+          "date": "2026-10-11 09:00",
+          "patientName": "Público General",
+          "paymentMethod": "Tarjeta de crédito",
+          "cashier": "Recepción",
+          "items": [
+            {
+              "name": "Amoxicilina con ácido clavulánico 875/125 mg tabletas",
+              "quantity": 3,
+              "unitPrice": "1234.5"
+            },
+            {
+              "name": "Insumo con precio de tres decimales",
+              "quantity": 1,
+              "unitPrice": "0.125"
+            },
+            {
+              "name": "Supercalifragilísticoexpialidoso",
+              "quantity": 10,
+              "unitPrice": "9.99"
+            }
+          ],
+          "originalFolio": null
+        },
+        "profile": {
+          "clinicName": "Consultorio Médico Santa Lucía",
+          "doctorName": "Dra. María del Cielo Alberto Galicia",
+          "professionalLicense": "15632243",
+          "address": "Av. Siempre Viva 742, Col. Centro, Ciudad de México",
+          "phone": "55 1234 5678"
+        }
+      },
+      "expected": [
+        "      CONSULTORIO MÉDICO SANTA LUCÍA",
+        "  Dra. María del Cielo Alberto Galicia •",
+        "              Céd. 15632243",
+        "Av. Siempre Viva 742, Col. Centro, Ciudad",
+        "                de México",
+        "            Tel: 55 1234 5678",
+        "------------------------------------------",
+        "FOLIO:    TKT-20261011-002",
+        "FECHA:    11/10/2026 09:00",
+        "PACIENTE: Público General",
+        "PAGO:     Tarjeta de crédito",
+        "ATENDIÓ:  Recepción",
+        "==========================================",
+        "Cant Descripción            P.U.     Total",
+        "   3 Amoxicilina con    $1234.50  $3703.50",
+        "     ácido clavulánico",
+        "     875/125 mg",
+        "     tabletas",
+        "   1 Insumo con precio     $0.13     $0.13",
+        "     de tres decimales",
+        "  10 Supercalifragilís     $9.99    $99.90",
+        "     ticoexpialidoso",
+        "------------------------------------------",
+        "TOTAL DE ARTÍCULOS: 14",
+        "TOTAL PAGADO:       $3,803.53 MXN",
+        "==========================================",
+        "   ¡Gracias por su visita y confianza!",
+        "Comprobante de atención médica y farmacia"
+      ]
+    },
+    {
+      "name": "sin perfil: los nombres de siempre",
+      "input": {
+        "receipt": {
+          "folio": "TKT-20261011-003",
+          "date": "2026-01-05 23:59",
+          "patientName": "Juan",
+          "paymentMethod": "Transferencia",
+          "cashier": "PC",
+          "items": [
+            {
+              "name": "Curación",
+              "quantity": 1,
+              "unitPrice": "150"
+            }
+          ],
+          "originalFolio": null
+        },
+        "profile": {
+          "clinicName": "",
+          "doctorName": "",
+          "professionalLicense": "",
+          "address": "",
+          "phone": ""
+        }
+      },
+      "expected": [
+        "         CONSULTORIO MÉDICO TPVC",
+        "               Dr. Titular",
+        "------------------------------------------",
+        "FOLIO:    TKT-20261011-003",
+        "FECHA:    05/01/2026 23:59",
+        "PACIENTE: Juan",
+        "PAGO:     Transferencia",
+        "ATENDIÓ:  PC",
+        "==========================================",
+        "Cant Descripción            P.U.     Total",
+        "   1 Curación            $150.00   $150.00",
+        "------------------------------------------",
+        "TOTAL DE ARTÍCULOS: 1",
+        "TOTAL PAGADO:       $150.00 MXN",
+        "==========================================",
+        "   ¡Gracias por su visita y confianza!",
+        "Comprobante de atención médica y farmacia"
+      ]
+    },
+    {
+      "name": "reimpresión de un ticket cobrado sin conexión",
+      "input": {
+        "receipt": {
+          "folio": "TKT-20261011-0004",
+          "date": "2026-10-11 12:30",
+          "patientName": "Público General",
+          "paymentMethod": "Efectivo",
+          "cashier": "Recepción",
+          "items": [
+            {
+              "name": "Consulta general",
+              "quantity": 1,
+              "unitPrice": "500"
+            }
+          ],
+          "originalFolio": "TKT-20261011-T1-0001"
+        },
+        "profile": {
+          "clinicName": "Consultorio Médico Santa Lucía",
+          "doctorName": "Dra. María del Cielo Alberto Galicia",
+          "professionalLicense": "15632243",
+          "address": "Av. Siempre Viva 742, Col. Centro, Ciudad de México",
+          "phone": "55 1234 5678"
+        }
+      },
+      "expected": [
+        "      CONSULTORIO MÉDICO SANTA LUCÍA",
+        "  Dra. María del Cielo Alberto Galicia •",
+        "              Céd. 15632243",
+        "Av. Siempre Viva 742, Col. Centro, Ciudad",
+        "                de México",
+        "            Tel: 55 1234 5678",
+        "------------------------------------------",
+        "FOLIO:    TKT-20261011-0004",
+        "FOLIO SIN CONEXIÓN: TKT-20261011-T1-0001",
+        "FECHA:    11/10/2026 12:30",
+        "PACIENTE: Público General",
+        "PAGO:     Efectivo",
+        "ATENDIÓ:  Recepción",
+        "==========================================",
+        "Cant Descripción            P.U.     Total",
+        "   1 Consulta general    $500.00   $500.00",
+        "------------------------------------------",
+        "TOTAL DE ARTÍCULOS: 1",
+        "TOTAL PAGADO:       $500.00 MXN",
+        "==========================================",
+        "   ¡Gracias por su visita y confianza!",
+        "Comprobante de atención médica y farmacia"
+      ]
+    }
+  ]
+}

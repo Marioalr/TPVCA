@@ -1,0 +1,283 @@
+{
+  "rule": "cash-cut",
+  "culture": "es-MX",
+  "today": "2026-10-11",
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Services/Rules/CashCutRules.cs. Entran las ventas del día (Sales.Date de 00:00 a 23:59 en la hora del consultorio) con sus renglones.",
+    "Forma de pago: el texto en minúsculas sin espacios alrededor; gana la primera regla que se cumple: contiene 'efectivo'; 'débito' o 'debito'; 'crédito' o 'credito'; 'transfer'; si no, otros.",
+    "Las canceladas solo suman tickets cancelados y su total; ni forma de pago ni servicios contra productos. Servicios: renglones con isService; cuentan su subtotal y su cantidad.",
+    "Importes: decimales exactos en texto invariable (sin redondeo: el corte solo suma)."
+  ],
+  "cases": [
+    {
+      "name": "día sin ventas",
+      "input": {
+        "day": "2026-10-11",
+        "sales": []
+      },
+      "expected": {
+        "totalTickets": 0,
+        "activeTickets": 0,
+        "cancelledTickets": 0,
+        "totalSales": "0",
+        "totalCancelled": "0",
+        "cash": "0",
+        "debitCard": "0",
+        "creditCard": "0",
+        "transfer": "0",
+        "other": "0",
+        "servicesAmount": "0",
+        "servicesCount": 0,
+        "productsAmount": "0",
+        "productUnits": 0
+      }
+    },
+    {
+      "name": "cada forma de pago, sin distinguir mayúsculas ni el acento",
+      "input": {
+        "day": "2026-10-11",
+        "sales": [
+          {
+            "total": "350",
+            "paymentMethod": "EFECTIVO",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "quantity": 1,
+                "subtotal": "350"
+              }
+            ]
+          },
+          {
+            "total": "120.50",
+            "paymentMethod": "Tarjeta de Débito",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": false,
+                "quantity": 2,
+                "subtotal": "120.50"
+              }
+            ]
+          },
+          {
+            "total": "80",
+            "paymentMethod": "tarjeta de debito",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": false,
+                "quantity": 1,
+                "subtotal": "80"
+              }
+            ]
+          },
+          {
+            "total": "500",
+            "paymentMethod": "Tarjeta de crédito",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "quantity": 1,
+                "subtotal": "400"
+              },
+              {
+                "isService": false,
+                "quantity": 4,
+                "subtotal": "100"
+              }
+            ]
+          },
+          {
+            "total": "99.99",
+            "paymentMethod": "Tarjeta de credito",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": false,
+                "quantity": 1,
+                "subtotal": "99.99"
+              }
+            ]
+          },
+          {
+            "total": "1200",
+            "paymentMethod": "Transferencia SPEI",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "quantity": 2,
+                "subtotal": "1200"
+              }
+            ]
+          },
+          {
+            "total": "45",
+            "paymentMethod": "Vale de despensa",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": false,
+                "quantity": 3,
+                "subtotal": "45"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "totalTickets": 7,
+        "activeTickets": 7,
+        "cancelledTickets": 0,
+        "totalSales": "2395.49",
+        "totalCancelled": "0",
+        "cash": "350",
+        "debitCard": "200.50",
+        "creditCard": "599.99",
+        "transfer": "1200",
+        "other": "45",
+        "servicesAmount": "1950",
+        "servicesCount": 4,
+        "productsAmount": "445.49",
+        "productUnits": 11
+      }
+    },
+    {
+      "name": "la primera forma que aparece gana: «Efectivo y tarjeta de débito» es efectivo",
+      "input": {
+        "day": "2026-10-11",
+        "sales": [
+          {
+            "total": "200",
+            "paymentMethod": "Efectivo y tarjeta de débito",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "quantity": 1,
+                "subtotal": "200"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "totalTickets": 1,
+        "activeTickets": 1,
+        "cancelledTickets": 0,
+        "totalSales": "200",
+        "totalCancelled": "0",
+        "cash": "200",
+        "debitCard": "0",
+        "creditCard": "0",
+        "transfer": "0",
+        "other": "0",
+        "servicesAmount": "200",
+        "servicesCount": 1,
+        "productsAmount": "0",
+        "productUnits": 0
+      }
+    },
+    {
+      "name": "las canceladas solo cuentan aparte (ni forma de pago ni servicios contra productos)",
+      "input": {
+        "day": "2026-10-11",
+        "sales": [
+          {
+            "total": "300",
+            "paymentMethod": "Efectivo",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": true,
+                "quantity": 1,
+                "subtotal": "300"
+              }
+            ]
+          },
+          {
+            "total": "150",
+            "paymentMethod": "Efectivo",
+            "cancelled": true,
+            "items": [
+              {
+                "isService": false,
+                "quantity": 5,
+                "subtotal": "150"
+              }
+            ]
+          },
+          {
+            "total": "75.25",
+            "paymentMethod": "Transferencia",
+            "cancelled": true,
+            "items": [
+              {
+                "isService": true,
+                "quantity": 1,
+                "subtotal": "75.25"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "totalTickets": 3,
+        "activeTickets": 1,
+        "cancelledTickets": 2,
+        "totalSales": "300",
+        "totalCancelled": "225.25",
+        "cash": "300",
+        "debitCard": "0",
+        "creditCard": "0",
+        "transfer": "0",
+        "other": "0",
+        "servicesAmount": "300",
+        "servicesCount": 1,
+        "productsAmount": "0",
+        "productUnits": 0
+      }
+    },
+    {
+      "name": "una venta sin forma de pago cuenta en otros",
+      "input": {
+        "day": "2026-10-11",
+        "sales": [
+          {
+            "total": "10",
+            "paymentMethod": "",
+            "cancelled": false,
+            "items": [
+              {
+                "isService": false,
+                "quantity": 1,
+                "subtotal": "10"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "totalTickets": 1,
+        "activeTickets": 1,
+        "cancelledTickets": 0,
+        "totalSales": "10",
+        "totalCancelled": "0",
+        "cash": "0",
+        "debitCard": "0",
+        "creditCard": "0",
+        "transfer": "0",
+        "other": "10",
+        "servicesAmount": "0",
+        "servicesCount": 0,
+        "productsAmount": "10",
+        "productUnits": 1
+      }
+    }
+  ]
+}

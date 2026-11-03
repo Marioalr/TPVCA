@@ -1,0 +1,1463 @@
+{
+  "rule": "agenda",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "La agenda (Services/Rules/AgendaRules.cs, antes en AgendaPanelViewModel y PatientsHomeViewModel). Cada cita: syncId, patientName, date (yyyy-MM-dd), time (texto; se lee como en patient-summary.json, lo que no se lee son las 10:00), durationMinutes, status y reason. 'now' es la hora local del consultorio.",
+    "slots (BuildSlots): las citas del día que no están 'Cancelada', cada una en su hora, más los huecos libres de 30 minutos que empiezan de las 08:00 a las 19:30. Un hueco [t, t+30) no se ofrece si alguna cita del día [inicio, inicio + duración) se cruza con él (duración 0 o negativa = 30); el día de hoy (la fecha de 'now') no se ofrece un hueco cuyo inicio ya pasó. Orden por hora, la cita antes que el hueco libre a la misma hora; citas a la misma hora en su orden de entrada. title: el paciente o 'Libre'; subtitle: 'motivo · N min' (la duración guardada, aunque sea 0) o '+ Agendar aquí'. overlap: la marca 'Empalme con {paciente} ({HH:mm})' y ' y N más' si hay varias (la primera por hora y luego por SyncId), con AppointmentRules.Overlaps (appointment-overlap.json). summary: 'N citas · M huecos libres' (singular con 1).",
+    "week: los 7 días desde el lunes de la semana de 'date', con sus citas sin las canceladas; countText 'libre', '1 cita' o 'N citas'. today (las citas de hoy del inicio; la entrada ya son las del día): sin canceladas, por hora y con la marca de empalme. next (la próxima cita de la ficha): la primera por fecha y hora de las que no están 'Cancelada' ni 'Atendida' con fecha de hoy en adelante; null si no hay. overlap-question: la pregunta al agendar encima de otras ('a las HH:mm con nombre', unidas con ', ' y ' y ' antes de la última).",
+    "titles: panelTitle 'dddd d de MMMM' de es-MX con la primera letra en mayúscula; weekTitle 'd – d de MMMM yyyy' si la semana no cambia de mes (si cambia usa meses abreviados, que dependen de los datos de la cultura del sistema: no van en el vector); weekStart, el lunes."
+  ],
+  "cases": [
+    {
+      "name": "huecos · un día sin citas en el futuro: 24 huecos de 8:00 a 19:30",
+      "input": {
+        "check": "slots",
+        "date": "2026-10-16",
+        "now": "2026-10-14 09:00",
+        "appointments": []
+      },
+      "expected": {
+        "slots": [
+          {
+            "time": "08:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "08:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "09:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "09:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "10:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "10:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "11:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "11:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "12:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "12:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "13:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "13:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "14:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "14:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "15:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "15:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "16:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "16:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "17:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "17:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "18:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "18:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "19:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "19:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          }
+        ],
+        "summary": "0 citas · 24 huecos libres"
+      }
+    },
+    {
+      "name": "huecos · hoy no ofrece horas pasadas (el hueco que ya empezó tampoco)",
+      "input": {
+        "check": "slots",
+        "date": "2026-10-16",
+        "now": "2026-10-16 12:10",
+        "appointments": []
+      },
+      "expected": {
+        "slots": [
+          {
+            "time": "12:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "13:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "13:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "14:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "14:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "15:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "15:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "16:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "16:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "17:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "17:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "18:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "18:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "19:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "19:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          }
+        ],
+        "summary": "0 citas · 15 huecos libres"
+      }
+    },
+    {
+      "name": "huecos · citas que ocupan huecos por su duración, empalmes, canceladas fuera, antes de las 8, hora que no se lee (10:00) y la que pasa de las 20:00",
+      "input": {
+        "check": "slots",
+        "date": "2026-10-15",
+        "now": "2026-10-01 08:00",
+        "appointments": [
+          {
+            "syncId": "10000000-0000-4000-8000-000000000001",
+            "patientName": "Ana López",
+            "date": "2026-10-15",
+            "time": "10:15",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000002",
+            "patientName": "Luis Ruiz",
+            "date": "2026-10-15",
+            "time": "10:30",
+            "durationMinutes": 45,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000003",
+            "patientName": "Ángel Díaz",
+            "date": "2026-10-15",
+            "time": "10:30",
+            "durationMinutes": 15,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000004",
+            "patientName": "Eva Peña",
+            "date": "2026-10-15",
+            "time": "12:00",
+            "durationMinutes": 0,
+            "status": "Confirmada",
+            "reason": "Resultados de laboratorio"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000005",
+            "patientName": "Cancelada Sí",
+            "date": "2026-10-15",
+            "time": "13:00",
+            "durationMinutes": 60,
+            "status": "Cancelada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000006",
+            "patientName": "Temprano Pérez",
+            "date": "2026-10-15",
+            "time": "07:30",
+            "durationMinutes": 60,
+            "status": "Atendida",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000007",
+            "patientName": "Sin Hora",
+            "date": "2026-10-15",
+            "time": "3 PM",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000008",
+            "patientName": "Noche Gómez",
+            "date": "2026-10-15",
+            "time": "19:45",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000009",
+            "patientName": "Otro Día",
+            "date": "2026-10-16",
+            "time": "09:00",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000010",
+            "patientName": "Domingo Ruiz",
+            "date": "2026-10-18",
+            "time": "11:00",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000011",
+            "patientName": "Semana Pasada",
+            "date": "2026-10-11",
+            "time": "11:00",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          }
+        ]
+      },
+      "expected": {
+        "slots": [
+          {
+            "time": "07:30",
+            "patientName": "Temprano Pérez",
+            "title": "Temprano Pérez",
+            "subtitle": "Consulta de seguimiento · 60 min",
+            "overlap": ""
+          },
+          {
+            "time": "08:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "09:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "09:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "10:00",
+            "patientName": "Sin Hora",
+            "title": "Sin Hora",
+            "subtitle": "Consulta de seguimiento · 30 min",
+            "overlap": "Empalme con Ana López (10:15)"
+          },
+          {
+            "time": "10:15",
+            "patientName": "Ana López",
+            "title": "Ana López",
+            "subtitle": "Consulta de seguimiento · 30 min",
+            "overlap": "Empalme con Sin Hora (10:00) y 2 más"
+          },
+          {
+            "time": "10:30",
+            "patientName": "Luis Ruiz",
+            "title": "Luis Ruiz",
+            "subtitle": "Consulta de seguimiento · 45 min",
+            "overlap": "Empalme con Ana López (10:15) y 1 más"
+          },
+          {
+            "time": "10:30",
+            "patientName": "Ángel Díaz",
+            "title": "Ángel Díaz",
+            "subtitle": "Consulta de seguimiento · 15 min",
+            "overlap": "Empalme con Ana López (10:15) y 1 más"
+          },
+          {
+            "time": "11:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "12:00",
+            "patientName": "Eva Peña",
+            "title": "Eva Peña",
+            "subtitle": "Resultados de laboratorio · 0 min",
+            "overlap": ""
+          },
+          {
+            "time": "12:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "13:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "13:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "14:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "14:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "15:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "15:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "16:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "16:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "17:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "17:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "18:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "18:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "19:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "19:45",
+            "patientName": "Noche Gómez",
+            "title": "Noche Gómez",
+            "subtitle": "Consulta de seguimiento · 30 min",
+            "overlap": ""
+          }
+        ],
+        "summary": "7 citas · 18 huecos libres"
+      }
+    },
+    {
+      "name": "huecos · hoy a las 11:00: las citas pasadas se quedan, los huecos pasados no",
+      "input": {
+        "check": "slots",
+        "date": "2026-10-15",
+        "now": "2026-10-15 11:00",
+        "appointments": [
+          {
+            "syncId": "10000000-0000-4000-8000-000000000001",
+            "patientName": "Ana López",
+            "date": "2026-10-15",
+            "time": "10:15",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000002",
+            "patientName": "Luis Ruiz",
+            "date": "2026-10-15",
+            "time": "10:30",
+            "durationMinutes": 45,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000003",
+            "patientName": "Ángel Díaz",
+            "date": "2026-10-15",
+            "time": "10:30",
+            "durationMinutes": 15,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000004",
+            "patientName": "Eva Peña",
+            "date": "2026-10-15",
+            "time": "12:00",
+            "durationMinutes": 0,
+            "status": "Confirmada",
+            "reason": "Resultados de laboratorio"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000005",
+            "patientName": "Cancelada Sí",
+            "date": "2026-10-15",
+            "time": "13:00",
+            "durationMinutes": 60,
+            "status": "Cancelada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000006",
+            "patientName": "Temprano Pérez",
+            "date": "2026-10-15",
+            "time": "07:30",
+            "durationMinutes": 60,
+            "status": "Atendida",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000007",
+            "patientName": "Sin Hora",
+            "date": "2026-10-15",
+            "time": "3 PM",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000008",
+            "patientName": "Noche Gómez",
+            "date": "2026-10-15",
+            "time": "19:45",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000009",
+            "patientName": "Otro Día",
+            "date": "2026-10-16",
+            "time": "09:00",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000010",
+            "patientName": "Domingo Ruiz",
+            "date": "2026-10-18",
+            "time": "11:00",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000011",
+            "patientName": "Semana Pasada",
+            "date": "2026-10-11",
+            "time": "11:00",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          }
+        ]
+      },
+      "expected": {
+        "slots": [
+          {
+            "time": "07:30",
+            "patientName": "Temprano Pérez",
+            "title": "Temprano Pérez",
+            "subtitle": "Consulta de seguimiento · 60 min",
+            "overlap": ""
+          },
+          {
+            "time": "10:00",
+            "patientName": "Sin Hora",
+            "title": "Sin Hora",
+            "subtitle": "Consulta de seguimiento · 30 min",
+            "overlap": "Empalme con Ana López (10:15)"
+          },
+          {
+            "time": "10:15",
+            "patientName": "Ana López",
+            "title": "Ana López",
+            "subtitle": "Consulta de seguimiento · 30 min",
+            "overlap": "Empalme con Sin Hora (10:00) y 2 más"
+          },
+          {
+            "time": "10:30",
+            "patientName": "Luis Ruiz",
+            "title": "Luis Ruiz",
+            "subtitle": "Consulta de seguimiento · 45 min",
+            "overlap": "Empalme con Ana López (10:15) y 1 más"
+          },
+          {
+            "time": "10:30",
+            "patientName": "Ángel Díaz",
+            "title": "Ángel Díaz",
+            "subtitle": "Consulta de seguimiento · 15 min",
+            "overlap": "Empalme con Ana López (10:15) y 1 más"
+          },
+          {
+            "time": "11:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "12:00",
+            "patientName": "Eva Peña",
+            "title": "Eva Peña",
+            "subtitle": "Resultados de laboratorio · 0 min",
+            "overlap": ""
+          },
+          {
+            "time": "12:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "13:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "13:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "14:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "14:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "15:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "15:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "16:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "16:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "17:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "17:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "18:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "18:30",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "19:00",
+            "patientName": null,
+            "title": "Libre",
+            "subtitle": "+ Agendar aquí",
+            "overlap": ""
+          },
+          {
+            "time": "19:45",
+            "patientName": "Noche Gómez",
+            "title": "Noche Gómez",
+            "subtitle": "Consulta de seguimiento · 30 min",
+            "overlap": ""
+          }
+        ],
+        "summary": "7 citas · 15 huecos libres"
+      }
+    },
+    {
+      "name": "semana · de lunes a domingo, sin canceladas (un domingo es el último día de su semana)",
+      "input": {
+        "check": "week",
+        "date": "2026-10-18",
+        "appointments": [
+          {
+            "syncId": "10000000-0000-4000-8000-000000000001",
+            "patientName": "Ana López",
+            "date": "2026-10-15",
+            "time": "10:15",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000002",
+            "patientName": "Luis Ruiz",
+            "date": "2026-10-15",
+            "time": "10:30",
+            "durationMinutes": 45,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000003",
+            "patientName": "Ángel Díaz",
+            "date": "2026-10-15",
+            "time": "10:30",
+            "durationMinutes": 15,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000004",
+            "patientName": "Eva Peña",
+            "date": "2026-10-15",
+            "time": "12:00",
+            "durationMinutes": 0,
+            "status": "Confirmada",
+            "reason": "Resultados de laboratorio"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000005",
+            "patientName": "Cancelada Sí",
+            "date": "2026-10-15",
+            "time": "13:00",
+            "durationMinutes": 60,
+            "status": "Cancelada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000006",
+            "patientName": "Temprano Pérez",
+            "date": "2026-10-15",
+            "time": "07:30",
+            "durationMinutes": 60,
+            "status": "Atendida",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000007",
+            "patientName": "Sin Hora",
+            "date": "2026-10-15",
+            "time": "3 PM",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000008",
+            "patientName": "Noche Gómez",
+            "date": "2026-10-15",
+            "time": "19:45",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000009",
+            "patientName": "Otro Día",
+            "date": "2026-10-16",
+            "time": "09:00",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000010",
+            "patientName": "Domingo Ruiz",
+            "date": "2026-10-18",
+            "time": "11:00",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000011",
+            "patientName": "Semana Pasada",
+            "date": "2026-10-11",
+            "time": "11:00",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "date": "2026-10-12",
+          "count": 0,
+          "countText": "libre"
+        },
+        {
+          "date": "2026-10-13",
+          "count": 0,
+          "countText": "libre"
+        },
+        {
+          "date": "2026-10-14",
+          "count": 0,
+          "countText": "libre"
+        },
+        {
+          "date": "2026-10-15",
+          "count": 7,
+          "countText": "7 citas"
+        },
+        {
+          "date": "2026-10-16",
+          "count": 1,
+          "countText": "1 cita"
+        },
+        {
+          "date": "2026-10-17",
+          "count": 0,
+          "countText": "libre"
+        },
+        {
+          "date": "2026-10-18",
+          "count": 1,
+          "countText": "1 cita"
+        }
+      ]
+    },
+    {
+      "name": "semana · el lunes es el inicio",
+      "input": {
+        "check": "week",
+        "date": "2026-10-12",
+        "appointments": [
+          {
+            "syncId": "10000000-0000-4000-8000-000000000001",
+            "patientName": "Ana López",
+            "date": "2026-10-15",
+            "time": "10:15",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000002",
+            "patientName": "Luis Ruiz",
+            "date": "2026-10-15",
+            "time": "10:30",
+            "durationMinutes": 45,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000003",
+            "patientName": "Ángel Díaz",
+            "date": "2026-10-15",
+            "time": "10:30",
+            "durationMinutes": 15,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000004",
+            "patientName": "Eva Peña",
+            "date": "2026-10-15",
+            "time": "12:00",
+            "durationMinutes": 0,
+            "status": "Confirmada",
+            "reason": "Resultados de laboratorio"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000005",
+            "patientName": "Cancelada Sí",
+            "date": "2026-10-15",
+            "time": "13:00",
+            "durationMinutes": 60,
+            "status": "Cancelada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000006",
+            "patientName": "Temprano Pérez",
+            "date": "2026-10-15",
+            "time": "07:30",
+            "durationMinutes": 60,
+            "status": "Atendida",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000007",
+            "patientName": "Sin Hora",
+            "date": "2026-10-15",
+            "time": "3 PM",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000008",
+            "patientName": "Noche Gómez",
+            "date": "2026-10-15",
+            "time": "19:45",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000009",
+            "patientName": "Otro Día",
+            "date": "2026-10-16",
+            "time": "09:00",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000010",
+            "patientName": "Domingo Ruiz",
+            "date": "2026-10-18",
+            "time": "11:00",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000011",
+            "patientName": "Semana Pasada",
+            "date": "2026-10-11",
+            "time": "11:00",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "date": "2026-10-12",
+          "count": 0,
+          "countText": "libre"
+        },
+        {
+          "date": "2026-10-13",
+          "count": 0,
+          "countText": "libre"
+        },
+        {
+          "date": "2026-10-14",
+          "count": 0,
+          "countText": "libre"
+        },
+        {
+          "date": "2026-10-15",
+          "count": 7,
+          "countText": "7 citas"
+        },
+        {
+          "date": "2026-10-16",
+          "count": 1,
+          "countText": "1 cita"
+        },
+        {
+          "date": "2026-10-17",
+          "count": 0,
+          "countText": "libre"
+        },
+        {
+          "date": "2026-10-18",
+          "count": 1,
+          "countText": "1 cita"
+        }
+      ]
+    },
+    {
+      "name": "hoy en el inicio · sin canceladas, por hora (la que no se lee cuenta como 10:00) y con empalmes",
+      "input": {
+        "check": "today",
+        "appointments": [
+          {
+            "syncId": "10000000-0000-4000-8000-000000000001",
+            "patientName": "Ana López",
+            "date": "2026-10-15",
+            "time": "10:15",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000002",
+            "patientName": "Luis Ruiz",
+            "date": "2026-10-15",
+            "time": "10:30",
+            "durationMinutes": 45,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000003",
+            "patientName": "Ángel Díaz",
+            "date": "2026-10-15",
+            "time": "10:30",
+            "durationMinutes": 15,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000004",
+            "patientName": "Eva Peña",
+            "date": "2026-10-15",
+            "time": "12:00",
+            "durationMinutes": 0,
+            "status": "Confirmada",
+            "reason": "Resultados de laboratorio"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000005",
+            "patientName": "Cancelada Sí",
+            "date": "2026-10-15",
+            "time": "13:00",
+            "durationMinutes": 60,
+            "status": "Cancelada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000006",
+            "patientName": "Temprano Pérez",
+            "date": "2026-10-15",
+            "time": "07:30",
+            "durationMinutes": 60,
+            "status": "Atendida",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000007",
+            "patientName": "Sin Hora",
+            "date": "2026-10-15",
+            "time": "3 PM",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000008",
+            "patientName": "Noche Gómez",
+            "date": "2026-10-15",
+            "time": "19:45",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "patientName": "Temprano Pérez",
+          "time": "07:30",
+          "overlap": ""
+        },
+        {
+          "patientName": "Sin Hora",
+          "time": "3 PM",
+          "overlap": "Empalme con Ana López (10:15)"
+        },
+        {
+          "patientName": "Ana López",
+          "time": "10:15",
+          "overlap": "Empalme con Sin Hora (10:00) y 2 más"
+        },
+        {
+          "patientName": "Luis Ruiz",
+          "time": "10:30",
+          "overlap": "Empalme con Ana López (10:15) y 1 más"
+        },
+        {
+          "patientName": "Ángel Díaz",
+          "time": "10:30",
+          "overlap": "Empalme con Ana López (10:15) y 1 más"
+        },
+        {
+          "patientName": "Eva Peña",
+          "time": "12:00",
+          "overlap": ""
+        },
+        {
+          "patientName": "Noche Gómez",
+          "time": "19:45",
+          "overlap": ""
+        }
+      ]
+    },
+    {
+      "name": "próxima cita · ni cancelada ni atendida, desde hoy, por fecha y hora",
+      "input": {
+        "check": "next",
+        "today": "2026-10-15",
+        "appointments": [
+          {
+            "syncId": "10000000-0000-4000-8000-000000000001",
+            "patientName": "P",
+            "date": "2026-10-14",
+            "time": "09:00",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000002",
+            "patientName": "P",
+            "date": "2026-10-20",
+            "time": "09:00",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000003",
+            "patientName": "P",
+            "date": "2026-10-15",
+            "time": "18:00",
+            "durationMinutes": 30,
+            "status": "Atendida",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000004",
+            "patientName": "P",
+            "date": "2026-10-15",
+            "time": "3 PM",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000005",
+            "patientName": "P",
+            "date": "2026-10-15",
+            "time": "09:30",
+            "durationMinutes": 30,
+            "status": "Cancelada",
+            "reason": "Consulta de seguimiento"
+          }
+        ]
+      },
+      "expected": {
+        "syncId": "10000000-0000-4000-8000-000000000004",
+        "date": "2026-10-15",
+        "time": "3 PM"
+      }
+    },
+    {
+      "name": "próxima cita · ninguna",
+      "input": {
+        "check": "next",
+        "today": "2026-10-15",
+        "appointments": [
+          {
+            "syncId": "10000000-0000-4000-8000-000000000001",
+            "patientName": "P",
+            "date": "2026-10-14",
+            "time": "09:00",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "name": "pregunta de empalme · una",
+      "input": {
+        "check": "overlap-question",
+        "appointments": [
+          {
+            "syncId": "10000000-0000-4000-8000-000000000001",
+            "patientName": "Ana López",
+            "date": "2026-10-15",
+            "time": "10:30",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          }
+        ]
+      },
+      "expected": "Ya hay una cita a las 10:30 con Ana López.\n\n¿Agendar de todos modos?"
+    },
+    {
+      "name": "pregunta de empalme · dos",
+      "input": {
+        "check": "overlap-question",
+        "appointments": [
+          {
+            "syncId": "10000000-0000-4000-8000-000000000001",
+            "patientName": "Ana López",
+            "date": "2026-10-15",
+            "time": "9:05",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000002",
+            "patientName": "Luis Ruiz",
+            "date": "2026-10-15",
+            "time": "10:30",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          }
+        ]
+      },
+      "expected": "Ya hay citas a las 09:05 con Ana López y a las 10:30 con Luis Ruiz.\n\n¿Agendar de todos modos?"
+    },
+    {
+      "name": "pregunta de empalme · tres",
+      "input": {
+        "check": "overlap-question",
+        "appointments": [
+          {
+            "syncId": "10000000-0000-4000-8000-000000000001",
+            "patientName": "Ana",
+            "date": "2026-10-15",
+            "time": "10:00",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000002",
+            "patientName": "Luis",
+            "date": "2026-10-15",
+            "time": "10:15",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          },
+          {
+            "syncId": "10000000-0000-4000-8000-000000000003",
+            "patientName": "Eva",
+            "date": "2026-10-15",
+            "time": "10:20",
+            "durationMinutes": 30,
+            "status": "Programada",
+            "reason": "Consulta de seguimiento"
+          }
+        ]
+      },
+      "expected": "Ya hay citas a las 10:00 con Ana, a las 10:15 con Luis y a las 10:20 con Eva.\n\n¿Agendar de todos modos?"
+    },
+    {
+      "name": "textos · título del día",
+      "input": {
+        "check": "titles",
+        "date": "2026-10-12"
+      },
+      "expected": {
+        "panelTitle": "Lunes 12 de octubre",
+        "weekTitle": "12 – 18 de octubre 2026",
+        "weekStart": "2026-10-12"
+      }
+    },
+    {
+      "name": "textos · título de un miércoles",
+      "input": {
+        "check": "titles",
+        "date": "2026-10-14"
+      },
+      "expected": {
+        "panelTitle": "Miércoles 14 de octubre",
+        "weekTitle": "12 – 18 de octubre 2026",
+        "weekStart": "2026-10-12"
+      }
+    }
+  ]
+}

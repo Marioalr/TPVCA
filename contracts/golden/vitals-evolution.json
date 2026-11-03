@@ -1,0 +1,370 @@
+{
+  "rule": "vitals-evolution",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "La serie de signos de la ficha (Models/PatientRecord.GetVitalSignsEvolution con PatientConsultation.ParseAndSetVitalSigns, y los textos de arriba de la gráfica, Services/Rules/PatientChartRules.LatestTexts). Cada consulta: date, folio, vitalSigns (el texto de la nota, vitals.json 'format') y, si ya están en sus columnas, systolic, diastolic, heartRate, temperature, weight, height, bmi, glucose y oxygenSaturation (decimales en texto). Decimales de salida en texto invariante con su escala.",
+    "Por consulta, de la fecha más vieja a la más nueva (iguales en el orden de la lista): si no tiene sistólica, peso, glucosa ni SpO2 en sus columnas, se leen del texto (sin distinguir mayúsculas): T/A con '(T/?A|TA|PA|Presi[oó]n):' y 'dd/dd' (2 o 3 dígitos cada uno), 'FC:' 2-3 dígitos, 'FR:' 1-2 dígitos, '(Temp|Temperatura):', '(Peso|Weight):', '(Talla|Height|Estatura):' (más de 3 se toma en cm y se divide entre 100), '(SpO2%?|SatO2|SPO2)' con ':' o '=' opcional (de 0 a 1 se multiplica por 100), 'IMC:' y 'Glucosa:', cada número con dígitos, punto o coma (la coma vale punto). Sin IMC escrito y con peso y talla, IMC = Math.Round(peso / talla², 2) (decimal, al par).",
+    "Hay punto si la consulta tiene peso, sistólica, glucosa, temperatura o SpO2 (la SpO2 no viaja en el punto). Textos con la cultura es-MX: dateText 'dd/MM/yy', weightText 'F1 kg', bloodPressureText 'F0/F0' (con las dos), glucoseText 'F0 mg/dL', temperatureText 'F1 °C'; '--' sin el dato. El formato F de decimal redondea el punto medio hacia arriba.",
+    "latest (los textos de arriba de la gráfica, con el último punto): weight 'F1 kg', bloodPressure 'sistólica/diastólica mmHg' con cada decimal tal cual (con su escala), glucose 'F0 mg/dL', bmi 'F1'; '--' sin el dato o sin puntos."
+  ],
+  "cases": [
+    {
+      "name": "los signos se leen del texto de la nota, en orden de fecha",
+      "input": {
+        "consultations": [
+          {
+            "date": "2026-10-12 10:00",
+            "folio": "B",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "TA: 120/80 mmHg | FC: 76 lpm | FR: 18 rpm | Temp: 37.8 °C | Peso: 78 kg | Talla: 1.74 m",
+            "treatmentPlan": ""
+          },
+          {
+            "date": "2026-09-01 10:00",
+            "folio": "A",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "TA: 135/85 mmHg | FC: 68 lpm | Temp: 36.4 °C | Glucosa: 134 mg/dL",
+            "treatmentPlan": ""
+          }
+        ]
+      },
+      "expected": {
+        "points": [
+          {
+            "date": "2026-09-01 10:00",
+            "weight": null,
+            "systolic": "135",
+            "diastolic": "85",
+            "glucose": "134",
+            "heartRate": "68",
+            "temperature": "36.4",
+            "bmi": null,
+            "dateText": "01/09/26",
+            "weightText": "--",
+            "bloodPressureText": "135/85",
+            "glucoseText": "134 mg/dL",
+            "temperatureText": "36.4 °C"
+          },
+          {
+            "date": "2026-10-12 10:00",
+            "weight": "78",
+            "systolic": "120",
+            "diastolic": "80",
+            "glucose": null,
+            "heartRate": "76",
+            "temperature": "37.8",
+            "bmi": "25.76",
+            "dateText": "12/10/26",
+            "weightText": "78.0 kg",
+            "bloodPressureText": "120/80",
+            "glucoseText": "--",
+            "temperatureText": "37.8 °C"
+          }
+        ],
+        "latest": {
+          "weight": "78.0 kg",
+          "bloodPressure": "120/80 mmHg",
+          "glucose": "--",
+          "bmi": "25.8"
+        }
+      }
+    },
+    {
+      "name": "otras formas: T/A, Presión, coma decimal, talla en cm, SpO2 como fracción y el IMC escrito",
+      "input": {
+        "consultations": [
+          {
+            "date": "2026-01-10 09:00",
+            "folio": "A",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "T/A: 110/70 | Temp: 36,5 | Peso: 15,5 kg | Talla: 95 cm | SpO2: 0.94",
+            "treatmentPlan": ""
+          },
+          {
+            "date": "2026-02-10 09:00",
+            "folio": "B",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "Presión: 130 / 90 | Peso: 80 kg | Talla: 1.70 m | IMC: 24.2 kg/m² (Peso normal)",
+            "treatmentPlan": ""
+          },
+          {
+            "date": "2026-03-10 09:00",
+            "folio": "C",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "SatO2 = 97 | glucosa: 99.5",
+            "treatmentPlan": ""
+          }
+        ]
+      },
+      "expected": {
+        "points": [
+          {
+            "date": "2026-01-10 09:00",
+            "weight": "15.5",
+            "systolic": "110",
+            "diastolic": "70",
+            "glucose": null,
+            "heartRate": null,
+            "temperature": "36.5",
+            "bmi": "17.17",
+            "dateText": "10/01/26",
+            "weightText": "15.5 kg",
+            "bloodPressureText": "110/70",
+            "glucoseText": "--",
+            "temperatureText": "36.5 °C"
+          },
+          {
+            "date": "2026-02-10 09:00",
+            "weight": "80",
+            "systolic": "130",
+            "diastolic": "90",
+            "glucose": null,
+            "heartRate": null,
+            "temperature": null,
+            "bmi": "24.2",
+            "dateText": "10/02/26",
+            "weightText": "80.0 kg",
+            "bloodPressureText": "130/90",
+            "glucoseText": "--",
+            "temperatureText": "--"
+          },
+          {
+            "date": "2026-03-10 09:00",
+            "weight": null,
+            "systolic": null,
+            "diastolic": null,
+            "glucose": "99.5",
+            "heartRate": null,
+            "temperature": null,
+            "bmi": null,
+            "dateText": "10/03/26",
+            "weightText": "--",
+            "bloodPressureText": "--",
+            "glucoseText": "100 mg/dL",
+            "temperatureText": "--"
+          }
+        ],
+        "latest": {
+          "weight": "--",
+          "bloodPressure": "--",
+          "glucose": "100 mg/dL",
+          "bmi": "--"
+        }
+      }
+    },
+    {
+      "name": "sin peso, T/A, glucosa, temperatura ni SpO2 no hay punto (la FC sola no cuenta)",
+      "input": {
+        "consultations": [
+          {
+            "date": "2026-05-01 09:00",
+            "folio": "A",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "FC: 80 lpm | FR: 18 rpm",
+            "treatmentPlan": ""
+          },
+          {
+            "date": "2026-05-02 09:00",
+            "folio": "B",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "",
+            "treatmentPlan": ""
+          },
+          {
+            "date": "2026-05-03 09:00",
+            "folio": "C",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "Talla: 1.60 m",
+            "treatmentPlan": ""
+          }
+        ]
+      },
+      "expected": {
+        "points": [],
+        "latest": {
+          "weight": "--",
+          "bloodPressure": "--",
+          "glucose": "--",
+          "bmi": "--"
+        }
+      }
+    },
+    {
+      "name": "los valores ya guardados en sus columnas ganan al texto",
+      "input": {
+        "consultations": [
+          {
+            "date": "2026-06-01 09:00",
+            "folio": "A",
+            "vitalSigns": "Peso: 99 kg",
+            "weight": "70.5",
+            "systolic": "118",
+            "diastolic": "76"
+          }
+        ]
+      },
+      "expected": {
+        "points": [
+          {
+            "date": "2026-06-01 09:00",
+            "weight": "70.5",
+            "systolic": "118",
+            "diastolic": "76",
+            "glucose": null,
+            "heartRate": null,
+            "temperature": null,
+            "bmi": null,
+            "dateText": "01/06/26",
+            "weightText": "70.5 kg",
+            "bloodPressureText": "118/76",
+            "glucoseText": "--",
+            "temperatureText": "--"
+          }
+        ],
+        "latest": {
+          "weight": "70.5 kg",
+          "bloodPressure": "118/76 mmHg",
+          "glucose": "--",
+          "bmi": "--"
+        }
+      }
+    },
+    {
+      "name": "el IMC calculado redondea a 2 decimales al par (25.125 → 25.12) y el peso F1 hacia arriba (64.25 → 64.3)",
+      "input": {
+        "consultations": [
+          {
+            "date": "2026-07-01 09:00",
+            "folio": "A",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "Peso: 64.32 kg | Talla: 1.60 m",
+            "treatmentPlan": ""
+          },
+          {
+            "date": "2026-07-02 09:00",
+            "folio": "B",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "Peso: 64.25 kg",
+            "treatmentPlan": ""
+          }
+        ]
+      },
+      "expected": {
+        "points": [
+          {
+            "date": "2026-07-01 09:00",
+            "weight": "64.32",
+            "systolic": null,
+            "diastolic": null,
+            "glucose": null,
+            "heartRate": null,
+            "temperature": null,
+            "bmi": "25.12",
+            "dateText": "01/07/26",
+            "weightText": "64.3 kg",
+            "bloodPressureText": "--",
+            "glucoseText": "--",
+            "temperatureText": "--"
+          },
+          {
+            "date": "2026-07-02 09:00",
+            "weight": "64.25",
+            "systolic": null,
+            "diastolic": null,
+            "glucose": null,
+            "heartRate": null,
+            "temperature": null,
+            "bmi": null,
+            "dateText": "02/07/26",
+            "weightText": "64.3 kg",
+            "bloodPressureText": "--",
+            "glucoseText": "--",
+            "temperatureText": "--"
+          }
+        ],
+        "latest": {
+          "weight": "64.3 kg",
+          "bloodPressure": "--",
+          "glucose": "--",
+          "bmi": "--"
+        }
+      }
+    },
+    {
+      "name": "la misma fecha conserva el orden de la lista",
+      "input": {
+        "consultations": [
+          {
+            "date": "2026-08-01 09:00",
+            "folio": "A",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "Peso: 70 kg",
+            "treatmentPlan": ""
+          },
+          {
+            "date": "2026-08-01 09:00",
+            "folio": "B",
+            "diagnosis": "",
+            "chiefComplaint": "",
+            "vitalSigns": "Peso: 71 kg",
+            "treatmentPlan": ""
+          }
+        ]
+      },
+      "expected": {
+        "points": [
+          {
+            "date": "2026-08-01 09:00",
+            "weight": "70",
+            "systolic": null,
+            "diastolic": null,
+            "glucose": null,
+            "heartRate": null,
+            "temperature": null,
+            "bmi": null,
+            "dateText": "01/08/26",
+            "weightText": "70.0 kg",
+            "bloodPressureText": "--",
+            "glucoseText": "--",
+            "temperatureText": "--"
+          },
+          {
+            "date": "2026-08-01 09:00",
+            "weight": "71",
+            "systolic": null,
+            "diastolic": null,
+            "glucose": null,
+            "heartRate": null,
+            "temperature": null,
+            "bmi": null,
+            "dateText": "01/08/26",
+            "weightText": "71.0 kg",
+            "bloodPressureText": "--",
+            "glucoseText": "--",
+            "temperatureText": "--"
+          }
+        ],
+        "latest": {
+          "weight": "71.0 kg",
+          "bloodPressure": "--",
+          "glucose": "--",
+          "bmi": "--"
+        }
+      }
+    }
+  ]
+}

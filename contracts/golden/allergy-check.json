@@ -1,0 +1,1247 @@
+{
+  "rule": "allergy-check",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Services/Rules/AllergyRules.cs (antes InventoryService.CheckMedicationAllergy): el aviso de alergia al recetar y al cargar «Se surte aquí». 'medicineName' es lo escrito en la receta (si es nulo, el nombre del producto); 'product' es el producto elegido (su genérico entra a la comparación).",
+    "medication: sin alergias (hasAllergies falso: vacías o que niegan) no hay aviso. med = (medicineName o el nombre del producto) + ' ' + genérico, sin espacios a los lados, y + ' ' + activeIngredient (revisión 16: el principio activo guardado en el renglón; sin espacios a los lados) si lo hay y medicineName normalizado no lo contiene normalizado; vacío = sin aviso. Las alergias se parten por , ; / \\n \\r, sin espacios a los lados, sin las vacías y sin las que niegan (DeniesAllergies). Para cada alergia en su orden, con todo normalizado (text-search.json): 1) aviso directo si medDirecto contiene la alergia, o si la alergia tiene 4 caracteres o más, medDirecto sin espacios a los lados no está vacío y la alergia lo contiene; medDirecto es med sin las palabras excluidas (abajo) de cada familia de la que es la alergia; 1b) (revisión 20) si no, los genéricos de la marca: por cada producto de 'catalog' en su orden, su genérico sin espacios a los lados si no está vacío, no es igual a la alergia (normalizados) y la alergia normalizada es igual a su nombre normalizado o a su marca normalizada (PrescriptionNaming.BrandOf(nombre, genérico), catalog-matching.json), sin repetir genéricos iguales normalizados; avisa si med contiene uno, o (revisión 20, revisión de la rama) contiene su base como palabras completas: la base es el genérico normalizado partido en palabras por lo que no sea letra, dígito ni '%', sin las que tienen dígitos o '%' ni las de AllergyRules.SaltWords (abajo), unidas por un espacio; solo cuenta si tiene 4 letras o más y no es igual al genérico normalizado; 'palabras completas' es que ' ' + base + ' ' esté en ' ' + las palabras de med unidas por un espacio + ' '; 2) si no, por cada familia en su orden (AllergyRules.DrugFamilies, abajo): la alergia (normalizada y, si tiene genéricos de marca, alergia + ' ' + los genéricos unidos con espacio, normalizado) es de la familia si, sin las palabras excluidas de la familia, contiene la llave o un miembro, y avisa si med también lo es. 'contiene' es comparación ordinal de subcadenas. Sin 'catalog' (o vacío) no hay paso 1b.",
+    "Familias (llave: miembros), en este orden: penicilina: penicilina, amoxicilina, ampicilina, dicloxacilina, bencilpenicilina, clavulonato, clavulanico, clavulánico, augmentin; betalactamico: penicilina, amoxicilina, ampicilina, cefalexina, ceftriaxona, cefotaxima, cefuroxima; cefalosporina: cefalexina, ceftriaxona, cefotaxima, cefuroxima, cefixima, cefazolina; aines: aspirina, acido acetilsalicilico, ácido acetilsalicílico, ibuprofeno, naproxeno, ketorolaco, diclofenaco, meloxicam, piroxicam, indometacina, clonixinato; aspirina: aspirina, acido acetilsalicilico, ácido acetilsalicílico, aas; ibuprofeno: ibuprofeno, motrin, advil; sulfa: sulfa, sulfas, sulfonamida, sulfametoxazol, trimetoprima, bactrim, sulfadiazina, sulfasalazina; macrolido: azitromicina, claritromicina, eritromicina; quinolona: ciprofloxacino, levofloxacino, moxifloxacino. Los miembros con acento nunca coinciden porque se comparan con texto sin acentos. Palabras excluidas (revisión 20): sulfa: sulfato, sulfatos. Se quitan del texto normalizado como palabras completas (sin letra ni dígito Unicode antes ni después; se reemplazan por un espacio): el sulfato ferroso, de magnesio o el salbutamol sulfato no son sulfonamidas. Palabras de sal y concentración (SaltWords) que no forman la base de un genérico: potasico, potasica, sodico, sodica, calcico, calcica, magnesico, magnesica, clorhidrato, hidrocloruro, bromhidrato, maleato, succinato, besilato, mesilato, tartrato, citrato, fosfato, sulfato, acetato, fumarato, hiclato, valerato, propionato, dipropionato, furoato, monohidrato, dihidrato, trihidrato, anhidro, anhidra, base, sal, de, del, mg, g, mcg, ug, ml, ui, u.",
+    "Textos: directo \"El paciente registra alergia a '{alergia}'. El medicamento recetado contiene '{medicineName o nombre}'.\"; por la marca (revisión 20) \"El paciente registra alergia a '{alergia}' ({genérico}). El medicamento recetado contiene '{medicineName o nombre}'.\"; familia \"Riesgo de hipersensibilidad: El paciente registra alergia a '{alergia}' (grupo {LLAVE EN MAYÚSCULAS}). El medicamento recetado '{nombre}' pertenece o presenta reactividad cruzada con esta familia farmacológica.\" La alergia va como se escribió (sin espacios a los lados); la llave en mayúsculas invariantes (revisión 20: antes con la cultura actual, que en tr-TR daba 'AİNES').",
+    "summary (PatientRecord): niegan las respuestas que normalizadas y sin punto final son: ninguna, ninguna conocida, ningunas, negadas, negada, niega, niega alergias, no, sin alergias, no conocidas, no conocida, negativas, nada. allergySummary: las alergias sin espacios a los lados, 'No interrogadas' (vacías) o 'Negadas'; allergyBadge: 'ALERGIAS: …', 'Alergias sin interrogar' o 'Alergias negadas'. Crónicos: niegan las mismas respuestas o lo que empieza con 'ningun', 'niega' o 'negad', o es 'sin enfermedades', 'sin enfermedades cronicas', 'sin antecedentes' o 'sin cronicos'; chronicBadge 'Crónicos: …' o vacío.",
+    "Revisión 20 (corrige lo que reportó el paso 8.26): una alergia escrita con la marca avisa con el genérico si el catálogo la conoce (paso 1b; 'catalog' son los productos que la PC tiene cargados al recetar: Kotlin pasa los suyos), y 'sulfato'/'sulfatos' ya no hacen a un texto de la familia sulfa (el miembro 'sulfonamida' es nuevo)."
+  ],
+  "cases": [
+    {
+      "name": "marca → genérico: alergia a Paracetamol y se receta Tempra (el producto lleva su genérico)",
+      "input": {
+        "check": "medication",
+        "allergies": "Paracetamol",
+        "medicineName": "Tempra",
+        "product": {
+          "name": "Tempra",
+          "genericName": "Paracetamol"
+        }
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "Paracetamol",
+        "warning": "El paciente registra alergia a 'Paracetamol'. El medicamento recetado contiene 'Tempra'."
+      }
+    },
+    {
+      "name": "marca → genérico: el renglón de la receta de antes de v1.46 (la marca entre paréntesis)",
+      "input": {
+        "check": "medication",
+        "allergies": "paracetamol",
+        "medicineName": "Paracetamol 500 mg tabletas (Tempra)",
+        "product": {
+          "name": "Tempra",
+          "genericName": "Paracetamol"
+        }
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "paracetamol",
+        "warning": "El paciente registra alergia a 'paracetamol'. El medicamento recetado contiene 'Paracetamol 500 mg tabletas (Tempra)'."
+      }
+    },
+    {
+      "name": "marca → genérico: el renglón de la receta (el principio activo entre paréntesis)",
+      "input": {
+        "check": "medication",
+        "allergies": "paracetamol",
+        "medicineName": "Tempra 500 mg tabletas (Paracetamol)",
+        "product": {
+          "name": "Tempra 500 mg",
+          "genericName": "Paracetamol"
+        }
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "paracetamol",
+        "warning": "El paciente registra alergia a 'paracetamol'. El medicamento recetado contiene 'Tempra 500 mg tabletas (Paracetamol)'."
+      }
+    },
+    {
+      "name": "marca → genérico: el renglón sin el principio activo avisa por el genérico del producto",
+      "input": {
+        "check": "medication",
+        "allergies": "Paracetamol",
+        "medicineName": "Tempra 500 mg tabletas",
+        "product": {
+          "name": "Tempra 500 mg",
+          "genericName": "Paracetamol"
+        }
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "Paracetamol",
+        "warning": "El paciente registra alergia a 'Paracetamol'. El medicamento recetado contiene 'Tempra 500 mg tabletas'."
+      }
+    },
+    {
+      "name": "renglón con el principio activo oculto y sin producto en el catálogo: avisa por su principio activo guardado",
+      "input": {
+        "check": "medication",
+        "allergies": "Paracetamol",
+        "medicineName": "Tempra 500 mg tabletas",
+        "activeIngredient": "Paracetamol"
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "Paracetamol",
+        "warning": "El paciente registra alergia a 'Paracetamol'. El medicamento recetado contiene 'Tempra 500 mg tabletas'."
+      }
+    },
+    {
+      "name": "el principio activo guardado no se repite si el nombre ya lo dice",
+      "input": {
+        "check": "medication",
+        "allergies": "Penicilina",
+        "medicineName": "Tempra 500 mg tabletas (Paracetamol)",
+        "activeIngredient": "Paracetamol"
+      },
+      "expected": {
+        "conflict": false,
+        "matchedAllergy": "",
+        "warning": ""
+      }
+    },
+    {
+      "name": "genérico → marca sin catálogo: alergia a «Tempra» y se receta Paracetamol: no avisa (no sabe qué es Tempra)",
+      "input": {
+        "check": "medication",
+        "allergies": "Tempra",
+        "medicineName": "Paracetamol 500 mg",
+        "product": {
+          "name": "Paracetamol 500 mg",
+          "genericName": "Paracetamol"
+        }
+      },
+      "expected": {
+        "conflict": false,
+        "matchedAllergy": "",
+        "warning": ""
+      }
+    },
+    {
+      "name": "genérico → marca (revisión 20): alergia a «Tempra» y se receta Paracetamol; el catálogo dice que Tempra es paracetamol",
+      "input": {
+        "check": "medication",
+        "allergies": "Tempra",
+        "medicineName": "Paracetamol 500 mg",
+        "product": {
+          "name": "Paracetamol 500 mg",
+          "genericName": "Paracetamol"
+        },
+        "catalog": [
+          {
+            "name": "TEMPRA (PARACETAMOL) 500MG C/20 TABS",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Tempra infantil 160 mg/5 ml jarabe",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Flanax 550 mg",
+            "genericName": "Naproxeno sódico"
+          },
+          {
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Bactrim F",
+            "genericName": "Sulfametoxazol/Trimetoprima"
+          },
+          {
+            "name": "Gasas estériles",
+            "genericName": null
+          },
+          {
+            "name": "Cozaar 50 mg",
+            "genericName": "Losartán potásico"
+          },
+          {
+            "name": "Glucophage 850 mg",
+            "genericName": "Clorhidrato de metformina 850 mg"
+          },
+          {
+            "name": "Viagra 50 mg",
+            "genericName": "Sildenafil citrato"
+          },
+          {
+            "name": "Ecotrin",
+            "genericName": "AAS 100 mg"
+          }
+        ]
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "Tempra",
+        "warning": "El paciente registra alergia a 'Tempra' (Paracetamol). El medicamento recetado contiene 'Paracetamol 500 mg'."
+      }
+    },
+    {
+      "name": "genérico → marca: escrito a mano, sin producto elegido",
+      "input": {
+        "check": "medication",
+        "allergies": "tempra",
+        "medicineName": "Paracetamol gotas",
+        "catalog": [
+          {
+            "name": "TEMPRA (PARACETAMOL) 500MG C/20 TABS",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Tempra infantil 160 mg/5 ml jarabe",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Flanax 550 mg",
+            "genericName": "Naproxeno sódico"
+          },
+          {
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Bactrim F",
+            "genericName": "Sulfametoxazol/Trimetoprima"
+          },
+          {
+            "name": "Gasas estériles",
+            "genericName": null
+          },
+          {
+            "name": "Cozaar 50 mg",
+            "genericName": "Losartán potásico"
+          },
+          {
+            "name": "Glucophage 850 mg",
+            "genericName": "Clorhidrato de metformina 850 mg"
+          },
+          {
+            "name": "Viagra 50 mg",
+            "genericName": "Sildenafil citrato"
+          },
+          {
+            "name": "Ecotrin",
+            "genericName": "AAS 100 mg"
+          }
+        ]
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "tempra",
+        "warning": "El paciente registra alergia a 'tempra' (Paracetamol). El medicamento recetado contiene 'Paracetamol gotas'."
+      }
+    },
+    {
+      "name": "genérico → marca: la alergia es el nombre completo del producto",
+      "input": {
+        "check": "medication",
+        "allergies": "Bactrim F",
+        "medicineName": "Sulfametoxazol/Trimetoprima 400/80 mg",
+        "catalog": [
+          {
+            "name": "TEMPRA (PARACETAMOL) 500MG C/20 TABS",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Tempra infantil 160 mg/5 ml jarabe",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Flanax 550 mg",
+            "genericName": "Naproxeno sódico"
+          },
+          {
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Bactrim F",
+            "genericName": "Sulfametoxazol/Trimetoprima"
+          },
+          {
+            "name": "Gasas estériles",
+            "genericName": null
+          },
+          {
+            "name": "Cozaar 50 mg",
+            "genericName": "Losartán potásico"
+          },
+          {
+            "name": "Glucophage 850 mg",
+            "genericName": "Clorhidrato de metformina 850 mg"
+          },
+          {
+            "name": "Viagra 50 mg",
+            "genericName": "Sildenafil citrato"
+          },
+          {
+            "name": "Ecotrin",
+            "genericName": "AAS 100 mg"
+          }
+        ]
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "Bactrim F",
+        "warning": "El paciente registra alergia a 'Bactrim F' (Sulfametoxazol/Trimetoprima). El medicamento recetado contiene 'Sulfametoxazol/Trimetoprima 400/80 mg'."
+      }
+    },
+    {
+      "name": "genérico → marca y familia: alergia a «Flanax» (naproxeno) y se receta ibuprofeno (AINES)",
+      "input": {
+        "check": "medication",
+        "allergies": "Flanax",
+        "medicineName": "Ibuprofeno 400 mg",
+        "catalog": [
+          {
+            "name": "TEMPRA (PARACETAMOL) 500MG C/20 TABS",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Tempra infantil 160 mg/5 ml jarabe",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Flanax 550 mg",
+            "genericName": "Naproxeno sódico"
+          },
+          {
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Bactrim F",
+            "genericName": "Sulfametoxazol/Trimetoprima"
+          },
+          {
+            "name": "Gasas estériles",
+            "genericName": null
+          },
+          {
+            "name": "Cozaar 50 mg",
+            "genericName": "Losartán potásico"
+          },
+          {
+            "name": "Glucophage 850 mg",
+            "genericName": "Clorhidrato de metformina 850 mg"
+          },
+          {
+            "name": "Viagra 50 mg",
+            "genericName": "Sildenafil citrato"
+          },
+          {
+            "name": "Ecotrin",
+            "genericName": "AAS 100 mg"
+          }
+        ]
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "Flanax",
+        "warning": "Riesgo de hipersensibilidad: El paciente registra alergia a 'Flanax' (grupo AINES). El medicamento recetado 'Ibuprofeno 400 mg' pertenece o presenta reactividad cruzada con esta familia farmacológica."
+      }
+    },
+    {
+      "name": "genérico → marca: una marca que no está en el catálogo no avisa",
+      "input": {
+        "check": "medication",
+        "allergies": "Panadol",
+        "medicineName": "Paracetamol 500 mg",
+        "catalog": [
+          {
+            "name": "TEMPRA (PARACETAMOL) 500MG C/20 TABS",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Tempra infantil 160 mg/5 ml jarabe",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Flanax 550 mg",
+            "genericName": "Naproxeno sódico"
+          },
+          {
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Bactrim F",
+            "genericName": "Sulfametoxazol/Trimetoprima"
+          },
+          {
+            "name": "Gasas estériles",
+            "genericName": null
+          },
+          {
+            "name": "Cozaar 50 mg",
+            "genericName": "Losartán potásico"
+          },
+          {
+            "name": "Glucophage 850 mg",
+            "genericName": "Clorhidrato de metformina 850 mg"
+          },
+          {
+            "name": "Viagra 50 mg",
+            "genericName": "Sildenafil citrato"
+          },
+          {
+            "name": "Ecotrin",
+            "genericName": "AAS 100 mg"
+          }
+        ]
+      },
+      "expected": {
+        "conflict": false,
+        "matchedAllergy": "",
+        "warning": ""
+      }
+    },
+    {
+      "name": "genérico → marca: un producto sin genérico no aporta nada",
+      "input": {
+        "check": "medication",
+        "allergies": "Gasas estériles",
+        "medicineName": "Paracetamol 500 mg",
+        "catalog": [
+          {
+            "name": "TEMPRA (PARACETAMOL) 500MG C/20 TABS",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Tempra infantil 160 mg/5 ml jarabe",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Flanax 550 mg",
+            "genericName": "Naproxeno sódico"
+          },
+          {
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Bactrim F",
+            "genericName": "Sulfametoxazol/Trimetoprima"
+          },
+          {
+            "name": "Gasas estériles",
+            "genericName": null
+          },
+          {
+            "name": "Cozaar 50 mg",
+            "genericName": "Losartán potásico"
+          },
+          {
+            "name": "Glucophage 850 mg",
+            "genericName": "Clorhidrato de metformina 850 mg"
+          },
+          {
+            "name": "Viagra 50 mg",
+            "genericName": "Sildenafil citrato"
+          },
+          {
+            "name": "Ecotrin",
+            "genericName": "AAS 100 mg"
+          }
+        ]
+      },
+      "expected": {
+        "conflict": false,
+        "matchedAllergy": "",
+        "warning": ""
+      }
+    },
+    {
+      "name": "genérico → marca: otro medicamento no avisa",
+      "input": {
+        "check": "medication",
+        "allergies": "Tempra",
+        "medicineName": "Loratadina 10 mg",
+        "catalog": [
+          {
+            "name": "TEMPRA (PARACETAMOL) 500MG C/20 TABS",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Tempra infantil 160 mg/5 ml jarabe",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Flanax 550 mg",
+            "genericName": "Naproxeno sódico"
+          },
+          {
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Bactrim F",
+            "genericName": "Sulfametoxazol/Trimetoprima"
+          },
+          {
+            "name": "Gasas estériles",
+            "genericName": null
+          },
+          {
+            "name": "Cozaar 50 mg",
+            "genericName": "Losartán potásico"
+          },
+          {
+            "name": "Glucophage 850 mg",
+            "genericName": "Clorhidrato de metformina 850 mg"
+          },
+          {
+            "name": "Viagra 50 mg",
+            "genericName": "Sildenafil citrato"
+          },
+          {
+            "name": "Ecotrin",
+            "genericName": "AAS 100 mg"
+          }
+        ]
+      },
+      "expected": {
+        "conflict": false,
+        "matchedAllergy": "",
+        "warning": ""
+      }
+    },
+    {
+      "name": "genérico → marca con sal: alergia a «Cozaar» (losartán potásico) y se receta Losartán 50 mg (por su base)",
+      "input": {
+        "check": "medication",
+        "allergies": "Cozaar",
+        "medicineName": "Losartán 50 mg",
+        "catalog": [
+          {
+            "name": "TEMPRA (PARACETAMOL) 500MG C/20 TABS",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Tempra infantil 160 mg/5 ml jarabe",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Flanax 550 mg",
+            "genericName": "Naproxeno sódico"
+          },
+          {
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Bactrim F",
+            "genericName": "Sulfametoxazol/Trimetoprima"
+          },
+          {
+            "name": "Gasas estériles",
+            "genericName": null
+          },
+          {
+            "name": "Cozaar 50 mg",
+            "genericName": "Losartán potásico"
+          },
+          {
+            "name": "Glucophage 850 mg",
+            "genericName": "Clorhidrato de metformina 850 mg"
+          },
+          {
+            "name": "Viagra 50 mg",
+            "genericName": "Sildenafil citrato"
+          },
+          {
+            "name": "Ecotrin",
+            "genericName": "AAS 100 mg"
+          }
+        ]
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "Cozaar",
+        "warning": "El paciente registra alergia a 'Cozaar' (Losartán potásico). El medicamento recetado contiene 'Losartán 50 mg'."
+      }
+    },
+    {
+      "name": "genérico → marca con sal antes: «Glucophage» (clorhidrato de metformina) y Metformina 850 mg tabletas",
+      "input": {
+        "check": "medication",
+        "allergies": "Glucophage",
+        "medicineName": "Metformina 850 mg tabletas",
+        "catalog": [
+          {
+            "name": "TEMPRA (PARACETAMOL) 500MG C/20 TABS",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Tempra infantil 160 mg/5 ml jarabe",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Flanax 550 mg",
+            "genericName": "Naproxeno sódico"
+          },
+          {
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Bactrim F",
+            "genericName": "Sulfametoxazol/Trimetoprima"
+          },
+          {
+            "name": "Gasas estériles",
+            "genericName": null
+          },
+          {
+            "name": "Cozaar 50 mg",
+            "genericName": "Losartán potásico"
+          },
+          {
+            "name": "Glucophage 850 mg",
+            "genericName": "Clorhidrato de metformina 850 mg"
+          },
+          {
+            "name": "Viagra 50 mg",
+            "genericName": "Sildenafil citrato"
+          },
+          {
+            "name": "Ecotrin",
+            "genericName": "AAS 100 mg"
+          }
+        ]
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "Glucophage",
+        "warning": "El paciente registra alergia a 'Glucophage' (Clorhidrato de metformina 850 mg). El medicamento recetado contiene 'Metformina 850 mg tabletas'."
+      }
+    },
+    {
+      "name": "genérico → marca con sal: la sal sola no avisa («Viagra», sildenafil citrato, y Citrato de potasio)",
+      "input": {
+        "check": "medication",
+        "allergies": "Viagra",
+        "medicineName": "Citrato de potasio 1080 mg",
+        "catalog": [
+          {
+            "name": "TEMPRA (PARACETAMOL) 500MG C/20 TABS",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Tempra infantil 160 mg/5 ml jarabe",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Flanax 550 mg",
+            "genericName": "Naproxeno sódico"
+          },
+          {
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Bactrim F",
+            "genericName": "Sulfametoxazol/Trimetoprima"
+          },
+          {
+            "name": "Gasas estériles",
+            "genericName": null
+          },
+          {
+            "name": "Cozaar 50 mg",
+            "genericName": "Losartán potásico"
+          },
+          {
+            "name": "Glucophage 850 mg",
+            "genericName": "Clorhidrato de metformina 850 mg"
+          },
+          {
+            "name": "Viagra 50 mg",
+            "genericName": "Sildenafil citrato"
+          },
+          {
+            "name": "Ecotrin",
+            "genericName": "AAS 100 mg"
+          }
+        ]
+      },
+      "expected": {
+        "conflict": false,
+        "matchedAllergy": "",
+        "warning": ""
+      }
+    },
+    {
+      "name": "genérico → marca con sal: otra sal del mismo ion no avisa («Cozaar» y Cloruro de potasio)",
+      "input": {
+        "check": "medication",
+        "allergies": "Cozaar",
+        "medicineName": "Cloruro de potasio 600 mg",
+        "catalog": [
+          {
+            "name": "TEMPRA (PARACETAMOL) 500MG C/20 TABS",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Tempra infantil 160 mg/5 ml jarabe",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Flanax 550 mg",
+            "genericName": "Naproxeno sódico"
+          },
+          {
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Bactrim F",
+            "genericName": "Sulfametoxazol/Trimetoprima"
+          },
+          {
+            "name": "Gasas estériles",
+            "genericName": null
+          },
+          {
+            "name": "Cozaar 50 mg",
+            "genericName": "Losartán potásico"
+          },
+          {
+            "name": "Glucophage 850 mg",
+            "genericName": "Clorhidrato de metformina 850 mg"
+          },
+          {
+            "name": "Viagra 50 mg",
+            "genericName": "Sildenafil citrato"
+          },
+          {
+            "name": "Ecotrin",
+            "genericName": "AAS 100 mg"
+          }
+        ]
+      },
+      "expected": {
+        "conflict": false,
+        "matchedAllergy": "",
+        "warning": ""
+      }
+    },
+    {
+      "name": "genérico → marca con sal: la base tiene que ser palabra completa («Cozaar» y Losartanex, que no existe)",
+      "input": {
+        "check": "medication",
+        "allergies": "Cozaar",
+        "medicineName": "Losartanex 5 mg",
+        "catalog": [
+          {
+            "name": "TEMPRA (PARACETAMOL) 500MG C/20 TABS",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Tempra infantil 160 mg/5 ml jarabe",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Flanax 550 mg",
+            "genericName": "Naproxeno sódico"
+          },
+          {
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Bactrim F",
+            "genericName": "Sulfametoxazol/Trimetoprima"
+          },
+          {
+            "name": "Gasas estériles",
+            "genericName": null
+          },
+          {
+            "name": "Cozaar 50 mg",
+            "genericName": "Losartán potásico"
+          },
+          {
+            "name": "Glucophage 850 mg",
+            "genericName": "Clorhidrato de metformina 850 mg"
+          },
+          {
+            "name": "Viagra 50 mg",
+            "genericName": "Sildenafil citrato"
+          },
+          {
+            "name": "Ecotrin",
+            "genericName": "AAS 100 mg"
+          }
+        ]
+      },
+      "expected": {
+        "conflict": false,
+        "matchedAllergy": "",
+        "warning": ""
+      }
+    },
+    {
+      "name": "genérico → marca: una base de menos de 4 letras no se usa («Ecotrin», AAS 100 mg, y AAS Protect sí avisa por la familia aspirina)",
+      "input": {
+        "check": "medication",
+        "allergies": "Ecotrin",
+        "medicineName": "AAS Protect",
+        "catalog": [
+          {
+            "name": "TEMPRA (PARACETAMOL) 500MG C/20 TABS",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Tempra infantil 160 mg/5 ml jarabe",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Flanax 550 mg",
+            "genericName": "Naproxeno sódico"
+          },
+          {
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol"
+          },
+          {
+            "name": "Bactrim F",
+            "genericName": "Sulfametoxazol/Trimetoprima"
+          },
+          {
+            "name": "Gasas estériles",
+            "genericName": null
+          },
+          {
+            "name": "Cozaar 50 mg",
+            "genericName": "Losartán potásico"
+          },
+          {
+            "name": "Glucophage 850 mg",
+            "genericName": "Clorhidrato de metformina 850 mg"
+          },
+          {
+            "name": "Viagra 50 mg",
+            "genericName": "Sildenafil citrato"
+          },
+          {
+            "name": "Ecotrin",
+            "genericName": "AAS 100 mg"
+          }
+        ]
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "Ecotrin",
+        "warning": "Riesgo de hipersensibilidad: El paciente registra alergia a 'Ecotrin' (grupo ASPIRINA). El medicamento recetado 'AAS Protect' pertenece o presenta reactividad cruzada con esta familia farmacológica."
+      }
+    },
+    {
+      "name": "texto libre sin producto: solo lo escrito",
+      "input": {
+        "check": "medication",
+        "allergies": "Paracetamol",
+        "medicineName": "Tempra gotas"
+      },
+      "expected": {
+        "conflict": false,
+        "matchedAllergy": "",
+        "warning": ""
+      }
+    },
+    {
+      "name": "familia: penicilina y amoxicilina",
+      "input": {
+        "check": "medication",
+        "allergies": "Penicilina",
+        "medicineName": "Amoxicilina 500 mg",
+        "product": {
+          "name": "Amoxicilina 500 mg",
+          "genericName": "Amoxicilina"
+        }
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "Penicilina",
+        "warning": "Riesgo de hipersensibilidad: El paciente registra alergia a 'Penicilina' (grupo PENICILINA). El medicamento recetado 'Amoxicilina 500 mg' pertenece o presenta reactividad cruzada con esta familia farmacológica."
+      }
+    },
+    {
+      "name": "familia con acento: clavulánico y Augmentin",
+      "input": {
+        "check": "medication",
+        "allergies": "Ácido clavulánico",
+        "medicineName": "Augmentin 875/125 mg"
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "Ácido clavulánico",
+        "warning": "Riesgo de hipersensibilidad: El paciente registra alergia a 'Ácido clavulánico' (grupo PENICILINA). El medicamento recetado 'Augmentin 875/125 mg' pertenece o presenta reactividad cruzada con esta familia farmacológica."
+      }
+    },
+    {
+      "name": "familia AINES por su nombre",
+      "input": {
+        "check": "medication",
+        "allergies": "AINEs",
+        "medicineName": "Ibuprofeno 400 mg"
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "AINEs",
+        "warning": "Riesgo de hipersensibilidad: El paciente registra alergia a 'AINEs' (grupo AINES). El medicamento recetado 'Ibuprofeno 400 mg' pertenece o presenta reactividad cruzada con esta familia farmacológica."
+      }
+    },
+    {
+      "name": "ácido acetilsalicílico es de los AINES (la primera familia que coincide)",
+      "input": {
+        "check": "medication",
+        "allergies": "Ácido acetilsalicílico",
+        "medicineName": "Aspirina Protect 100 mg"
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "Ácido acetilsalicílico",
+        "warning": "Riesgo de hipersensibilidad: El paciente registra alergia a 'Ácido acetilsalicílico' (grupo AINES). El medicamento recetado 'Aspirina Protect 100 mg' pertenece o presenta reactividad cruzada con esta familia farmacológica."
+      }
+    },
+    {
+      "name": "AAS solo es de la familia aspirina",
+      "input": {
+        "check": "medication",
+        "allergies": "AAS",
+        "medicineName": "Aspirina 500 mg"
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "AAS",
+        "warning": "Riesgo de hipersensibilidad: El paciente registra alergia a 'AAS' (grupo ASPIRINA). El medicamento recetado 'Aspirina 500 mg' pertenece o presenta reactividad cruzada con esta familia farmacológica."
+      }
+    },
+    {
+      "name": "varias alergias en renglones: la segunda avisa con su familia (ibuprofeno → Advil)",
+      "input": {
+        "check": "medication",
+        "allergies": "Penicilina\r\nIbuprofeno",
+        "medicineName": "Advil 200 mg"
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "Ibuprofeno",
+        "warning": "Riesgo de hipersensibilidad: El paciente registra alergia a 'Ibuprofeno' (grupo IBUPROFENO). El medicamento recetado 'Advil 200 mg' pertenece o presenta reactividad cruzada con esta familia farmacológica."
+      }
+    },
+    {
+      "name": "separadas por coma, punto y coma o diagonal; «Ninguna» no cuenta",
+      "input": {
+        "check": "medication",
+        "allergies": "Ninguna, látex; Sulfas / polen",
+        "medicineName": "Bactrim F",
+        "product": {
+          "name": "Bactrim F",
+          "genericName": "Sulfametoxazol/Trimetoprima"
+        }
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "Sulfas",
+        "warning": "Riesgo de hipersensibilidad: El paciente registra alergia a 'Sulfas' (grupo SULFA). El medicamento recetado 'Bactrim F' pertenece o presenta reactividad cruzada con esta familia farmacológica."
+      }
+    },
+    {
+      "name": "sulfato no es sulfa (revisión 20): alergia a «Sulfato ferroso» y se receta Bactrim: no avisa",
+      "input": {
+        "check": "medication",
+        "allergies": "Sulfato ferroso",
+        "medicineName": "Bactrim"
+      },
+      "expected": {
+        "conflict": false,
+        "matchedAllergy": "",
+        "warning": ""
+      }
+    },
+    {
+      "name": "sulfato no es sulfa: alergia a las sulfas y se receta sulfato ferroso: no avisa",
+      "input": {
+        "check": "medication",
+        "allergies": "Sulfas",
+        "medicineName": "Sulfato ferroso 200 mg",
+        "product": {
+          "name": "Sulfato ferroso 200 mg",
+          "genericName": "Sulfato ferroso"
+        }
+      },
+      "expected": {
+        "conflict": false,
+        "matchedAllergy": "",
+        "warning": ""
+      }
+    },
+    {
+      "name": "sulfato no es sulfa: alergia a «sulfa» y se receta salbutamol sulfato: no avisa (ni directo)",
+      "input": {
+        "check": "medication",
+        "allergies": "sulfa",
+        "medicineName": "Salbutamol sulfato 100 mcg"
+      },
+      "expected": {
+        "conflict": false,
+        "matchedAllergy": "",
+        "warning": ""
+      }
+    },
+    {
+      "name": "sulfato no es sulfa: sulfatos de magnesio",
+      "input": {
+        "check": "medication",
+        "allergies": "Sulfonamidas",
+        "medicineName": "Sulfatos de magnesio"
+      },
+      "expected": {
+        "conflict": false,
+        "matchedAllergy": "",
+        "warning": ""
+      }
+    },
+    {
+      "name": "sulfa: las sulfonamidas con trimetoprim-sulfametoxazol",
+      "input": {
+        "check": "medication",
+        "allergies": "Sulfonamidas",
+        "medicineName": "Trimetoprim-sulfametoxazol 160/800 mg"
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "Sulfonamidas",
+        "warning": "Riesgo de hipersensibilidad: El paciente registra alergia a 'Sulfonamidas' (grupo SULFA). El medicamento recetado 'Trimetoprim-sulfametoxazol 160/800 mg' pertenece o presenta reactividad cruzada con esta familia farmacológica."
+      }
+    },
+    {
+      "name": "sulfa: alergia a «sulfa» y se receta sulfadiazina (directo)",
+      "input": {
+        "check": "medication",
+        "allergies": "sulfa",
+        "medicineName": "Sulfadiazina de plata crema"
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "sulfa",
+        "warning": "El paciente registra alergia a 'sulfa'. El medicamento recetado contiene 'Sulfadiazina de plata crema'."
+      }
+    },
+    {
+      "name": "sulfa: alergia a Bactrim y se receta sulfametoxazol",
+      "input": {
+        "check": "medication",
+        "allergies": "Bactrim",
+        "medicineName": "Sulfametoxazol 400 mg"
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "Bactrim",
+        "warning": "Riesgo de hipersensibilidad: El paciente registra alergia a 'Bactrim' (grupo SULFA). El medicamento recetado 'Sulfametoxazol 400 mg' pertenece o presenta reactividad cruzada con esta familia farmacológica."
+      }
+    },
+    {
+      "name": "sulfa: alergia al sulfato ferroso y se receta sulfato ferroso (directo, como antes)",
+      "input": {
+        "check": "medication",
+        "allergies": "Sulfato ferroso",
+        "medicineName": "Sulfato ferroso 200 mg"
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "Sulfato ferroso",
+        "warning": "El paciente registra alergia a 'Sulfato ferroso'. El medicamento recetado contiene 'Sulfato ferroso 200 mg'."
+      }
+    },
+    {
+      "name": "la alergia contiene al medicamento (4 letras o más)",
+      "input": {
+        "check": "medication",
+        "allergies": "Amoxicilina con clavulanato",
+        "medicineName": "amoxicilina"
+      },
+      "expected": {
+        "conflict": true,
+        "matchedAllergy": "Amoxicilina con clavulanato",
+        "warning": "El paciente registra alergia a 'Amoxicilina con clavulanato'. El medicamento recetado contiene 'amoxicilina'."
+      }
+    },
+    {
+      "name": "sin coincidencia",
+      "input": {
+        "check": "medication",
+        "allergies": "Mariscos, polen",
+        "medicineName": "Loratadina 10 mg",
+        "product": {
+          "name": "Loratadina 10 mg",
+          "genericName": "Loratadina"
+        }
+      },
+      "expected": {
+        "conflict": false,
+        "matchedAllergy": "",
+        "warning": ""
+      }
+    },
+    {
+      "name": "alergias negadas",
+      "input": {
+        "check": "medication",
+        "allergies": "Negadas",
+        "medicineName": "Penicilina benzatínica"
+      },
+      "expected": {
+        "conflict": false,
+        "matchedAllergy": "",
+        "warning": ""
+      }
+    },
+    {
+      "name": "negadas con punto y mayúsculas",
+      "input": {
+        "check": "medication",
+        "allergies": "NIEGA ALERGIAS.",
+        "medicineName": "Penicilina"
+      },
+      "expected": {
+        "conflict": false,
+        "matchedAllergy": "",
+        "warning": ""
+      }
+    },
+    {
+      "name": "no interrogadas (vacío)",
+      "input": {
+        "check": "medication",
+        "allergies": "",
+        "medicineName": "Penicilina"
+      },
+      "expected": {
+        "conflict": false,
+        "matchedAllergy": "",
+        "warning": ""
+      }
+    },
+    {
+      "name": "sin medicamento ni producto",
+      "input": {
+        "check": "medication",
+        "allergies": "Penicilina",
+        "medicineName": "  "
+      },
+      "expected": {
+        "conflict": false,
+        "matchedAllergy": "",
+        "warning": ""
+      }
+    },
+    {
+      "name": "resumen · alergias y crónicos",
+      "input": {
+        "check": "summary",
+        "allergies": "  Penicilina, látex ",
+        "chronicDiseases": "Diabetes tipo 2"
+      },
+      "expected": {
+        "hasAllergies": true,
+        "allergiesNotAsked": false,
+        "allergySummary": "Penicilina, látex",
+        "allergyBadge": "ALERGIAS: Penicilina, látex",
+        "hasChronicDiseases": true,
+        "chronicBadge": "Crónicos: Diabetes tipo 2"
+      }
+    },
+    {
+      "name": "resumen · negadas y ninguna crónica",
+      "input": {
+        "check": "summary",
+        "allergies": "Negadas",
+        "chronicDiseases": "Ninguna relevante"
+      },
+      "expected": {
+        "hasAllergies": false,
+        "allergiesNotAsked": false,
+        "allergySummary": "Negadas",
+        "allergyBadge": "Alergias negadas",
+        "hasChronicDiseases": false,
+        "chronicBadge": ""
+      }
+    },
+    {
+      "name": "resumen · sin interrogar",
+      "input": {
+        "check": "summary",
+        "allergies": "   ",
+        "chronicDiseases": ""
+      },
+      "expected": {
+        "hasAllergies": false,
+        "allergiesNotAsked": true,
+        "allergySummary": "No interrogadas",
+        "allergyBadge": "Alergias sin interrogar",
+        "hasChronicDiseases": false,
+        "chronicBadge": ""
+      }
+    },
+    {
+      "name": "resumen · respuestas que niegan (con acentos y punto)",
+      "input": {
+        "check": "summary",
+        "allergies": "Ninguna conocida.",
+        "chronicDiseases": "Niega"
+      },
+      "expected": {
+        "hasAllergies": false,
+        "allergiesNotAsked": false,
+        "allergySummary": "Negadas",
+        "allergyBadge": "Alergias negadas",
+        "hasChronicDiseases": false,
+        "chronicBadge": ""
+      }
+    },
+    {
+      "name": "resumen · «No» niega; «No sé» no",
+      "input": {
+        "check": "summary",
+        "allergies": "No",
+        "chronicDiseases": "No sé"
+      },
+      "expected": {
+        "hasAllergies": false,
+        "allergiesNotAsked": false,
+        "allergySummary": "Negadas",
+        "allergyBadge": "Alergias negadas",
+        "hasChronicDiseases": true,
+        "chronicBadge": "Crónicos: No sé"
+      }
+    },
+    {
+      "name": "resumen · crónicos que niegan con otras palabras",
+      "input": {
+        "check": "summary",
+        "allergies": "Sin alergias",
+        "chronicDiseases": "Sin enfermedades crónicas"
+      },
+      "expected": {
+        "hasAllergies": false,
+        "allergiesNotAsked": false,
+        "allergySummary": "Negadas",
+        "allergyBadge": "Alergias negadas",
+        "hasChronicDiseases": false,
+        "chronicBadge": ""
+      }
+    }
+  ]
+}

@@ -1,0 +1,1073 @@
+{
+  "rule": "patient-identity",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "La identidad del paciente (Services/Rules/PatientFormRules.cs y Models/PatientRecord.cs). 'today' es el día del consultorio (fechas yyyy-MM-dd).",
+    "parse-name (ParseFullName): sin espacios a los lados; con coma y algo a cada lado: lo de después es el nombre y de lo de antes la primera palabra es el paterno y el resto el materno. Si no (también ',Juan', que sin las partes vacías tiene una sola): por palabras separadas por espacios, 1 = nombre, 2 = nombre y paterno, 3 = nombre, paterno y materno, más = las dos últimas son los apellidos y lo demás el nombre. compose-name: 'Nombre Paterno Materno' con cada parte sin espacios a los lados, sin el materno si está vacío.",
+    "birth-date (TryParseBirthDate): sin espacios a los lados, con uno de estos formatos exactos de es-MX: d/M/yyyy, dd/MM/yyyy, d-M-yyyy, dd-MM-yyyy, d.M.yyyy, dd.MM.yyyy, yyyy-MM-dd, d/M/yy, dd/MM/yy, ddMMyyyy; null si no se lee, si es posterior a hoy o si su año es menor que el de hoy menos 130. Un año de dos dígitos sigue el calendario de .NET (hasta el 49 es 20xx, del 50 en adelante 19xx); los vectores solo usan años que dan lo mismo con cualquier corte entre 2029 y 2049.",
+    "email: vacío vale; si no, sin espacios a los lados debe cumplir ^[^@\\s]+@[^@\\s]+\\.[a-zA-Z]{2,}$ sin distinguir mayúsculas.",
+    "validate (al guardar el alta o la edición): el primer problema en este orden, o null: nombre vacío, paterno vacío, folio vacío, fecha escrita que no se lee (birth-date null con texto), sin fecha y una edad que no es un entero entre 0 y 130, sexo vacío, alergias vacías (\"Negadas\" sí vale), correo inválido. 'age' es la de la fecha (CalculateAge) o la capturada; 0 si el problema es la edad. Los textos son los de la PC.",
+    "record: initials (con coma, la primera letra de lo de después y de lo de antes; si no, de las dos primeras palabras; en mayúscula invariante; '?' sin nombre), age (meses completos / 12 con la fecha; sin ella, la capturada), months (TotalMonths: (año·12 + mes) de hoy menos los del nacimiento, uno menos si el día de hoy es menor que el del nacimiento, nunca negativo), ageText ('N días' con menos de un mes, 'N meses' con menos de 24, 'N años M meses' antes de los 6 años, si no 'N años'; '1 día', '1 mes', '1 año' en singular), isFemale (el sexo empieza con 'Fem' sin distinguir mayúsculas), isPediatric (menos de 18), showsGynecoObstetric (mujer de 10 o más).",
+    "phone (FormatPhoneNumber): sin la extensión (revisión 20, decisión del médico del 2026-10-22; la misma regla que duplicate-patients.json: DuplicatePatientRules.PhoneDigitsOf), solo los dígitos ASCII 0-9, los últimos 10 (revisión 20: la lada del país se queda fuera, como los compara duplicate-patients.json; antes se quedaban los primeros 10 y '+52 55 1234 5678' daba '525-512-3456'); hasta 3 tal cual, hasta 6 como 'ddd-ddd', más como 'ddd-ddd-dddd'. El alta lo aplica a cada tecla: escribir de corrido un número con lada termina en sus últimos 10."
+  ],
+  "cases": [
+    {
+      "name": "partir el nombre · nombre y apellido",
+      "input": {
+        "check": "parse-name",
+        "fullName": "Juan Pérez"
+      },
+      "expected": {
+        "firstName": "Juan",
+        "lastName": "Pérez",
+        "maternalLastName": ""
+      }
+    },
+    {
+      "name": "partir el nombre · nombre y dos apellidos",
+      "input": {
+        "check": "parse-name",
+        "fullName": "María Peña Núñez"
+      },
+      "expected": {
+        "firstName": "María",
+        "lastName": "Peña",
+        "maternalLastName": "Núñez"
+      }
+    },
+    {
+      "name": "partir el nombre · más de tres palabras: las dos últimas son los apellidos",
+      "input": {
+        "check": "parse-name",
+        "fullName": "María José García López"
+      },
+      "expected": {
+        "firstName": "María José",
+        "lastName": "García",
+        "maternalLastName": "López"
+      }
+    },
+    {
+      "name": "partir el nombre · una partícula queda en el nombre",
+      "input": {
+        "check": "parse-name",
+        "fullName": "Ana de la Cruz Ruiz"
+      },
+      "expected": {
+        "firstName": "Ana de la",
+        "lastName": "Cruz",
+        "maternalLastName": "Ruiz"
+      }
+    },
+    {
+      "name": "partir el nombre · con coma: apellidos, nombre(s)",
+      "input": {
+        "check": "parse-name",
+        "fullName": "García Morales, Juan Carlos"
+      },
+      "expected": {
+        "firstName": "Juan Carlos",
+        "lastName": "García",
+        "maternalLastName": "Morales"
+      }
+    },
+    {
+      "name": "partir el nombre · con coma y un apellido",
+      "input": {
+        "check": "parse-name",
+        "fullName": "Peña, Ana"
+      },
+      "expected": {
+        "firstName": "Ana",
+        "lastName": "Peña",
+        "maternalLastName": ""
+      }
+    },
+    {
+      "name": "partir el nombre · con coma y más de dos apellidos",
+      "input": {
+        "check": "parse-name",
+        "fullName": "De la Cruz Ruiz, Ana"
+      },
+      "expected": {
+        "firstName": "Ana",
+        "lastName": "De",
+        "maternalLastName": "la Cruz Ruiz"
+      }
+    },
+    {
+      "name": "partir el nombre · una palabra",
+      "input": {
+        "check": "parse-name",
+        "fullName": "Ana"
+      },
+      "expected": {
+        "firstName": "Ana",
+        "lastName": "",
+        "maternalLastName": ""
+      }
+    },
+    {
+      "name": "partir el nombre · espacios de más",
+      "input": {
+        "check": "parse-name",
+        "fullName": "  Juan    Pérez   López  "
+      },
+      "expected": {
+        "firstName": "Juan",
+        "lastName": "Pérez",
+        "maternalLastName": "López"
+      }
+    },
+    {
+      "name": "partir el nombre · una coma sin apellidos no es el formato con coma",
+      "input": {
+        "check": "parse-name",
+        "fullName": ",Juan"
+      },
+      "expected": {
+        "firstName": ",Juan",
+        "lastName": "",
+        "maternalLastName": ""
+      }
+    },
+    {
+      "name": "partir el nombre · vacío",
+      "input": {
+        "check": "parse-name",
+        "fullName": "   "
+      },
+      "expected": {
+        "firstName": "",
+        "lastName": "",
+        "maternalLastName": ""
+      }
+    },
+    {
+      "name": "armar el nombre · con materno",
+      "input": {
+        "check": "compose-name",
+        "firstName": " María José ",
+        "lastName": "García",
+        "maternalLastName": "López "
+      },
+      "expected": "María José García López"
+    },
+    {
+      "name": "armar el nombre · sin materno",
+      "input": {
+        "check": "compose-name",
+        "firstName": "Juan",
+        "lastName": "Pérez",
+        "maternalLastName": "  "
+      },
+      "expected": "Juan Pérez"
+    },
+    {
+      "name": "fecha de nacimiento · dd/MM/yyyy",
+      "input": {
+        "check": "birth-date",
+        "text": "14/03/1992",
+        "today": "2026-10-15"
+      },
+      "expected": "1992-03-14"
+    },
+    {
+      "name": "fecha de nacimiento · d/M/yyyy",
+      "input": {
+        "check": "birth-date",
+        "text": "1/2/2000",
+        "today": "2026-10-15"
+      },
+      "expected": "2000-02-01"
+    },
+    {
+      "name": "fecha de nacimiento · con guiones",
+      "input": {
+        "check": "birth-date",
+        "text": "14-03-1992",
+        "today": "2026-10-15"
+      },
+      "expected": "1992-03-14"
+    },
+    {
+      "name": "fecha de nacimiento · con puntos",
+      "input": {
+        "check": "birth-date",
+        "text": "14.03.1992",
+        "today": "2026-10-15"
+      },
+      "expected": "1992-03-14"
+    },
+    {
+      "name": "fecha de nacimiento · año-mes-día",
+      "input": {
+        "check": "birth-date",
+        "text": "1992-03-14",
+        "today": "2026-10-15"
+      },
+      "expected": "1992-03-14"
+    },
+    {
+      "name": "fecha de nacimiento · ocho dígitos",
+      "input": {
+        "check": "birth-date",
+        "text": "14031992",
+        "today": "2026-10-15"
+      },
+      "expected": "1992-03-14"
+    },
+    {
+      "name": "fecha de nacimiento · año de dos dígitos (92 → 1992)",
+      "input": {
+        "check": "birth-date",
+        "text": "14/03/92",
+        "today": "2026-10-15"
+      },
+      "expected": "1992-03-14"
+    },
+    {
+      "name": "fecha de nacimiento · 29 de febrero de un año bisiesto",
+      "input": {
+        "check": "birth-date",
+        "text": "29/02/2024",
+        "today": "2026-10-15"
+      },
+      "expected": "2024-02-29"
+    },
+    {
+      "name": "fecha de nacimiento · 29 de febrero de un año que no lo es",
+      "input": {
+        "check": "birth-date",
+        "text": "29/02/2023",
+        "today": "2026-10-15"
+      },
+      "expected": null
+    },
+    {
+      "name": "fecha de nacimiento · hoy vale",
+      "input": {
+        "check": "birth-date",
+        "text": "15/10/2026",
+        "today": "2026-10-15"
+      },
+      "expected": "2026-10-15"
+    },
+    {
+      "name": "fecha de nacimiento · mañana no (futura)",
+      "input": {
+        "check": "birth-date",
+        "text": "16/10/2026",
+        "today": "2026-10-15"
+      },
+      "expected": null
+    },
+    {
+      "name": "fecha de nacimiento · 130 años justos (el año, no la fecha)",
+      "input": {
+        "check": "birth-date",
+        "text": "31/12/1896",
+        "today": "2026-10-15"
+      },
+      "expected": "1896-12-31"
+    },
+    {
+      "name": "fecha de nacimiento · más de 130 años",
+      "input": {
+        "check": "birth-date",
+        "text": "31/12/1895",
+        "today": "2026-10-15"
+      },
+      "expected": null
+    },
+    {
+      "name": "fecha de nacimiento · espacios a los lados",
+      "input": {
+        "check": "birth-date",
+        "text": "  14/03/1992 ",
+        "today": "2026-10-15"
+      },
+      "expected": "1992-03-14"
+    },
+    {
+      "name": "fecha de nacimiento · mes 13",
+      "input": {
+        "check": "birth-date",
+        "text": "14/13/1992",
+        "today": "2026-10-15"
+      },
+      "expected": null
+    },
+    {
+      "name": "fecha de nacimiento · texto",
+      "input": {
+        "check": "birth-date",
+        "text": "catorce de marzo",
+        "today": "2026-10-15"
+      },
+      "expected": null
+    },
+    {
+      "name": "fecha de nacimiento · vacío",
+      "input": {
+        "check": "birth-date",
+        "text": "",
+        "today": "2026-10-15"
+      },
+      "expected": null
+    },
+    {
+      "name": "correo · vacío vale (no es obligatorio)",
+      "input": {
+        "check": "email",
+        "email": ""
+      },
+      "expected": true
+    },
+    {
+      "name": "correo · normal",
+      "input": {
+        "check": "email",
+        "email": "ana.lopez@correo.com.mx"
+      },
+      "expected": true
+    },
+    {
+      "name": "correo · mayúsculas y acentos antes de la @",
+      "input": {
+        "check": "email",
+        "email": "JOSÉ@Correo.MX"
+      },
+      "expected": true
+    },
+    {
+      "name": "correo · sin dominio de nivel superior",
+      "input": {
+        "check": "email",
+        "email": "ana@correo"
+      },
+      "expected": false
+    },
+    {
+      "name": "correo · dominio de una letra",
+      "input": {
+        "check": "email",
+        "email": "ana@correo.c"
+      },
+      "expected": false
+    },
+    {
+      "name": "correo · con espacio",
+      "input": {
+        "check": "email",
+        "email": "ana lopez@correo.com"
+      },
+      "expected": false
+    },
+    {
+      "name": "correo · dos @",
+      "input": {
+        "check": "email",
+        "email": "ana@@correo.com"
+      },
+      "expected": false
+    },
+    {
+      "name": "correo · espacios a los lados",
+      "input": {
+        "check": "email",
+        "email": "  ana@correo.com  "
+      },
+      "expected": true
+    },
+    {
+      "name": "validar el alta · todo bien: la edad sale de la fecha",
+      "input": {
+        "check": "validate",
+        "today": "2026-10-15",
+        "firstName": "Ana",
+        "lastName": "López",
+        "recordNumber": "EXP-2026-0001",
+        "birthDateText": "14/03/1992",
+        "ageText": null,
+        "gender": "Femenino",
+        "allergies": "Negadas",
+        "email": ""
+      },
+      "expected": {
+        "problem": null,
+        "age": 34
+      }
+    },
+    {
+      "name": "validar el alta · sin fecha, con la edad capturada",
+      "input": {
+        "check": "validate",
+        "today": "2026-10-15",
+        "firstName": "Ana",
+        "lastName": "López",
+        "recordNumber": "EXP-2026-0001",
+        "birthDateText": "",
+        "ageText": "34",
+        "gender": "Femenino",
+        "allergies": "Negadas",
+        "email": ""
+      },
+      "expected": {
+        "problem": null,
+        "age": 34
+      }
+    },
+    {
+      "name": "validar el alta · falta el nombre",
+      "input": {
+        "check": "validate",
+        "today": "2026-10-15",
+        "firstName": " ",
+        "lastName": "López",
+        "recordNumber": "EXP-2026-0001",
+        "birthDateText": "14/03/1992",
+        "ageText": null,
+        "gender": "Femenino",
+        "allergies": "Negadas",
+        "email": ""
+      },
+      "expected": {
+        "problem": "El nombre(s) del paciente es obligatorio.",
+        "age": 0
+      }
+    },
+    {
+      "name": "validar el alta · falta el apellido paterno",
+      "input": {
+        "check": "validate",
+        "today": "2026-10-15",
+        "firstName": "Ana",
+        "lastName": "",
+        "recordNumber": "EXP-2026-0001",
+        "birthDateText": "14/03/1992",
+        "ageText": null,
+        "gender": "Femenino",
+        "allergies": "Negadas",
+        "email": ""
+      },
+      "expected": {
+        "problem": "El apellido paterno del paciente es obligatorio.",
+        "age": 0
+      }
+    },
+    {
+      "name": "validar el alta · falta el folio",
+      "input": {
+        "check": "validate",
+        "today": "2026-10-15",
+        "firstName": "Ana",
+        "lastName": "López",
+        "recordNumber": "",
+        "birthDateText": "14/03/1992",
+        "ageText": null,
+        "gender": "Femenino",
+        "allergies": "Negadas",
+        "email": ""
+      },
+      "expected": {
+        "problem": "El folio del expediente es obligatorio.",
+        "age": 0
+      }
+    },
+    {
+      "name": "validar el alta · fecha escrita que no se lee",
+      "input": {
+        "check": "validate",
+        "today": "2026-10-15",
+        "firstName": "Ana",
+        "lastName": "López",
+        "recordNumber": "EXP-2026-0001",
+        "birthDateText": "31/02/1992",
+        "ageText": null,
+        "gender": "Femenino",
+        "allergies": "Negadas",
+        "email": ""
+      },
+      "expected": {
+        "problem": "La fecha de nacimiento no es válida: use día/mes/año (por ejemplo 14/03/1992) y que no sea futura.",
+        "age": 0
+      }
+    },
+    {
+      "name": "validar el alta · fecha futura",
+      "input": {
+        "check": "validate",
+        "today": "2026-10-15",
+        "firstName": "Ana",
+        "lastName": "López",
+        "recordNumber": "EXP-2026-0001",
+        "birthDateText": "16/10/2026",
+        "ageText": null,
+        "gender": "Femenino",
+        "allergies": "Negadas",
+        "email": ""
+      },
+      "expected": {
+        "problem": "La fecha de nacimiento no es válida: use día/mes/año (por ejemplo 14/03/1992) y que no sea futura.",
+        "age": 0
+      }
+    },
+    {
+      "name": "validar el alta · sin fecha ni edad",
+      "input": {
+        "check": "validate",
+        "today": "2026-10-15",
+        "firstName": "Ana",
+        "lastName": "López",
+        "recordNumber": "EXP-2026-0001",
+        "birthDateText": null,
+        "ageText": "",
+        "gender": "Femenino",
+        "allergies": "Negadas",
+        "email": ""
+      },
+      "expected": {
+        "problem": "Capture la fecha de nacimiento (o la edad en años si no se conoce).",
+        "age": 0
+      }
+    },
+    {
+      "name": "validar el alta · edad de más de 130",
+      "input": {
+        "check": "validate",
+        "today": "2026-10-15",
+        "firstName": "Ana",
+        "lastName": "López",
+        "recordNumber": "EXP-2026-0001",
+        "birthDateText": "",
+        "ageText": "131",
+        "gender": "Femenino",
+        "allergies": "Negadas",
+        "email": ""
+      },
+      "expected": {
+        "problem": "Capture la fecha de nacimiento (o la edad en años si no se conoce).",
+        "age": 0
+      }
+    },
+    {
+      "name": "validar el alta · edad negativa",
+      "input": {
+        "check": "validate",
+        "today": "2026-10-15",
+        "firstName": "Ana",
+        "lastName": "López",
+        "recordNumber": "EXP-2026-0001",
+        "birthDateText": "",
+        "ageText": "-1",
+        "gender": "Femenino",
+        "allergies": "Negadas",
+        "email": ""
+      },
+      "expected": {
+        "problem": "Capture la fecha de nacimiento (o la edad en años si no se conoce).",
+        "age": 0
+      }
+    },
+    {
+      "name": "validar el alta · falta el sexo",
+      "input": {
+        "check": "validate",
+        "today": "2026-10-15",
+        "firstName": "Ana",
+        "lastName": "López",
+        "recordNumber": "EXP-2026-0001",
+        "birthDateText": "14/03/1992",
+        "ageText": null,
+        "gender": "",
+        "allergies": "Negadas",
+        "email": ""
+      },
+      "expected": {
+        "problem": "Seleccione el sexo del paciente.",
+        "age": 34
+      }
+    },
+    {
+      "name": "validar el alta · alergias sin interrogar",
+      "input": {
+        "check": "validate",
+        "today": "2026-10-15",
+        "firstName": "Ana",
+        "lastName": "López",
+        "recordNumber": "EXP-2026-0001",
+        "birthDateText": "14/03/1992",
+        "ageText": null,
+        "gender": "Femenino",
+        "allergies": " ",
+        "email": ""
+      },
+      "expected": {
+        "problem": "Indique las alergias del paciente o escriba \"Negadas\" (no es lo mismo que no haber preguntado).",
+        "age": 34
+      }
+    },
+    {
+      "name": "validar el alta · correo inválido",
+      "input": {
+        "check": "validate",
+        "today": "2026-10-15",
+        "firstName": "Ana",
+        "lastName": "López",
+        "recordNumber": "EXP-2026-0001",
+        "birthDateText": "14/03/1992",
+        "ageText": null,
+        "gender": "Femenino",
+        "allergies": "Negadas",
+        "email": "ana@correo"
+      },
+      "expected": {
+        "problem": "El correo electrónico no tiene un formato válido (ejemplo: usuario@correo.com).",
+        "age": 34
+      }
+    },
+    {
+      "name": "validar el alta · el orden: el primer problema gana",
+      "input": {
+        "check": "validate",
+        "today": "2026-10-15",
+        "firstName": "",
+        "lastName": "",
+        "recordNumber": "EXP-2026-0001",
+        "birthDateText": "14/03/1992",
+        "ageText": null,
+        "gender": "Femenino",
+        "allergies": "",
+        "email": ""
+      },
+      "expected": {
+        "problem": "El nombre(s) del paciente es obligatorio.",
+        "age": 0
+      }
+    },
+    {
+      "name": "ficha · adulta con fecha",
+      "input": {
+        "check": "record",
+        "today": "2026-10-15",
+        "fullName": "García Morales, Juana",
+        "gender": "Femenino",
+        "birthDate": "1992-03-14",
+        "storedAge": 0
+      },
+      "expected": {
+        "initials": "JG",
+        "age": 34,
+        "ageText": "34 años",
+        "months": 415,
+        "isFemale": true,
+        "isPediatric": false,
+        "showsGynecoObstetric": true
+      }
+    },
+    {
+      "name": "ficha · bebé de días",
+      "input": {
+        "check": "record",
+        "today": "2026-10-15",
+        "fullName": "Luis Ángel Ruiz",
+        "gender": "Masculino",
+        "birthDate": "2026-10-03",
+        "storedAge": 0
+      },
+      "expected": {
+        "initials": "LÁ",
+        "age": 0,
+        "ageText": "12 días",
+        "months": 0,
+        "isFemale": false,
+        "isPediatric": true,
+        "showsGynecoObstetric": false
+      }
+    },
+    {
+      "name": "ficha · un día",
+      "input": {
+        "check": "record",
+        "today": "2026-10-15",
+        "fullName": "Ñoño Pérez",
+        "gender": "Masculino",
+        "birthDate": "2026-10-14",
+        "storedAge": 0
+      },
+      "expected": {
+        "initials": "ÑP",
+        "age": 0,
+        "ageText": "1 día",
+        "months": 0,
+        "isFemale": false,
+        "isPediatric": true,
+        "showsGynecoObstetric": false
+      }
+    },
+    {
+      "name": "ficha · un mes justo (el día del mes ya llegó)",
+      "input": {
+        "check": "record",
+        "today": "2026-10-15",
+        "fullName": "Eva",
+        "gender": "Femenino",
+        "birthDate": "2026-09-15",
+        "storedAge": 0
+      },
+      "expected": {
+        "initials": "E",
+        "age": 0,
+        "ageText": "1 mes",
+        "months": 1,
+        "isFemale": true,
+        "isPediatric": true,
+        "showsGynecoObstetric": false
+      }
+    },
+    {
+      "name": "ficha · el día del mes no ha llegado: un mes menos",
+      "input": {
+        "check": "record",
+        "today": "2026-10-15",
+        "fullName": "Eva",
+        "gender": "Femenino",
+        "birthDate": "2026-08-16",
+        "storedAge": 0
+      },
+      "expected": {
+        "initials": "E",
+        "age": 0,
+        "ageText": "1 mes",
+        "months": 1,
+        "isFemale": true,
+        "isPediatric": true,
+        "showsGynecoObstetric": false
+      }
+    },
+    {
+      "name": "ficha · menos de 2 años en meses",
+      "input": {
+        "check": "record",
+        "today": "2026-10-15",
+        "fullName": "Óscar Díaz",
+        "gender": "Masculino",
+        "birthDate": "2025-01-15",
+        "storedAge": 0
+      },
+      "expected": {
+        "initials": "ÓD",
+        "age": 1,
+        "ageText": "21 meses",
+        "months": 21,
+        "isFemale": false,
+        "isPediatric": true,
+        "showsGynecoObstetric": false
+      }
+    },
+    {
+      "name": "ficha · 2 años 6 meses",
+      "input": {
+        "check": "record",
+        "today": "2026-10-15",
+        "fullName": "Sofía",
+        "gender": "Femenino",
+        "birthDate": "2024-04-15",
+        "storedAge": 0
+      },
+      "expected": {
+        "initials": "S",
+        "age": 2,
+        "ageText": "2 años 6 meses",
+        "months": 30,
+        "isFemale": true,
+        "isPediatric": true,
+        "showsGynecoObstetric": false
+      }
+    },
+    {
+      "name": "ficha · 5 años 1 mes (hasta los 6 los meses cuentan)",
+      "input": {
+        "check": "record",
+        "today": "2026-10-15",
+        "fullName": "Sofía",
+        "gender": "Fem",
+        "birthDate": "2021-09-15",
+        "storedAge": 0
+      },
+      "expected": {
+        "initials": "S",
+        "age": 5,
+        "ageText": "5 años 1 mes",
+        "months": 61,
+        "isFemale": true,
+        "isPediatric": true,
+        "showsGynecoObstetric": false
+      }
+    },
+    {
+      "name": "ficha · 6 años: solo los años",
+      "input": {
+        "check": "record",
+        "today": "2026-10-15",
+        "fullName": "Sofía",
+        "gender": "Femenino",
+        "birthDate": "2020-09-15",
+        "storedAge": 0
+      },
+      "expected": {
+        "initials": "S",
+        "age": 6,
+        "ageText": "6 años",
+        "months": 73,
+        "isFemale": true,
+        "isPediatric": true,
+        "showsGynecoObstetric": false
+      }
+    },
+    {
+      "name": "ficha · niña de 10: ya ve gineco-obstétricos",
+      "input": {
+        "check": "record",
+        "today": "2026-10-15",
+        "fullName": "Ana",
+        "gender": "femenino",
+        "birthDate": "2016-10-15",
+        "storedAge": 0
+      },
+      "expected": {
+        "initials": "A",
+        "age": 10,
+        "ageText": "10 años",
+        "months": 120,
+        "isFemale": true,
+        "isPediatric": true,
+        "showsGynecoObstetric": true
+      }
+    },
+    {
+      "name": "ficha · niña de 9",
+      "input": {
+        "check": "record",
+        "today": "2026-10-15",
+        "fullName": "Ana",
+        "gender": "Femenino",
+        "birthDate": "2016-10-16",
+        "storedAge": 0
+      },
+      "expected": {
+        "initials": "A",
+        "age": 9,
+        "ageText": "9 años",
+        "months": 119,
+        "isFemale": true,
+        "isPediatric": true,
+        "showsGynecoObstetric": false
+      }
+    },
+    {
+      "name": "ficha · 17 años: pediátrico; 18 ya no",
+      "input": {
+        "check": "record",
+        "today": "2026-10-15",
+        "fullName": "Leo",
+        "gender": "Masculino",
+        "birthDate": "2008-10-16",
+        "storedAge": 0
+      },
+      "expected": {
+        "initials": "L",
+        "age": 17,
+        "ageText": "17 años",
+        "months": 215,
+        "isFemale": false,
+        "isPediatric": true,
+        "showsGynecoObstetric": false
+      }
+    },
+    {
+      "name": "ficha · sin fecha: la edad capturada",
+      "input": {
+        "check": "record",
+        "today": "2026-10-15",
+        "fullName": "  ",
+        "gender": "No especificado",
+        "birthDate": null,
+        "storedAge": 34
+      },
+      "expected": {
+        "initials": "?",
+        "age": 34,
+        "ageText": "34 años",
+        "months": null,
+        "isFemale": false,
+        "isPediatric": false,
+        "showsGynecoObstetric": false
+      }
+    },
+    {
+      "name": "ficha · sin fecha y 1 año",
+      "input": {
+        "check": "record",
+        "today": "2026-10-15",
+        "fullName": "ana maría",
+        "gender": "Femenino",
+        "birthDate": null,
+        "storedAge": 1
+      },
+      "expected": {
+        "initials": "AM",
+        "age": 1,
+        "ageText": "1 año",
+        "months": null,
+        "isFemale": true,
+        "isPediatric": true,
+        "showsGynecoObstetric": false
+      }
+    },
+    {
+      "name": "ficha · nacido un 29 de febrero, antes de su día en un año no bisiesto",
+      "input": {
+        "check": "record",
+        "today": "2026-10-15",
+        "fullName": "Bruno",
+        "gender": "Masculino",
+        "birthDate": "2024-02-29",
+        "storedAge": 0
+      },
+      "expected": {
+        "initials": "B",
+        "age": 2,
+        "ageText": "2 años 7 meses",
+        "months": 31,
+        "isFemale": false,
+        "isPediatric": true,
+        "showsGynecoObstetric": false
+      }
+    },
+    {
+      "name": "teléfono · diez dígitos",
+      "input": {
+        "check": "phone",
+        "phone": "5512345678"
+      },
+      "expected": "551-234-5678"
+    },
+    {
+      "name": "teléfono · con lada y signos: los últimos diez dígitos (revisión 20)",
+      "input": {
+        "check": "phone",
+        "phone": "+52 (55) 1234-5678"
+      },
+      "expected": "551-234-5678"
+    },
+    {
+      "name": "teléfono · con lada del país sin signos",
+      "input": {
+        "check": "phone",
+        "phone": "+52 55 1234 5678"
+      },
+      "expected": "551-234-5678"
+    },
+    {
+      "name": "teléfono · once dígitos con el 1 de antes",
+      "input": {
+        "check": "phone",
+        "phone": "1 55 1234 5678"
+      },
+      "expected": "551-234-5678"
+    },
+    {
+      "name": "teléfono · ya con formato no cambia",
+      "input": {
+        "check": "phone",
+        "phone": "551-234-5678"
+      },
+      "expected": "551-234-5678"
+    },
+    {
+      "name": "teléfono · dígitos que no son ASCII no cuentan",
+      "input": {
+        "check": "phone",
+        "phone": "55 ١٢٣ 1234 5678"
+      },
+      "expected": "551-234-5678"
+    },
+    {
+      "name": "teléfono · sin la extensión (revisión 20)",
+      "input": {
+        "check": "phone",
+        "phone": "+52 55 9876 5432 ext 10"
+      },
+      "expected": "559-876-5432"
+    },
+    {
+      "name": "teléfono · extensión con punto y mayúsculas",
+      "input": {
+        "check": "phone",
+        "phone": "55 9876 5432 Ext. 123"
+      },
+      "expected": "559-876-5432"
+    },
+    {
+      "name": "teléfono · extensión con acento",
+      "input": {
+        "check": "phone",
+        "phone": "55 9876 5432 extensión 7"
+      },
+      "expected": "559-876-5432"
+    },
+    {
+      "name": "teléfono · extensión con x",
+      "input": {
+        "check": "phone",
+        "phone": "55 9876 5432 x22"
+      },
+      "expected": "559-876-5432"
+    },
+    {
+      "name": "teléfono · extensión con #",
+      "input": {
+        "check": "phone",
+        "phone": "55 9876 5432 #4"
+      },
+      "expected": "559-876-5432"
+    },
+    {
+      "name": "teléfono · «ext» sin dígitos no es extensión",
+      "input": {
+        "check": "phone",
+        "phone": "55 9876 5432 ext"
+      },
+      "expected": "559-876-5432"
+    },
+    {
+      "name": "teléfono · seis dígitos",
+      "input": {
+        "check": "phone",
+        "phone": "123456"
+      },
+      "expected": "123-456"
+    },
+    {
+      "name": "teléfono · tres",
+      "input": {
+        "check": "phone",
+        "phone": "911"
+      },
+      "expected": "911"
+    },
+    {
+      "name": "teléfono · vacío",
+      "input": {
+        "check": "phone",
+        "phone": " "
+      },
+      "expected": ""
+    }
+  ]
+}

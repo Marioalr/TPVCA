@@ -1,0 +1,3000 @@
+{
+  "scenario": "stock-ledger",
+  "covers": [
+    "8.19"
+  ],
+  "contract": 20,
+  "protocol": 3,
+  "generatedBy": "tests/TPVC.Tests/TursoSyncEndToEndTests.Scenarios.cs (TPVC_WRITE_GOLDEN=1 lo regenera)",
+  "notes": [
+    "A vende una pieza (FEFO: una salida por lote con su SaleItemSyncId; el folio sale del contador de la nube).",
+    "Los dos equipos cancelan el mismo ticket sin sincronizar entre ellos (pasos 11 a 15): cada uno escribe la devolución con el mismo SyncId determinista (uuid5 'return:' + SyncId de la salida, golden/uuid5.json), así que la nube y los dos equipos terminan con una sola devolución.",
+    "A cierra el lote mientras B vende de él sin haber bajado el cierre (pasos 16 a 20): la salida de B se queda en su lote. Hasta el paso 8.20 las existencias viajan como valor (LWW por fila): la fila del lote que escribió B es la más nueva, así que el lote vuelve a quedar abierto con lo que B le dejó, y el producto con la existencia de B. Este resultado cambia con el 8.20 (existencias derivadas del libro): sus escenarios llegan con él."
+  ],
+  "devices": [
+    {
+      "name": "A",
+      "deviceId": "device-a",
+      "role": "WindowsDesktop",
+      "engine": "pc"
+    },
+    {
+      "name": "B",
+      "deviceId": "device-b",
+      "role": "AndroidTablet",
+      "engine": "kotlin"
+    }
+  ],
+  "watch": {
+    "Products": [
+      "CurrentStock"
+    ],
+    "ProductBatches": [
+      "ProductSyncId",
+      "BatchNumber",
+      "Quantity",
+      "IsDepleted",
+      "ClosedAtUtc"
+    ],
+    "Sales": [
+      "Folio",
+      "IsCancelled",
+      "LedgerVersion"
+    ],
+    "SaleItems": [
+      "SaleSyncId",
+      "ProductSyncId",
+      "Quantity"
+    ],
+    "InventoryMovements": [
+      "ProductSyncId",
+      "BatchSyncId",
+      "SaleItemSyncId",
+      "MovementType",
+      "Quantity",
+      "Delta"
+    ]
+  },
+  "steps": [
+    {
+      "n": 1,
+      "device": "A",
+      "op": "create",
+      "table": "Categories",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000801",
+        "Name": "Analgésicos",
+        "Icon": "Pill"
+      },
+      "expect": {
+        "cloud": {
+          "Products": {},
+          "ProductBatches": {},
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {},
+          "tombstones": []
+        },
+        "A": {
+          "Products": {},
+          "ProductBatches": {},
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {},
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {},
+          "ProductBatches": {},
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 2,
+      "device": "A",
+      "op": "create",
+      "table": "Products",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000802",
+        "Code": "PARA-500",
+        "Name": "Paracetamol 500 mg",
+        "CategorySyncId": "10000000-0000-4000-8000-000000000801",
+        "Price": "35.5",
+        "CurrentStock": "10"
+      },
+      "expect": {
+        "cloud": {
+          "Products": {},
+          "ProductBatches": {},
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {},
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {},
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {},
+          "pending": 2,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {},
+          "ProductBatches": {},
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 3,
+      "device": "A",
+      "op": "create",
+      "table": "ProductBatches",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000803",
+        "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+        "BatchNumber": "L-2026-01",
+        "Quantity": "10"
+      },
+      "expect": {
+        "cloud": {
+          "Products": {},
+          "ProductBatches": {},
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {},
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {},
+          "pending": 3,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {},
+          "ProductBatches": {},
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 4,
+      "device": "A",
+      "op": "create",
+      "table": "InventoryMovements",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000804",
+        "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+        "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+        "MovementType": "0",
+        "Quantity": "10",
+        "Delta": "10",
+        "StockBefore": "0",
+        "StockAfter": "10"
+      },
+      "expect": {
+        "cloud": {
+          "Products": {},
+          "ProductBatches": {},
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {},
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 4,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {},
+          "ProductBatches": {},
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 5,
+      "device": "A",
+      "op": "fullSync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {},
+          "ProductBatches": {},
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 6,
+      "device": "B",
+      "op": "join",
+      "result": {
+        "ok": true
+      },
+      "expect": {
+        "cloud": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {},
+          "ProductBatches": {},
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 7,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 8,
+      "device": "A",
+      "op": "sell",
+      "productSyncId": "10000000-0000-4000-8000-000000000802",
+      "quantity": 1,
+      "result": {
+        "folio": "TKT-<today>-0001"
+      },
+      "expect": {
+        "cloud": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "9"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "9",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "0",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            }
+          },
+          "pending": 5,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 9,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "9"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "9",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "0",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "9"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "9",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "0",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {},
+          "SaleItems": {},
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 10,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "9"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "9",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "0",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "9"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "9",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "0",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "9"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "9",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "0",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 11,
+      "device": "A",
+      "op": "cancelSale",
+      "folio": "TKT-<today>-0001",
+      "result": {
+        "ok": true
+      },
+      "expect": {
+        "cloud": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "9"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "9",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "0",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            }
+          },
+          "pending": 4,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "9"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "9",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "0",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 12,
+      "device": "B",
+      "op": "cancelSale",
+      "folio": "TKT-<today>-0001",
+      "result": {
+        "ok": true
+      },
+      "expect": {
+        "cloud": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "9"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "9",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "0",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            }
+          },
+          "pending": 4,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            }
+          },
+          "pending": 4,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 13,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            }
+          },
+          "pending": 4,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 14,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 15,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 16,
+      "device": "A",
+      "op": "closeBatch",
+      "syncId": "10000000-0000-4000-8000-000000000803",
+      "expect": {
+        "cloud": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "0"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "0",
+              "IsDepleted": "1",
+              "ClosedAtUtc": "<time>"
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            },
+            "<id:5>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "5",
+              "Quantity": "10",
+              "Delta": "-10"
+            }
+          },
+          "pending": 3,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 17,
+      "device": "B",
+      "op": "sell",
+      "productSyncId": "10000000-0000-4000-8000-000000000802",
+      "quantity": 2,
+      "result": {
+        "folio": "TKT-<today>-0002"
+      },
+      "expect": {
+        "cloud": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "10"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "10",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "0"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "0",
+              "IsDepleted": "1",
+              "ClosedAtUtc": "<time>"
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            },
+            "<id:5>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "5",
+              "Quantity": "10",
+              "Delta": "-10"
+            }
+          },
+          "pending": 3,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "8"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "8",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            },
+            "<id:6>": {
+              "Folio": "TKT-<today>-0002",
+              "IsCancelled": "0",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            },
+            "<id:7>": {
+              "SaleSyncId": "<id:6>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "2"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            },
+            "<id:8>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:7>",
+              "MovementType": "6",
+              "Quantity": "2",
+              "Delta": "-2"
+            }
+          },
+          "pending": 5,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 18,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "0"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "0",
+              "IsDepleted": "1",
+              "ClosedAtUtc": "<time>"
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            },
+            "<id:5>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "5",
+              "Quantity": "10",
+              "Delta": "-10"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "0"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "0",
+              "IsDepleted": "1",
+              "ClosedAtUtc": "<time>"
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            },
+            "<id:5>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "5",
+              "Quantity": "10",
+              "Delta": "-10"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "8"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "8",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            },
+            "<id:6>": {
+              "Folio": "TKT-<today>-0002",
+              "IsCancelled": "0",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            },
+            "<id:7>": {
+              "SaleSyncId": "<id:6>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "2"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            },
+            "<id:8>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:7>",
+              "MovementType": "6",
+              "Quantity": "2",
+              "Delta": "-2"
+            }
+          },
+          "pending": 5,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 19,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "8"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "8",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            },
+            "<id:6>": {
+              "Folio": "TKT-<today>-0002",
+              "IsCancelled": "0",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            },
+            "<id:7>": {
+              "SaleSyncId": "<id:6>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "2"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            },
+            "<id:5>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "5",
+              "Quantity": "10",
+              "Delta": "-10"
+            },
+            "<id:8>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:7>",
+              "MovementType": "6",
+              "Quantity": "2",
+              "Delta": "-2"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "0"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "0",
+              "IsDepleted": "1",
+              "ClosedAtUtc": "<time>"
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            },
+            "<id:5>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "5",
+              "Quantity": "10",
+              "Delta": "-10"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "8"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "8",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            },
+            "<id:6>": {
+              "Folio": "TKT-<today>-0002",
+              "IsCancelled": "0",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            },
+            "<id:7>": {
+              "SaleSyncId": "<id:6>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "2"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            },
+            "<id:5>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "5",
+              "Quantity": "10",
+              "Delta": "-10"
+            },
+            "<id:8>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:7>",
+              "MovementType": "6",
+              "Quantity": "2",
+              "Delta": "-2"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 20,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "8"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "8",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            },
+            "<id:6>": {
+              "Folio": "TKT-<today>-0002",
+              "IsCancelled": "0",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            },
+            "<id:7>": {
+              "SaleSyncId": "<id:6>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "2"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            },
+            "<id:5>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "5",
+              "Quantity": "10",
+              "Delta": "-10"
+            },
+            "<id:8>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:7>",
+              "MovementType": "6",
+              "Quantity": "2",
+              "Delta": "-2"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "8"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "8",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            },
+            "<id:6>": {
+              "Folio": "TKT-<today>-0002",
+              "IsCancelled": "0",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            },
+            "<id:7>": {
+              "SaleSyncId": "<id:6>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "2"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            },
+            "<id:5>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "5",
+              "Quantity": "10",
+              "Delta": "-10"
+            },
+            "<id:8>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:7>",
+              "MovementType": "6",
+              "Quantity": "2",
+              "Delta": "-2"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Products": {
+            "10000000-0000-4000-8000-000000000802": {
+              "CurrentStock": "8"
+            }
+          },
+          "ProductBatches": {
+            "10000000-0000-4000-8000-000000000803": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchNumber": "L-2026-01",
+              "Quantity": "8",
+              "IsDepleted": "0",
+              "ClosedAtUtc": null
+            }
+          },
+          "Sales": {
+            "<id:1>": {
+              "Folio": "TKT-<today>-0001",
+              "IsCancelled": "1",
+              "LedgerVersion": "1"
+            },
+            "<id:6>": {
+              "Folio": "TKT-<today>-0002",
+              "IsCancelled": "0",
+              "LedgerVersion": "1"
+            }
+          },
+          "SaleItems": {
+            "<id:2>": {
+              "SaleSyncId": "<id:1>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "1"
+            },
+            "<id:7>": {
+              "SaleSyncId": "<id:6>",
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "Quantity": "2"
+            }
+          },
+          "InventoryMovements": {
+            "10000000-0000-4000-8000-000000000804": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "0",
+              "Quantity": "10",
+              "Delta": "10"
+            },
+            "<id:3>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "6",
+              "Quantity": "1",
+              "Delta": "-1"
+            },
+            "<id:4>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:2>",
+              "MovementType": "7",
+              "Quantity": "1",
+              "Delta": "1"
+            },
+            "<id:5>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": null,
+              "MovementType": "5",
+              "Quantity": "10",
+              "Delta": "-10"
+            },
+            "<id:8>": {
+              "ProductSyncId": "10000000-0000-4000-8000-000000000802",
+              "BatchSyncId": "10000000-0000-4000-8000-000000000803",
+              "SaleItemSyncId": "<id:7>",
+              "MovementType": "6",
+              "Quantity": "2",
+              "Delta": "-2"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    }
+  ]
+}

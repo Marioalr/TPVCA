@@ -1,0 +1,769 @@
+{
+  "rule": "appointment-overlap",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Citas empalmadas (Services/Rules/AppointmentRules, paso 8.23, H2). Dos citas (PatientAppointments) se empalman si: no son la misma (SyncId; uno vacío es una cita nueva sin guardar), ninguna tiene Status 'Cancelada' (exacto; 'Atendida' sí cuenta), tienen la misma Date (solo la fecha, dateOnly) y sus horarios [inicio, fin) se cruzan: inicioA < finB y inicioB < finA. Tocarse no es empalme.",
+    "interval: en segundos desde la medianoche de su Date. El inicio es la hora de Time leída con la regla de patient-summary.json ('time': H:mm o HH:mm, :ss opcional, AM/PM opcional; lo que no se lee, las 10:00); 'minutes' es DurationMinutes, o 30 si es 0 o negativa (la agenda la dibuja igual); el fin, inicio + minutes. El fin puede pasar de 86400 (la medianoche) y sigue contando solo en su mismo día: no se compara con las citas del día siguiente.",
+    "Diferencia a propósito con DateTime.TryParse (la agenda de la PC lo usaba hasta v1.39.0): '3 PM' y '7:5' no se leen y cuentan como las 10:00. Desde v1.14 la agenda escribe 'HH:mm'; las horas escritas a mano en v1.7–v1.13 ('5 pm', '12 PM', '4.30 pm', '16:30 PM', '7:5', '10.30', '9,30') la PC las pasa a 'HH:mm' una sola vez (con la nube, después de bajar en su primera sincronización) y suben como una edición; lo que parece fecha ('10/30') o no se lee se queda como está. Kotlin solo encuentra lo que esta regla lee o lo que se dejó como estaba (que cuenta como las 10:00).",
+    "pairs: los pares empalmados de la lista, cada par una vez [primera, segunda] por hora y luego SyncId en minúsculas (orden ordinal), los días en orden. Con 'involving' (los SyncId de las citas que acaban de bajar) solo los pares en que está alguna; null = todos.",
+    "Antes de agendar o cambiar una cita: sincronización rápida (3 s como máximo, regla «Sincronización rápida» de schema.json) y luego la pregunta 'Ya hay una cita a las 10:30 con … ¿Agendar de todos modos?'. Después de bajar: 'pairs' con las citas que llegaron de hoy en adelante, aviso y la marca 'Empalme' en la agenda. Nunca se cancela una cita sola."
+  ],
+  "cases": [
+    {
+      "name": "empalme · misma hora el mismo día",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:30",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:30",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "empalme · se tocan: una termina a las 10:30 y la otra empieza a las 10:30",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:00",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:30",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": false
+    },
+    {
+      "name": "empalme · se cruzan 15 minutos",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:00",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:15",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "empalme · una dentro de otra (60 y 15 minutos)",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:00",
+          "DurationMinutes": 60,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:15",
+          "DurationMinutes": 15,
+          "Status": "Programada"
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "empalme · el mismo horario en otro día",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:30",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-16 00:00:00.0000000",
+          "Time": "10:30",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": false
+    },
+    {
+      "name": "empalme · una cancelada no se empalma",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:30",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:30",
+          "DurationMinutes": 30,
+          "Status": "Cancelada"
+        }
+      },
+      "expected": false
+    },
+    {
+      "name": "empalme · solo 'Cancelada' tal cual cuenta como cancelada",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:30",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:30",
+          "DurationMinutes": 30,
+          "Status": "cancelada"
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "empalme · una atendida sí cuenta (ocupó el horario)",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:30",
+          "DurationMinutes": 30,
+          "Status": "Atendida"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:45",
+          "DurationMinutes": 30,
+          "Status": "Confirmada"
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "empalme · sin duración (0) dura 30 minutos: se cruza a las 10:20",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:00",
+          "DurationMinutes": 0,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:20",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "empalme · sin duración (0) dura 30 minutos: toca a las 10:30",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:00",
+          "DurationMinutes": 0,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:30",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": false
+    },
+    {
+      "name": "empalme · duración negativa también dura 30 minutos",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:00",
+          "DurationMinutes": -15,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:25",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "empalme · pasa de la medianoche: se empalma con otra del mismo día",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "23:45",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "23:50",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "empalme · pasa de la medianoche: no se compara con el día siguiente",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "23:45",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-16 00:00:00.0000000",
+          "Time": "00:00",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": false
+    },
+    {
+      "name": "empalme · la misma cita (mismo SyncId) no se empalma consigo misma",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:30",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:30",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": false
+    },
+    {
+      "name": "empalme · 12 y 24 horas: '10:30 AM' y '10:30'",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:30 AM",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:30",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "empalme · 12 y 24 horas: '2:00 p. m.' y '14:15'",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "2:00 p. m.",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "14:15",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "empalme · 12 y 24 horas: '12:30 am' es 00:30",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "12:30 am",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "00:45",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "empalme · con segundos: '09:59:30' cruza a las 10:29",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "09:59:30",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:29",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "empalme · una hora que no se lee cuenta como las 10:00 ('mediodía')",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "mediodía",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:15",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "empalme · '3 PM' no se lee (sin minutos): cuenta como las 10:00, no las 15:00",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "3 PM",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "15:00",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": false
+    },
+    {
+      "name": "empalme · '7:5' no se lee (minutos de un dígito): cuenta como las 10:00",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "7:5",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:00",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "empalme · sin hora (vacía o nula) cuenta como las 10:00",
+      "input": {
+        "check": "overlaps",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": null,
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        },
+        "b": {
+          "SyncId": "c0000000-0000-4000-8000-000000000002",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "horario · '10:30' por 45 min",
+      "input": {
+        "check": "interval",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "10:30",
+          "DurationMinutes": 45,
+          "Status": "Programada"
+        }
+      },
+      "expected": {
+        "startSeconds": 37800,
+        "minutes": 45,
+        "endSeconds": 40500
+      }
+    },
+    {
+      "name": "horario · '9:15 p. m.' por 0 min",
+      "input": {
+        "check": "interval",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "9:15 p. m.",
+          "DurationMinutes": 0,
+          "Status": "Programada"
+        }
+      },
+      "expected": {
+        "startSeconds": 76500,
+        "minutes": 30,
+        "endSeconds": 78300
+      }
+    },
+    {
+      "name": "horario · 'hoy' por -5 min",
+      "input": {
+        "check": "interval",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "hoy",
+          "DurationMinutes": -5,
+          "Status": "Programada"
+        }
+      },
+      "expected": {
+        "startSeconds": 36000,
+        "minutes": 30,
+        "endSeconds": 37800
+      }
+    },
+    {
+      "name": "horario · '' por 30 min",
+      "input": {
+        "check": "interval",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": null,
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": {
+        "startSeconds": 36000,
+        "minutes": 30,
+        "endSeconds": 37800
+      }
+    },
+    {
+      "name": "horario · '23:45' por 30 min",
+      "input": {
+        "check": "interval",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "23:45",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": {
+        "startSeconds": 85500,
+        "minutes": 30,
+        "endSeconds": 87300
+      }
+    },
+    {
+      "name": "horario · '09:59:30' por 30 min",
+      "input": {
+        "check": "interval",
+        "a": {
+          "SyncId": "c0000000-0000-4000-8000-000000000001",
+          "Date": "2026-10-15 00:00:00.0000000",
+          "Time": "09:59:30",
+          "DurationMinutes": 30,
+          "Status": "Programada"
+        }
+      },
+      "expected": {
+        "startSeconds": 35970,
+        "minutes": 30,
+        "endSeconds": 37770
+      }
+    },
+    {
+      "name": "pares · todos los pares",
+      "input": {
+        "check": "pairs",
+        "appointments": [
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000001",
+            "Date": "2026-10-15 00:00:00.0000000",
+            "Time": "10:00",
+            "DurationMinutes": 30,
+            "Status": "Programada"
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000002",
+            "Date": "2026-10-15 00:00:00.0000000",
+            "Time": "10:15",
+            "DurationMinutes": 30,
+            "Status": "Programada"
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000003",
+            "Date": "2026-10-15 00:00:00.0000000",
+            "Time": "10:20",
+            "DurationMinutes": 10,
+            "Status": "Programada"
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000004",
+            "Date": "2026-10-15 00:00:00.0000000",
+            "Time": "12:00",
+            "DurationMinutes": 30,
+            "Status": "Programada"
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000005",
+            "Date": "2026-10-15 00:00:00.0000000",
+            "Time": "12:00",
+            "DurationMinutes": 30,
+            "Status": "Cancelada"
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000006",
+            "Date": "2026-10-16 00:00:00.0000000",
+            "Time": "10:00",
+            "DurationMinutes": 30,
+            "Status": "Programada"
+          }
+        ],
+        "involving": null
+      },
+      "expected": [
+        [
+          "c0000000-0000-4000-8000-000000000001",
+          "c0000000-0000-4000-8000-000000000002"
+        ],
+        [
+          "c0000000-0000-4000-8000-000000000001",
+          "c0000000-0000-4000-8000-000000000003"
+        ],
+        [
+          "c0000000-0000-4000-8000-000000000002",
+          "c0000000-0000-4000-8000-000000000003"
+        ]
+      ]
+    },
+    {
+      "name": "pares · solo los de la cita que llegó (la 3)",
+      "input": {
+        "check": "pairs",
+        "appointments": [
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000001",
+            "Date": "2026-10-15 00:00:00.0000000",
+            "Time": "10:00",
+            "DurationMinutes": 30,
+            "Status": "Programada"
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000002",
+            "Date": "2026-10-15 00:00:00.0000000",
+            "Time": "10:15",
+            "DurationMinutes": 30,
+            "Status": "Programada"
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000003",
+            "Date": "2026-10-15 00:00:00.0000000",
+            "Time": "10:20",
+            "DurationMinutes": 10,
+            "Status": "Programada"
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000004",
+            "Date": "2026-10-15 00:00:00.0000000",
+            "Time": "12:00",
+            "DurationMinutes": 30,
+            "Status": "Programada"
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000005",
+            "Date": "2026-10-15 00:00:00.0000000",
+            "Time": "12:00",
+            "DurationMinutes": 30,
+            "Status": "Cancelada"
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000006",
+            "Date": "2026-10-16 00:00:00.0000000",
+            "Time": "10:00",
+            "DurationMinutes": 30,
+            "Status": "Programada"
+          }
+        ],
+        "involving": [
+          "c0000000-0000-4000-8000-000000000003"
+        ]
+      },
+      "expected": [
+        [
+          "c0000000-0000-4000-8000-000000000001",
+          "c0000000-0000-4000-8000-000000000003"
+        ],
+        [
+          "c0000000-0000-4000-8000-000000000002",
+          "c0000000-0000-4000-8000-000000000003"
+        ]
+      ]
+    },
+    {
+      "name": "pares · la que llegó no se empalma con nada (la 6, otro día; la 5, cancelada)",
+      "input": {
+        "check": "pairs",
+        "appointments": [
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000001",
+            "Date": "2026-10-15 00:00:00.0000000",
+            "Time": "10:00",
+            "DurationMinutes": 30,
+            "Status": "Programada"
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000002",
+            "Date": "2026-10-15 00:00:00.0000000",
+            "Time": "10:15",
+            "DurationMinutes": 30,
+            "Status": "Programada"
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000003",
+            "Date": "2026-10-15 00:00:00.0000000",
+            "Time": "10:20",
+            "DurationMinutes": 10,
+            "Status": "Programada"
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000004",
+            "Date": "2026-10-15 00:00:00.0000000",
+            "Time": "12:00",
+            "DurationMinutes": 30,
+            "Status": "Programada"
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000005",
+            "Date": "2026-10-15 00:00:00.0000000",
+            "Time": "12:00",
+            "DurationMinutes": 30,
+            "Status": "Cancelada"
+          },
+          {
+            "SyncId": "c0000000-0000-4000-8000-000000000006",
+            "Date": "2026-10-16 00:00:00.0000000",
+            "Time": "10:00",
+            "DurationMinutes": 30,
+            "Status": "Programada"
+          }
+        ],
+        "involving": [
+          "c0000000-0000-4000-8000-000000000005",
+          "c0000000-0000-4000-8000-000000000006"
+        ]
+      },
+      "expected": []
+    }
+  ]
+}

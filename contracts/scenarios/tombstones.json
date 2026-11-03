@@ -1,0 +1,1162 @@
+{
+  "scenario": "tombstones",
+  "covers": [
+    "8.5"
+  ],
+  "contract": 20,
+  "protocol": 3,
+  "generatedBy": "tests/TPVC.Tests/TursoSyncEndToEndTests.Scenarios.cs (TPVC_WRITE_GOLDEN=1 lo regenera)",
+  "notes": [
+    "Borrar contra editar. Pasos 7 a 11: B edita una nota y A la borra después: la lápida es más nueva y la fila desaparece en la nube y en B.",
+    "Pasos 12 a 16: A borra la otra nota y B la edita después, sin haber bajado la lápida: la edición es más nueva que la lápida (el upsert solo se niega con una lápida igual o más nueva), así que la nota vuelve a existir en la nube y en A. La lápida se queda en la nube.",
+    "Pasos 17 a 19: borrar el expediente borra en cascada su nota: cada fila borrada en cascada deja su lápida (los triggers del registro de cambios) y llega así a A."
+  ],
+  "devices": [
+    {
+      "name": "A",
+      "deviceId": "device-a",
+      "role": "WindowsDesktop",
+      "engine": "pc"
+    },
+    {
+      "name": "B",
+      "deviceId": "device-b",
+      "role": "AndroidTablet",
+      "engine": "kotlin"
+    }
+  ],
+  "watch": {
+    "Patients": [
+      "RecordNumber",
+      "FullName"
+    ],
+    "PatientConsultations": [
+      "PatientRecordSyncId",
+      "Folio",
+      "Diagnosis"
+    ]
+  },
+  "steps": [
+    {
+      "n": 1,
+      "device": "A",
+      "op": "create",
+      "table": "Patients",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000201",
+        "RecordNumber": "EXP-2020-001",
+        "FullName": "Ana Pérez Núñez",
+        "Gender": "Femenino"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {},
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 2,
+      "device": "A",
+      "op": "create",
+      "table": "PatientConsultations",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000202",
+        "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+        "Folio": "CNS-20200115-001",
+        "ChiefComplaint": "Dolor de garganta",
+        "Diagnosis": "Faringitis aguda (J02.9)"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000202": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200115-001",
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "pending": 2,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 3,
+      "device": "A",
+      "op": "create",
+      "table": "PatientConsultations",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000203",
+        "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+        "Folio": "CNS-20200116-001",
+        "ChiefComplaint": "Tos seca",
+        "Diagnosis": "Rinofaringitis (J00)"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000202": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200115-001",
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            },
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "pending": 3,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 4,
+      "device": "A",
+      "op": "fullSync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000202": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200115-001",
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            },
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000202": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200115-001",
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            },
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 5,
+      "device": "B",
+      "op": "join",
+      "result": {
+        "ok": true
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000202": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200115-001",
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            },
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000202": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200115-001",
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            },
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 6,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000202": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200115-001",
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            },
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000202": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200115-001",
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            },
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000202": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200115-001",
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            },
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 7,
+      "device": "B",
+      "op": "edit",
+      "table": "PatientConsultations",
+      "syncId": "10000000-0000-4000-8000-000000000202",
+      "set": {
+        "Diagnosis": "Faringitis estreptocócica (J02.0)"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000202": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200115-001",
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            },
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000202": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200115-001",
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            },
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000202": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200115-001",
+              "Diagnosis": "Faringitis estreptocócica (J02.0)"
+            },
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 8,
+      "device": "A",
+      "op": "delete",
+      "table": "PatientConsultations",
+      "syncId": "10000000-0000-4000-8000-000000000202",
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000202": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200115-001",
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            },
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000202": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200115-001",
+              "Diagnosis": "Faringitis estreptocócica (J02.0)"
+            },
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 9,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000202": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200115-001",
+              "Diagnosis": "Faringitis estreptocócica (J02.0)"
+            },
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000202": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200115-001",
+              "Diagnosis": "Faringitis estreptocócica (J02.0)"
+            },
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 10,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "tombstones": [
+            "PatientConsultation/10000000-0000-4000-8000-000000000202"
+          ]
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000202": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200115-001",
+              "Diagnosis": "Faringitis estreptocócica (J02.0)"
+            },
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 11,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "tombstones": [
+            "PatientConsultation/10000000-0000-4000-8000-000000000202"
+          ]
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 12,
+      "device": "A",
+      "op": "delete",
+      "table": "PatientConsultations",
+      "syncId": "10000000-0000-4000-8000-000000000203",
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "tombstones": [
+            "PatientConsultation/10000000-0000-4000-8000-000000000202"
+          ]
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {},
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 13,
+      "device": "B",
+      "op": "edit",
+      "table": "PatientConsultations",
+      "syncId": "10000000-0000-4000-8000-000000000203",
+      "set": {
+        "Diagnosis": "Rinofaringitis aguda (J00)"
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis (J00)"
+            }
+          },
+          "tombstones": [
+            "PatientConsultation/10000000-0000-4000-8000-000000000202"
+          ]
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {},
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis aguda (J00)"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 14,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {},
+          "tombstones": [
+            "PatientConsultation/10000000-0000-4000-8000-000000000202",
+            "PatientConsultation/10000000-0000-4000-8000-000000000203"
+          ]
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis aguda (J00)"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 15,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis aguda (J00)"
+            }
+          },
+          "tombstones": [
+            "PatientConsultation/10000000-0000-4000-8000-000000000202",
+            "PatientConsultation/10000000-0000-4000-8000-000000000203"
+          ]
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis aguda (J00)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 16,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis aguda (J00)"
+            }
+          },
+          "tombstones": [
+            "PatientConsultation/10000000-0000-4000-8000-000000000202",
+            "PatientConsultation/10000000-0000-4000-8000-000000000203"
+          ]
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis aguda (J00)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis aguda (J00)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 17,
+      "device": "B",
+      "op": "delete",
+      "table": "Patients",
+      "syncId": "10000000-0000-4000-8000-000000000201",
+      "expect": {
+        "cloud": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis aguda (J00)"
+            }
+          },
+          "tombstones": [
+            "PatientConsultation/10000000-0000-4000-8000-000000000202",
+            "PatientConsultation/10000000-0000-4000-8000-000000000203"
+          ]
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis aguda (J00)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "pending": 2,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 18,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "tombstones": [
+            "PatientConsultation/10000000-0000-4000-8000-000000000202",
+            "PatientConsultation/10000000-0000-4000-8000-000000000203",
+            "PatientRecord/10000000-0000-4000-8000-000000000201"
+          ]
+        },
+        "A": {
+          "Patients": {
+            "10000000-0000-4000-8000-000000000201": {
+              "RecordNumber": "EXP-2020-001",
+              "FullName": "Ana Pérez Núñez"
+            }
+          },
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000203": {
+              "PatientRecordSyncId": "10000000-0000-4000-8000-000000000201",
+              "Folio": "CNS-20200116-001",
+              "Diagnosis": "Rinofaringitis aguda (J00)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 19,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "tombstones": [
+            "PatientConsultation/10000000-0000-4000-8000-000000000202",
+            "PatientConsultation/10000000-0000-4000-8000-000000000203",
+            "PatientRecord/10000000-0000-4000-8000-000000000201"
+          ]
+        },
+        "A": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "Patients": {},
+          "PatientConsultations": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    }
+  ]
+}

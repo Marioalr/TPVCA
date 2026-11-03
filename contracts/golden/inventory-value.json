@@ -1,0 +1,219 @@
+{
+  "rule": "inventory-value",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "El valor del inventario (Models/Product.InventoryValue y Services/Rules/InventoryValueRules.cs, el panel y el celular C7). Los productos llevan además unitCost (decimal en texto) y costExcludesVat. Importes como texto decimal invariante con su escala.",
+    "product: effectiveUnitCost = el costo capturado, o si no incluye IVA Math.Round(costo × 1.16, 2, AwayFromZero); inventoryValue = existencias × effectiveUnitCost si hay existencias (> 0), si no 0; hasCost = costo > 0.",
+    "dashboard: de los productos activos con existencias, la suma de inventoryValue y cuántos no tienen costo; detail 'al costo' o 'N sin costo'."
+  ],
+  "cases": [
+    {
+      "name": "producto · costo con IVA incluido",
+      "input": {
+        "check": "product",
+        "product": {
+          "id": 1,
+          "code": "P-1",
+          "name": "Producto 1",
+          "stock": 10,
+          "unitCost": "12.50",
+          "costExcludesVat": false
+        }
+      },
+      "expected": {
+        "effectiveUnitCost": "12.50",
+        "inventoryValue": "125.00",
+        "hasCost": true
+      }
+    },
+    {
+      "name": "producto · costo sin IVA: se suma 16 % redondeado a centavos",
+      "input": {
+        "check": "product",
+        "product": {
+          "id": 2,
+          "code": "P-2",
+          "name": "Producto 2",
+          "stock": 3,
+          "unitCost": "100",
+          "costExcludesVat": true
+        }
+      },
+      "expected": {
+        "effectiveUnitCost": "116.00",
+        "inventoryValue": "348.00",
+        "hasCost": true
+      }
+    },
+    {
+      "name": "producto · el IVA con punto medio hacia arriba: 0.125 × 1.16 = 0.145 → 0.15",
+      "input": {
+        "check": "product",
+        "product": {
+          "id": 3,
+          "code": "P-3",
+          "name": "Producto 3",
+          "stock": 7,
+          "unitCost": "0.125",
+          "costExcludesVat": true
+        }
+      },
+      "expected": {
+        "effectiveUnitCost": "0.15",
+        "inventoryValue": "1.05",
+        "hasCost": true
+      }
+    },
+    {
+      "name": "producto · sin existencias no vale nada",
+      "input": {
+        "check": "product",
+        "product": {
+          "id": 4,
+          "code": "P-4",
+          "name": "Producto 4",
+          "stock": 0,
+          "unitCost": "50",
+          "costExcludesVat": false
+        }
+      },
+      "expected": {
+        "effectiveUnitCost": "50",
+        "inventoryValue": "0",
+        "hasCost": true
+      }
+    },
+    {
+      "name": "producto · existencias negativas tampoco",
+      "input": {
+        "check": "product",
+        "product": {
+          "id": 5,
+          "code": "P-5",
+          "name": "Producto 5",
+          "stock": -2,
+          "unitCost": "50",
+          "costExcludesVat": false
+        }
+      },
+      "expected": {
+        "effectiveUnitCost": "50",
+        "inventoryValue": "0",
+        "hasCost": true
+      }
+    },
+    {
+      "name": "producto · sin costo",
+      "input": {
+        "check": "product",
+        "product": {
+          "id": 6,
+          "code": "P-6",
+          "name": "Producto 6",
+          "stock": 5,
+          "unitCost": "0",
+          "costExcludesVat": true
+        }
+      },
+      "expected": {
+        "effectiveUnitCost": "0.00",
+        "inventoryValue": "0.00",
+        "hasCost": false
+      }
+    },
+    {
+      "name": "panel · solo activos con existencias; los que no tienen costo se cuentan aparte",
+      "input": {
+        "check": "dashboard",
+        "products": [
+          {
+            "id": 1,
+            "code": "P-1",
+            "name": "Producto 1",
+            "stock": 10,
+            "unitCost": "12.50",
+            "costExcludesVat": false
+          },
+          {
+            "id": 2,
+            "code": "P-2",
+            "name": "Producto 2",
+            "stock": 3,
+            "unitCost": "100",
+            "costExcludesVat": true
+          },
+          {
+            "id": 3,
+            "code": "P-3",
+            "name": "Producto 3",
+            "stock": 7,
+            "unitCost": "0.125",
+            "costExcludesVat": true
+          },
+          {
+            "id": 4,
+            "code": "P-4",
+            "name": "Producto 4",
+            "stock": 0,
+            "unitCost": "50",
+            "costExcludesVat": false
+          },
+          {
+            "id": 6,
+            "code": "P-6",
+            "name": "Producto 6",
+            "stock": 5,
+            "unitCost": "0",
+            "costExcludesVat": true
+          },
+          {
+            "id": 7,
+            "code": "P-7",
+            "name": "Producto 7",
+            "stock": 4,
+            "unitCost": "0",
+            "costExcludesVat": false
+          },
+          {
+            "id": 8,
+            "code": "P-8",
+            "name": "Producto 8",
+            "stock": 9,
+            "active": false,
+            "unitCost": "10",
+            "costExcludesVat": false
+          }
+        ]
+      },
+      "expected": {
+        "inventoryValue": "474.05",
+        "stockedWithoutCost": 2,
+        "detail": "2 sin costo"
+      }
+    },
+    {
+      "name": "panel · todo con costo",
+      "input": {
+        "check": "dashboard",
+        "products": [
+          {
+            "id": 1,
+            "code": "P-1",
+            "name": "Producto 1",
+            "stock": 1,
+            "unitCost": "1",
+            "costExcludesVat": false
+          }
+        ]
+      },
+      "expected": {
+        "inventoryValue": "1",
+        "stockedWithoutCost": 0,
+        "detail": "al costo"
+      }
+    }
+  ]
+}

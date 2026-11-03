@@ -1,0 +1,3006 @@
+{
+  "rule": "rank-products",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Búsquedas de productos (Services/TextSearch.RankProducts y Services/Rules/CatalogSearchRules.cs). Los productos de entrada: id, code, name, genericName, presentation, stock (CurrentStock), category (el nombre de su categoría), categoryId, active (true si falta), location y price. 'expected' son los id en orden. Qué es insumo o medicamento: catalog-matching.json.",
+    "quantity-prefix (el buscador del Punto de venta, '3*para' agrega 3): la expresión ^\\s*([0-9]{1,3})\\s*\\*\\s*(.*)$ (solo dígitos ASCII; revisión 20: antes era \\d, que en .NET acepta dígitos de cualquier alfabeto, y '٣*para' tronaba al leer el número; ahora no coincide); la cantidad es el número (1 si es 0) y lo que sigue es la búsqueda tal cual; si no coincide, cantidad 1 y el texto completo.",
+    "pos (TextSearch.RankProducts, la que usan el Punto de venta y los insumos de un servicio): con q = el texto normalizado (vacío = nada), grupo 0 si el código normalizado es igual a q, 1 si el nombre empieza con q, 2 si el genérico empieza con q, 3 si una palabra del nombre o del genérico empieza con q, 4 si el nombre, el genérico, el código o la ubicación lo contienen; si no, fuera. Orden: grupo, luego los que tienen existencias (stock > 0) antes, luego el nombre tal cual con es-MX (Collator); 8 como mucho ('limit' -1 = sin límite). No mira si el producto está activo.",
+    "pos-catalog (la lista del catálogo del Punto de venta): si categoryId es mayor que 0, solo esa categoría; sin texto (vacío o espacios), todos por nombre con es-MX; con texto, pos sin límite.",
+    "service-supplies (buscar un insumo para un servicio en la consulta): pos sobre los productos activos que son insumo. supplies-sheet (la hoja de insumos): los insumos (activos o no) en el orden de la lista cuyo nombre, genérico o código contiene el texto normalizado, 20 como mucho; sin texto, los primeros 20. browser-supplies (el catálogo de insumos de la consulta): los insumos cuyo nombre, genérico, código o presentación contiene el texto, por nombre con es-MX, sin límite."
+  ],
+  "cases": [
+    {
+      "name": "prefijo de cantidad · cantidad y texto",
+      "input": {
+        "check": "quantity-prefix",
+        "text": "3*para"
+      },
+      "expected": {
+        "quantity": 3,
+        "query": "para"
+      }
+    },
+    {
+      "name": "prefijo de cantidad · espacios alrededor",
+      "input": {
+        "check": "quantity-prefix",
+        "text": "  12 *  gasa estéril"
+      },
+      "expected": {
+        "quantity": 12,
+        "query": "gasa estéril"
+      }
+    },
+    {
+      "name": "prefijo de cantidad · cantidad 0 cuenta como 1",
+      "input": {
+        "check": "quantity-prefix",
+        "text": "0*para"
+      },
+      "expected": {
+        "quantity": 1,
+        "query": "para"
+      }
+    },
+    {
+      "name": "prefijo de cantidad · tres dígitos como mucho",
+      "input": {
+        "check": "quantity-prefix",
+        "text": "1000*gasa"
+      },
+      "expected": {
+        "quantity": 1,
+        "query": "1000*gasa"
+      }
+    },
+    {
+      "name": "prefijo de cantidad · sin texto después del asterisco",
+      "input": {
+        "check": "quantity-prefix",
+        "text": "3*"
+      },
+      "expected": {
+        "quantity": 3,
+        "query": ""
+      }
+    },
+    {
+      "name": "prefijo de cantidad · sin cantidad",
+      "input": {
+        "check": "quantity-prefix",
+        "text": "*para"
+      },
+      "expected": {
+        "quantity": 1,
+        "query": "*para"
+      }
+    },
+    {
+      "name": "prefijo de cantidad · sin asterisco",
+      "input": {
+        "check": "quantity-prefix",
+        "text": "para"
+      },
+      "expected": {
+        "quantity": 1,
+        "query": "para"
+      }
+    },
+    {
+      "name": "prefijo de cantidad · una x no es asterisco",
+      "input": {
+        "check": "quantity-prefix",
+        "text": "3x para"
+      },
+      "expected": {
+        "quantity": 1,
+        "query": "3x para"
+      }
+    },
+    {
+      "name": "prefijo de cantidad · dígitos de otro alfabeto no son cantidad (revisión 20: antes tronaba)",
+      "input": {
+        "check": "quantity-prefix",
+        "text": "٣*para"
+      },
+      "expected": {
+        "quantity": 1,
+        "query": "٣*para"
+      }
+    },
+    {
+      "name": "prefijo de cantidad · dígitos de ancho completo tampoco",
+      "input": {
+        "check": "quantity-prefix",
+        "text": "３*gasa"
+      },
+      "expected": {
+        "quantity": 1,
+        "query": "３*gasa"
+      }
+    },
+    {
+      "name": "prefijo de cantidad · vacío",
+      "input": {
+        "check": "quantity-prefix",
+        "text": ""
+      },
+      "expected": {
+        "quantity": 1,
+        "query": ""
+      }
+    },
+    {
+      "name": "prefijo de cantidad · nulo",
+      "input": {
+        "check": "quantity-prefix",
+        "text": null
+      },
+      "expected": {
+        "quantity": 1,
+        "query": ""
+      }
+    },
+    {
+      "name": "Punto de venta · el código exacto primero (lector de código de barras)",
+      "input": {
+        "check": "pos",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": "7501234567890"
+      },
+      "expected": {
+        "quantity": 1,
+        "ids": [
+          9
+        ]
+      }
+    },
+    {
+      "name": "Punto de venta · el código exacto sin distinguir mayúsculas",
+      "input": {
+        "check": "pos",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": "med-003"
+      },
+      "expected": {
+        "quantity": 1,
+        "ids": [
+          3
+        ]
+      }
+    },
+    {
+      "name": "Punto de venta · nombre que empieza así antes que genérico; dentro del grupo, con existencias primero",
+      "input": {
+        "check": "pos",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": "para"
+      },
+      "expected": {
+        "quantity": 1,
+        "ids": [
+          3,
+          1,
+          10,
+          2
+        ]
+      }
+    },
+    {
+      "name": "Punto de venta · el prefijo 3* busca lo que sigue",
+      "input": {
+        "check": "pos",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": "3*para"
+      },
+      "expected": {
+        "quantity": 3,
+        "ids": [
+          3,
+          1,
+          10,
+          2
+        ]
+      }
+    },
+    {
+      "name": "Punto de venta · una palabra del nombre",
+      "input": {
+        "check": "pos",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": "infantil"
+      },
+      "expected": {
+        "quantity": 1,
+        "ids": [
+          2
+        ]
+      }
+    },
+    {
+      "name": "Punto de venta · la ubicación solo en el último grupo",
+      "input": {
+        "check": "pos",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": "botiquin"
+      },
+      "expected": {
+        "quantity": 1,
+        "ids": [
+          4
+        ]
+      }
+    },
+    {
+      "name": "Punto de venta · desempate es-MX con acentos (Abatelenguas, Ácido bórico, Agua inyectable; en orden ordinal Á iría al final)",
+      "input": {
+        "check": "pos",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": "a"
+      },
+      "expected": {
+        "quantity": 1,
+        "ids": [
+          7,
+          6,
+          8,
+          4,
+          3,
+          1,
+          9,
+          5
+        ]
+      }
+    },
+    {
+      "name": "Punto de venta · ocho como mucho",
+      "input": {
+        "check": "pos",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": "e"
+      },
+      "expected": {
+        "quantity": 1,
+        "ids": [
+          4,
+          9,
+          7,
+          6,
+          8,
+          3,
+          1,
+          5
+        ]
+      }
+    },
+    {
+      "name": "Punto de venta · sin límite (el catálogo del Punto de venta)",
+      "input": {
+        "check": "pos",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": "e",
+        "limit": -1
+      },
+      "expected": {
+        "quantity": 1,
+        "ids": [
+          4,
+          9,
+          7,
+          6,
+          8,
+          3,
+          1,
+          5,
+          10,
+          2
+        ]
+      }
+    },
+    {
+      "name": "Punto de venta · sin texto: nada",
+      "input": {
+        "check": "pos",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": "  "
+      },
+      "expected": {
+        "quantity": 1,
+        "ids": []
+      }
+    },
+    {
+      "name": "Punto de venta · los inactivos también (quien llama los quita)",
+      "input": {
+        "check": "pos",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": "agua"
+      },
+      "expected": {
+        "quantity": 1,
+        "ids": [
+          8
+        ]
+      }
+    },
+    {
+      "name": "catálogo del Punto de venta · sin texto: todos por nombre (es-MX)",
+      "input": {
+        "check": "pos-catalog",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00",
+            "categoryId": 1
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50",
+            "categoryId": 1
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00",
+            "categoryId": 1
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00",
+            "categoryId": 2
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00",
+            "categoryId": 2
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00",
+            "categoryId": 2
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00",
+            "categoryId": 2
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00",
+            "categoryId": 2
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00",
+            "categoryId": 2
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00",
+            "categoryId": 1
+          }
+        ],
+        "categoryId": null,
+        "text": ""
+      },
+      "expected": [
+        7,
+        6,
+        8,
+        4,
+        5,
+        3,
+        10,
+        1,
+        2,
+        9
+      ]
+    },
+    {
+      "name": "catálogo del Punto de venta · con una categoría",
+      "input": {
+        "check": "pos-catalog",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00",
+            "categoryId": 1
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50",
+            "categoryId": 1
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00",
+            "categoryId": 1
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00",
+            "categoryId": 2
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00",
+            "categoryId": 2
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00",
+            "categoryId": 2
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00",
+            "categoryId": 2
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00",
+            "categoryId": 2
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00",
+            "categoryId": 2
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00",
+            "categoryId": 1
+          }
+        ],
+        "categoryId": 2,
+        "text": ""
+      },
+      "expected": [
+        7,
+        6,
+        8,
+        4,
+        5,
+        9
+      ]
+    },
+    {
+      "name": "catálogo del Punto de venta · con texto: la búsqueda sin límite",
+      "input": {
+        "check": "pos-catalog",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00",
+            "categoryId": 1
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50",
+            "categoryId": 1
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00",
+            "categoryId": 1
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00",
+            "categoryId": 2
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00",
+            "categoryId": 2
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00",
+            "categoryId": 2
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00",
+            "categoryId": 2
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00",
+            "categoryId": 2
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00",
+            "categoryId": 2
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00",
+            "categoryId": 1
+          }
+        ],
+        "categoryId": null,
+        "text": "para"
+      },
+      "expected": [
+        3,
+        1,
+        10,
+        2
+      ]
+    },
+    {
+      "name": "catálogo del Punto de venta · categoría y texto",
+      "input": {
+        "check": "pos-catalog",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00",
+            "categoryId": 1
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50",
+            "categoryId": 1
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00",
+            "categoryId": 1
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00",
+            "categoryId": 2
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00",
+            "categoryId": 2
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00",
+            "categoryId": 2
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00",
+            "categoryId": 2
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00",
+            "categoryId": 2
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00",
+            "categoryId": 2
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00",
+            "categoryId": 1
+          }
+        ],
+        "categoryId": 1,
+        "text": "para"
+      },
+      "expected": [
+        3,
+        1,
+        10,
+        2
+      ]
+    },
+    {
+      "name": "insumos de un servicio · solo insumos activos (no el agua inactiva ni los medicamentos)",
+      "input": {
+        "check": "service-supplies",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": "a"
+      },
+      "expected": [
+        7,
+        6,
+        4,
+        9,
+        5
+      ]
+    },
+    {
+      "name": "insumos de un servicio · con existencias primero dentro del grupo (la jeringa sin piezas al final)",
+      "input": {
+        "check": "service-supplies",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": "s"
+      },
+      "expected": [
+        7,
+        6,
+        4,
+        9,
+        5
+      ]
+    },
+    {
+      "name": "insumos de un servicio · sin texto: nada",
+      "input": {
+        "check": "service-supplies",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": ""
+      },
+      "expected": []
+    },
+    {
+      "name": "hoja de insumos · sin texto: los primeros 20 insumos en el orden del catálogo (también inactivos)",
+      "input": {
+        "check": "supplies-sheet",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": ""
+      },
+      "expected": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "name": "hoja de insumos · contiene, en el orden del catálogo",
+      "input": {
+        "check": "supplies-sheet",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": "a"
+      },
+      "expected": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "name": "hoja de insumos · por código",
+      "input": {
+        "check": "supplies-sheet",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": "cur-01"
+      },
+      "expected": [
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "name": "hoja de insumos · la ubicación no cuenta aquí",
+      "input": {
+        "check": "supplies-sheet",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": "botiquin"
+      },
+      "expected": []
+    },
+    {
+      "name": "catálogo de insumos de la consulta · sin texto: todos los insumos por nombre (es-MX)",
+      "input": {
+        "check": "browser-supplies",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": null
+      },
+      "expected": [
+        7,
+        6,
+        8,
+        4,
+        5,
+        9
+      ]
+    },
+    {
+      "name": "catálogo de insumos de la consulta · también por presentación",
+      "input": {
+        "check": "browser-supplies",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "genericName": "Paracetamol",
+            "presentation": "Caja con 20 tabletas",
+            "stock": 45,
+            "category": "Medicamentos",
+            "location": "Vitrina A",
+            "price": "45.00"
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Tempra Infantil",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco 120 ml",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "89.50"
+          },
+          {
+            "id": 3,
+            "code": "MED-003",
+            "name": "Para-Dol",
+            "genericName": "Ibuprofeno",
+            "presentation": "Caja con 10 tabletas",
+            "stock": 3,
+            "category": "Medicamentos",
+            "price": "40.00"
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Gasa Estéril 10x10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Sobre con 5 piezas",
+            "stock": 120,
+            "category": "Material de curación",
+            "location": "Botiquín 2",
+            "price": "18.00"
+          },
+          {
+            "id": 5,
+            "code": "INS-002",
+            "name": "Jeringa 5 ml",
+            "genericName": "Insumo Descartable",
+            "presentation": "Pieza",
+            "stock": 0,
+            "category": "Insumos",
+            "price": "12.00"
+          },
+          {
+            "id": 6,
+            "code": "CUR-010",
+            "name": "Ácido bórico",
+            "genericName": "Antiséptico",
+            "presentation": "Frasco 60 ml",
+            "stock": 8,
+            "category": "Antisépticos",
+            "price": "35.00"
+          },
+          {
+            "id": 7,
+            "code": "CUR-011",
+            "name": "Abatelenguas",
+            "presentation": "Paquete con 100",
+            "stock": 30,
+            "category": "Material de curación",
+            "price": "60.00"
+          },
+          {
+            "id": 8,
+            "code": "CUR-012",
+            "name": "Agua inyectable",
+            "presentation": "Ampolleta 5 ml",
+            "stock": 12,
+            "category": "Material de curación",
+            "active": false,
+            "price": "8.00"
+          },
+          {
+            "id": 9,
+            "code": "7501234567890",
+            "name": "Venda elástica 10 cm",
+            "genericName": "Material de Curación",
+            "presentation": "Rollo 5 m",
+            "stock": 40,
+            "category": "Material de curación",
+            "price": "25.00"
+          },
+          {
+            "id": 10,
+            "code": "MED-010",
+            "name": "Paracetamol 120 mg/5 ml",
+            "genericName": "Paracetamol",
+            "presentation": "Frasco gotas",
+            "stock": 0,
+            "category": "Medicamentos",
+            "price": "52.00"
+          }
+        ],
+        "text": "ampolleta"
+      },
+      "expected": [
+        8
+      ]
+    }
+  ]
+}

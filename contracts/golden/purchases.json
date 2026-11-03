@@ -1,0 +1,987 @@
+{
+  "rule": "purchases",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "«Compras» del panel «Negocio» (Services/Rules/BusinessStockRules.cs). Entradas: products como en business-summary.json y movements ({productId, date en hora del consultorio, type (MovementType), quantity, unitCost (InventoryMovements.UnitCost, revisión 18; falta = fila de antes), reason}).",
+    "supplier: el motivo de un pedido es 'Pedido', 'Pedido {proveedor}' o 'Pedido {proveedor} #{número}' (InventoryService.SupplierOrderReason): isOrder si empieza con 'Pedido' seguido de nada o de un espacio; supplier = lo que va entre 'Pedido ' y ' #', 'Pedido sin proveedor' si no hay, y 'Entrada sin pedido' para cualquier otra entrada (un lote recibido, una entrada a mano).",
+    "purchases: los EntradaCompra del periodo (y del type de su producto si se da; Consultas y Servicios no tienen). Costo: quantity × unitCost (guardado) o quantity × el costo de hoy con IVA (estimado) o 0 (sin costo). orders = motivos distintos de pedido; bySupplier de mayor a menor costo y luego por nombre (es-MX); byType en el orden Medicamentos, Insumos, Otros. Importes sin redondear (cantidad × costo de dos decimales es exacto), escritos con 2 decimales."
+  ],
+  "cases": [
+    {
+      "name": "proveedor · «Pedido LUIN #5175»",
+      "input": {
+        "check": "supplier",
+        "reason": "Pedido LUIN #5175"
+      },
+      "expected": {
+        "isOrder": true,
+        "supplier": "LUIN"
+      }
+    },
+    {
+      "name": "proveedor · «Pedido Distribuidora Médica del Norte #A-12»",
+      "input": {
+        "check": "supplier",
+        "reason": "Pedido Distribuidora Médica del Norte #A-12"
+      },
+      "expected": {
+        "isOrder": true,
+        "supplier": "Distribuidora Médica del Norte"
+      }
+    },
+    {
+      "name": "proveedor · «Pedido LUIN»",
+      "input": {
+        "check": "supplier",
+        "reason": "Pedido LUIN"
+      },
+      "expected": {
+        "isOrder": true,
+        "supplier": "LUIN"
+      }
+    },
+    {
+      "name": "proveedor · «Pedido #5175»",
+      "input": {
+        "check": "supplier",
+        "reason": "Pedido #5175"
+      },
+      "expected": {
+        "isOrder": true,
+        "supplier": "Pedido sin proveedor"
+      }
+    },
+    {
+      "name": "proveedor · «Pedido»",
+      "input": {
+        "check": "supplier",
+        "reason": "Pedido"
+      },
+      "expected": {
+        "isOrder": true,
+        "supplier": "Pedido sin proveedor"
+      }
+    },
+    {
+      "name": "proveedor · «Entrada de lote L-2026-10»",
+      "input": {
+        "check": "supplier",
+        "reason": "Entrada de lote L-2026-10"
+      },
+      "expected": {
+        "isOrder": false,
+        "supplier": "Entrada sin pedido"
+      }
+    },
+    {
+      "name": "proveedor · «Compra en farmacia»",
+      "input": {
+        "check": "supplier",
+        "reason": "Compra en farmacia"
+      },
+      "expected": {
+        "isOrder": false,
+        "supplier": "Entrada sin pedido"
+      }
+    },
+    {
+      "name": "proveedor · «Pedidos varios»",
+      "input": {
+        "check": "supplier",
+        "reason": "Pedidos varios"
+      },
+      "expected": {
+        "isOrder": false,
+        "supplier": "Entrada sin pedido"
+      }
+    },
+    {
+      "name": "proveedor · «»",
+      "input": {
+        "check": "supplier",
+        "reason": ""
+      },
+      "expected": {
+        "isOrder": false,
+        "supplier": "Entrada sin pedido"
+      }
+    },
+    {
+      "name": "compras · octubre",
+      "input": {
+        "check": "purchases",
+        "period": {
+          "from": "2026-10-01",
+          "to": "2026-11-01"
+        },
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "stock": 30,
+            "category": "Medicamentos",
+            "price": "45",
+            "unitCost": "20",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Amoxicilina 500 mg",
+            "stock": 10,
+            "category": "Medicamentos",
+            "price": "120",
+            "unitCost": "70",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 3,
+            "code": "CUR-001",
+            "name": "Gasas estériles 10x10",
+            "stock": 5,
+            "category": "Material de Curación",
+            "price": "60",
+            "unitCost": "30",
+            "costExcludesVat": true,
+            "unitsPerPackage": 10
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Jeringa 5 ml",
+            "stock": 50,
+            "category": "Insumos",
+            "price": "8",
+            "unitCost": "0",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 5,
+            "code": "MED-003",
+            "name": "Ketorolaco ampolleta 30 mg",
+            "stock": 4,
+            "category": "Medicamentos",
+            "price": "90",
+            "unitCost": "35.5",
+            "costExcludesVat": false,
+            "unitsPerPackage": 3
+          },
+          {
+            "id": 6,
+            "code": "ANT-001",
+            "name": "Ácido acético 3 %",
+            "stock": 0,
+            "category": "Antisépticos",
+            "active": false,
+            "price": "40",
+            "unitCost": "12",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          }
+        ],
+        "movements": [
+          {
+            "productId": 1,
+            "date": "2026-10-02 09:00",
+            "type": "EntradaCompra",
+            "quantity": 50,
+            "unitCost": "20",
+            "reason": "Pedido LUIN #5175"
+          },
+          {
+            "productId": 3,
+            "date": "2026-10-02 09:00",
+            "type": "EntradaCompra",
+            "quantity": 10,
+            "unitCost": "34.80",
+            "reason": "Pedido LUIN #5175"
+          },
+          {
+            "productId": 2,
+            "date": "2026-10-03 10:00",
+            "type": "EntradaCompra",
+            "quantity": 5,
+            "reason": "Entrada de lote AMX-77"
+          },
+          {
+            "productId": 4,
+            "date": "2026-10-03 10:00",
+            "type": "EntradaCompra",
+            "quantity": 100,
+            "reason": "Pedido Proveedora del Bajío #88"
+          },
+          {
+            "productId": 5,
+            "date": "2026-10-15 18:00",
+            "type": "EntradaCompra",
+            "quantity": 3,
+            "unitCost": "35.5",
+            "reason": "Pedido Proveedora del Bajío #91"
+          },
+          {
+            "productId": 1,
+            "date": "2026-10-20 08:00",
+            "type": "SalidaConsulta",
+            "quantity": 2,
+            "unitCost": "20",
+            "reason": "Uso en consulta"
+          },
+          {
+            "productId": 2,
+            "date": "2026-09-28 10:00",
+            "type": "EntradaCompra",
+            "quantity": 4,
+            "unitCost": "70",
+            "reason": "Pedido LUIN #5100"
+          },
+          {
+            "productId": 2,
+            "date": "2026-11-01 00:05",
+            "type": "EntradaCompra",
+            "quantity": 4,
+            "unitCost": "70",
+            "reason": "Pedido LUIN #5200"
+          }
+        ]
+      },
+      "expected": {
+        "entries": 5,
+        "orders": 3,
+        "units": 168,
+        "cost": "1804.50",
+        "estimatedCostLines": 1,
+        "missingCostLines": 1,
+        "bySupplier": [
+          {
+            "supplier": "LUIN",
+            "entries": 2,
+            "units": 60,
+            "cost": "1348.00",
+            "estimatedCostLines": 0
+          },
+          {
+            "supplier": "Entrada sin pedido",
+            "entries": 1,
+            "units": 5,
+            "cost": "350.00",
+            "estimatedCostLines": 1
+          },
+          {
+            "supplier": "Proveedora del Bajío",
+            "entries": 2,
+            "units": 103,
+            "cost": "106.50",
+            "estimatedCostLines": 0
+          }
+        ],
+        "byType": [
+          {
+            "type": "Medicamentos",
+            "name": "Medicamentos",
+            "entries": 3,
+            "units": 58,
+            "cost": "1456.50"
+          },
+          {
+            "type": "Insumos",
+            "name": "Insumos",
+            "entries": 2,
+            "units": 110,
+            "cost": "348.00"
+          }
+        ]
+      }
+    },
+    {
+      "name": "compras · octubre, solo Medicamentos",
+      "input": {
+        "check": "purchases",
+        "period": {
+          "from": "2026-10-01",
+          "to": "2026-11-01"
+        },
+        "type": "Medicamentos",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "stock": 30,
+            "category": "Medicamentos",
+            "price": "45",
+            "unitCost": "20",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Amoxicilina 500 mg",
+            "stock": 10,
+            "category": "Medicamentos",
+            "price": "120",
+            "unitCost": "70",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 3,
+            "code": "CUR-001",
+            "name": "Gasas estériles 10x10",
+            "stock": 5,
+            "category": "Material de Curación",
+            "price": "60",
+            "unitCost": "30",
+            "costExcludesVat": true,
+            "unitsPerPackage": 10
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Jeringa 5 ml",
+            "stock": 50,
+            "category": "Insumos",
+            "price": "8",
+            "unitCost": "0",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 5,
+            "code": "MED-003",
+            "name": "Ketorolaco ampolleta 30 mg",
+            "stock": 4,
+            "category": "Medicamentos",
+            "price": "90",
+            "unitCost": "35.5",
+            "costExcludesVat": false,
+            "unitsPerPackage": 3
+          },
+          {
+            "id": 6,
+            "code": "ANT-001",
+            "name": "Ácido acético 3 %",
+            "stock": 0,
+            "category": "Antisépticos",
+            "active": false,
+            "price": "40",
+            "unitCost": "12",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          }
+        ],
+        "movements": [
+          {
+            "productId": 1,
+            "date": "2026-10-02 09:00",
+            "type": "EntradaCompra",
+            "quantity": 50,
+            "unitCost": "20",
+            "reason": "Pedido LUIN #5175"
+          },
+          {
+            "productId": 3,
+            "date": "2026-10-02 09:00",
+            "type": "EntradaCompra",
+            "quantity": 10,
+            "unitCost": "34.80",
+            "reason": "Pedido LUIN #5175"
+          },
+          {
+            "productId": 2,
+            "date": "2026-10-03 10:00",
+            "type": "EntradaCompra",
+            "quantity": 5,
+            "reason": "Entrada de lote AMX-77"
+          },
+          {
+            "productId": 4,
+            "date": "2026-10-03 10:00",
+            "type": "EntradaCompra",
+            "quantity": 100,
+            "reason": "Pedido Proveedora del Bajío #88"
+          },
+          {
+            "productId": 5,
+            "date": "2026-10-15 18:00",
+            "type": "EntradaCompra",
+            "quantity": 3,
+            "unitCost": "35.5",
+            "reason": "Pedido Proveedora del Bajío #91"
+          },
+          {
+            "productId": 1,
+            "date": "2026-10-20 08:00",
+            "type": "SalidaConsulta",
+            "quantity": 2,
+            "unitCost": "20",
+            "reason": "Uso en consulta"
+          },
+          {
+            "productId": 2,
+            "date": "2026-09-28 10:00",
+            "type": "EntradaCompra",
+            "quantity": 4,
+            "unitCost": "70",
+            "reason": "Pedido LUIN #5100"
+          },
+          {
+            "productId": 2,
+            "date": "2026-11-01 00:05",
+            "type": "EntradaCompra",
+            "quantity": 4,
+            "unitCost": "70",
+            "reason": "Pedido LUIN #5200"
+          }
+        ]
+      },
+      "expected": {
+        "entries": 3,
+        "orders": 2,
+        "units": 58,
+        "cost": "1456.50",
+        "estimatedCostLines": 1,
+        "missingCostLines": 0,
+        "bySupplier": [
+          {
+            "supplier": "LUIN",
+            "entries": 1,
+            "units": 50,
+            "cost": "1000.00",
+            "estimatedCostLines": 0
+          },
+          {
+            "supplier": "Entrada sin pedido",
+            "entries": 1,
+            "units": 5,
+            "cost": "350.00",
+            "estimatedCostLines": 1
+          },
+          {
+            "supplier": "Proveedora del Bajío",
+            "entries": 1,
+            "units": 3,
+            "cost": "106.50",
+            "estimatedCostLines": 0
+          }
+        ],
+        "byType": [
+          {
+            "type": "Medicamentos",
+            "name": "Medicamentos",
+            "entries": 3,
+            "units": 58,
+            "cost": "1456.50"
+          }
+        ]
+      }
+    },
+    {
+      "name": "compras · octubre, solo Insumos",
+      "input": {
+        "check": "purchases",
+        "period": {
+          "from": "2026-10-01",
+          "to": "2026-11-01"
+        },
+        "type": "Insumos",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "stock": 30,
+            "category": "Medicamentos",
+            "price": "45",
+            "unitCost": "20",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Amoxicilina 500 mg",
+            "stock": 10,
+            "category": "Medicamentos",
+            "price": "120",
+            "unitCost": "70",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 3,
+            "code": "CUR-001",
+            "name": "Gasas estériles 10x10",
+            "stock": 5,
+            "category": "Material de Curación",
+            "price": "60",
+            "unitCost": "30",
+            "costExcludesVat": true,
+            "unitsPerPackage": 10
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Jeringa 5 ml",
+            "stock": 50,
+            "category": "Insumos",
+            "price": "8",
+            "unitCost": "0",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 5,
+            "code": "MED-003",
+            "name": "Ketorolaco ampolleta 30 mg",
+            "stock": 4,
+            "category": "Medicamentos",
+            "price": "90",
+            "unitCost": "35.5",
+            "costExcludesVat": false,
+            "unitsPerPackage": 3
+          },
+          {
+            "id": 6,
+            "code": "ANT-001",
+            "name": "Ácido acético 3 %",
+            "stock": 0,
+            "category": "Antisépticos",
+            "active": false,
+            "price": "40",
+            "unitCost": "12",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          }
+        ],
+        "movements": [
+          {
+            "productId": 1,
+            "date": "2026-10-02 09:00",
+            "type": "EntradaCompra",
+            "quantity": 50,
+            "unitCost": "20",
+            "reason": "Pedido LUIN #5175"
+          },
+          {
+            "productId": 3,
+            "date": "2026-10-02 09:00",
+            "type": "EntradaCompra",
+            "quantity": 10,
+            "unitCost": "34.80",
+            "reason": "Pedido LUIN #5175"
+          },
+          {
+            "productId": 2,
+            "date": "2026-10-03 10:00",
+            "type": "EntradaCompra",
+            "quantity": 5,
+            "reason": "Entrada de lote AMX-77"
+          },
+          {
+            "productId": 4,
+            "date": "2026-10-03 10:00",
+            "type": "EntradaCompra",
+            "quantity": 100,
+            "reason": "Pedido Proveedora del Bajío #88"
+          },
+          {
+            "productId": 5,
+            "date": "2026-10-15 18:00",
+            "type": "EntradaCompra",
+            "quantity": 3,
+            "unitCost": "35.5",
+            "reason": "Pedido Proveedora del Bajío #91"
+          },
+          {
+            "productId": 1,
+            "date": "2026-10-20 08:00",
+            "type": "SalidaConsulta",
+            "quantity": 2,
+            "unitCost": "20",
+            "reason": "Uso en consulta"
+          },
+          {
+            "productId": 2,
+            "date": "2026-09-28 10:00",
+            "type": "EntradaCompra",
+            "quantity": 4,
+            "unitCost": "70",
+            "reason": "Pedido LUIN #5100"
+          },
+          {
+            "productId": 2,
+            "date": "2026-11-01 00:05",
+            "type": "EntradaCompra",
+            "quantity": 4,
+            "unitCost": "70",
+            "reason": "Pedido LUIN #5200"
+          }
+        ]
+      },
+      "expected": {
+        "entries": 2,
+        "orders": 2,
+        "units": 110,
+        "cost": "348.00",
+        "estimatedCostLines": 0,
+        "missingCostLines": 1,
+        "bySupplier": [
+          {
+            "supplier": "LUIN",
+            "entries": 1,
+            "units": 10,
+            "cost": "348.00",
+            "estimatedCostLines": 0
+          },
+          {
+            "supplier": "Proveedora del Bajío",
+            "entries": 1,
+            "units": 100,
+            "cost": "0.00",
+            "estimatedCostLines": 0
+          }
+        ],
+        "byType": [
+          {
+            "type": "Insumos",
+            "name": "Insumos",
+            "entries": 2,
+            "units": 110,
+            "cost": "348.00"
+          }
+        ]
+      }
+    },
+    {
+      "name": "compras · Consultas no tiene compras",
+      "input": {
+        "check": "purchases",
+        "period": {
+          "from": "2026-10-01",
+          "to": "2026-11-01"
+        },
+        "type": "Consultas",
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "stock": 30,
+            "category": "Medicamentos",
+            "price": "45",
+            "unitCost": "20",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Amoxicilina 500 mg",
+            "stock": 10,
+            "category": "Medicamentos",
+            "price": "120",
+            "unitCost": "70",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 3,
+            "code": "CUR-001",
+            "name": "Gasas estériles 10x10",
+            "stock": 5,
+            "category": "Material de Curación",
+            "price": "60",
+            "unitCost": "30",
+            "costExcludesVat": true,
+            "unitsPerPackage": 10
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Jeringa 5 ml",
+            "stock": 50,
+            "category": "Insumos",
+            "price": "8",
+            "unitCost": "0",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 5,
+            "code": "MED-003",
+            "name": "Ketorolaco ampolleta 30 mg",
+            "stock": 4,
+            "category": "Medicamentos",
+            "price": "90",
+            "unitCost": "35.5",
+            "costExcludesVat": false,
+            "unitsPerPackage": 3
+          },
+          {
+            "id": 6,
+            "code": "ANT-001",
+            "name": "Ácido acético 3 %",
+            "stock": 0,
+            "category": "Antisépticos",
+            "active": false,
+            "price": "40",
+            "unitCost": "12",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          }
+        ],
+        "movements": [
+          {
+            "productId": 1,
+            "date": "2026-10-02 09:00",
+            "type": "EntradaCompra",
+            "quantity": 50,
+            "unitCost": "20",
+            "reason": "Pedido LUIN #5175"
+          },
+          {
+            "productId": 3,
+            "date": "2026-10-02 09:00",
+            "type": "EntradaCompra",
+            "quantity": 10,
+            "unitCost": "34.80",
+            "reason": "Pedido LUIN #5175"
+          },
+          {
+            "productId": 2,
+            "date": "2026-10-03 10:00",
+            "type": "EntradaCompra",
+            "quantity": 5,
+            "reason": "Entrada de lote AMX-77"
+          },
+          {
+            "productId": 4,
+            "date": "2026-10-03 10:00",
+            "type": "EntradaCompra",
+            "quantity": 100,
+            "reason": "Pedido Proveedora del Bajío #88"
+          },
+          {
+            "productId": 5,
+            "date": "2026-10-15 18:00",
+            "type": "EntradaCompra",
+            "quantity": 3,
+            "unitCost": "35.5",
+            "reason": "Pedido Proveedora del Bajío #91"
+          },
+          {
+            "productId": 1,
+            "date": "2026-10-20 08:00",
+            "type": "SalidaConsulta",
+            "quantity": 2,
+            "unitCost": "20",
+            "reason": "Uso en consulta"
+          },
+          {
+            "productId": 2,
+            "date": "2026-09-28 10:00",
+            "type": "EntradaCompra",
+            "quantity": 4,
+            "unitCost": "70",
+            "reason": "Pedido LUIN #5100"
+          },
+          {
+            "productId": 2,
+            "date": "2026-11-01 00:05",
+            "type": "EntradaCompra",
+            "quantity": 4,
+            "unitCost": "70",
+            "reason": "Pedido LUIN #5200"
+          }
+        ]
+      },
+      "expected": {
+        "entries": 0,
+        "orders": 0,
+        "units": 0,
+        "cost": "0.00",
+        "estimatedCostLines": 0,
+        "missingCostLines": 0,
+        "bySupplier": [],
+        "byType": []
+      }
+    },
+    {
+      "name": "compras · septiembre",
+      "input": {
+        "check": "purchases",
+        "period": {
+          "from": "2026-09-01",
+          "to": "2026-10-01"
+        },
+        "products": [
+          {
+            "id": 1,
+            "code": "MED-001",
+            "name": "Paracetamol 500 mg",
+            "stock": 30,
+            "category": "Medicamentos",
+            "price": "45",
+            "unitCost": "20",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 2,
+            "code": "MED-002",
+            "name": "Amoxicilina 500 mg",
+            "stock": 10,
+            "category": "Medicamentos",
+            "price": "120",
+            "unitCost": "70",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 3,
+            "code": "CUR-001",
+            "name": "Gasas estériles 10x10",
+            "stock": 5,
+            "category": "Material de Curación",
+            "price": "60",
+            "unitCost": "30",
+            "costExcludesVat": true,
+            "unitsPerPackage": 10
+          },
+          {
+            "id": 4,
+            "code": "INS-001",
+            "name": "Jeringa 5 ml",
+            "stock": 50,
+            "category": "Insumos",
+            "price": "8",
+            "unitCost": "0",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          },
+          {
+            "id": 5,
+            "code": "MED-003",
+            "name": "Ketorolaco ampolleta 30 mg",
+            "stock": 4,
+            "category": "Medicamentos",
+            "price": "90",
+            "unitCost": "35.5",
+            "costExcludesVat": false,
+            "unitsPerPackage": 3
+          },
+          {
+            "id": 6,
+            "code": "ANT-001",
+            "name": "Ácido acético 3 %",
+            "stock": 0,
+            "category": "Antisépticos",
+            "active": false,
+            "price": "40",
+            "unitCost": "12",
+            "costExcludesVat": false,
+            "unitsPerPackage": 1
+          }
+        ],
+        "movements": [
+          {
+            "productId": 1,
+            "date": "2026-10-02 09:00",
+            "type": "EntradaCompra",
+            "quantity": 50,
+            "unitCost": "20",
+            "reason": "Pedido LUIN #5175"
+          },
+          {
+            "productId": 3,
+            "date": "2026-10-02 09:00",
+            "type": "EntradaCompra",
+            "quantity": 10,
+            "unitCost": "34.80",
+            "reason": "Pedido LUIN #5175"
+          },
+          {
+            "productId": 2,
+            "date": "2026-10-03 10:00",
+            "type": "EntradaCompra",
+            "quantity": 5,
+            "reason": "Entrada de lote AMX-77"
+          },
+          {
+            "productId": 4,
+            "date": "2026-10-03 10:00",
+            "type": "EntradaCompra",
+            "quantity": 100,
+            "reason": "Pedido Proveedora del Bajío #88"
+          },
+          {
+            "productId": 5,
+            "date": "2026-10-15 18:00",
+            "type": "EntradaCompra",
+            "quantity": 3,
+            "unitCost": "35.5",
+            "reason": "Pedido Proveedora del Bajío #91"
+          },
+          {
+            "productId": 1,
+            "date": "2026-10-20 08:00",
+            "type": "SalidaConsulta",
+            "quantity": 2,
+            "unitCost": "20",
+            "reason": "Uso en consulta"
+          },
+          {
+            "productId": 2,
+            "date": "2026-09-28 10:00",
+            "type": "EntradaCompra",
+            "quantity": 4,
+            "unitCost": "70",
+            "reason": "Pedido LUIN #5100"
+          },
+          {
+            "productId": 2,
+            "date": "2026-11-01 00:05",
+            "type": "EntradaCompra",
+            "quantity": 4,
+            "unitCost": "70",
+            "reason": "Pedido LUIN #5200"
+          }
+        ]
+      },
+      "expected": {
+        "entries": 1,
+        "orders": 1,
+        "units": 4,
+        "cost": "280.00",
+        "estimatedCostLines": 0,
+        "missingCostLines": 0,
+        "bySupplier": [
+          {
+            "supplier": "LUIN",
+            "entries": 1,
+            "units": 4,
+            "cost": "280.00",
+            "estimatedCostLines": 0
+          }
+        ],
+        "byType": [
+          {
+            "type": "Medicamentos",
+            "name": "Medicamentos",
+            "entries": 1,
+            "units": 4,
+            "cost": "280.00"
+          }
+        ]
+      }
+    }
+  ]
+}

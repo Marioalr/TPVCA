@@ -1,0 +1,164 @@
+{
+  "rule": "suggested-purchase",
+  "culture": "es-MX",
+  "today": null,
+  "now": null,
+  "contract": 20,
+  "notes": [
+    "Services/Rules/SuggestedPurchaseRules.cs. Entran los productos con stock bajo (activo, MinStock > 0 y CurrentStock <= MinStock).",
+    "Cantidad: max(2 × MinStock − CurrentStock, MinStock).",
+    "Costo: el capturado; si no incluye IVA, × 1.16 redondeado a centavos con el medio hacia arriba (AwayFromZero: 0.145 da 0.15). Sin costo: el precio × 0.65 redondeado a centavos al par (ToEven, HALF_EVEN en Kotlin: 6.565 da 6.56 y 0.195 da 0.20); sin costo ni precio, 25.00. costEstimated dice si salió del precio.",
+    "Categoría: 'General' si no tiene. Motivo: 'Agotado en consultorio' con 0; si no, 'Stock bajo (N de M mín.)'.",
+    "Orden: CurrentStock y luego el nombre con el orden de es-MX (Collator: Abatelenguas, Ácido fólico, Agua inyectable; por código Unicode, Ácido quedaría al final).",
+    "unitCostText: el costo con formato de moneda es-MX ('$6.56'), con '≈ ' delante si es estimado."
+  ],
+  "cases": [
+    {
+      "name": "lista de productos con stock bajo",
+      "input": {
+        "products": [
+          {
+            "code": "AGU",
+            "name": "Agua inyectable 5 ml",
+            "category": "Medicamentos",
+            "active": true,
+            "price": "10.10",
+            "unitCost": "0",
+            "costExcludesVat": false,
+            "minStock": 10,
+            "currentStock": 3
+          },
+          {
+            "code": "ABA",
+            "name": "Abatelenguas",
+            "category": null,
+            "active": true,
+            "price": "1",
+            "unitCost": "0.125",
+            "costExcludesVat": true,
+            "minStock": 10,
+            "currentStock": 3
+          },
+          {
+            "code": "ACI",
+            "name": "Ácido fólico 5 mg",
+            "category": "Medicamentos",
+            "active": true,
+            "price": "0.30",
+            "unitCost": "0",
+            "costExcludesVat": false,
+            "minStock": 10,
+            "currentStock": 3
+          },
+          {
+            "code": "PAR",
+            "name": "Paracetamol 500 mg",
+            "category": "Medicamentos",
+            "active": true,
+            "price": "25",
+            "unitCost": "12.50",
+            "costExcludesVat": false,
+            "minStock": 20,
+            "currentStock": 0
+          },
+          {
+            "code": "GAS",
+            "name": "Gasas estériles",
+            "category": null,
+            "active": true,
+            "price": "0",
+            "unitCost": "0",
+            "costExcludesVat": false,
+            "minStock": 4,
+            "currentStock": 4
+          },
+          {
+            "code": "OME",
+            "name": "Omeprazol 20 mg",
+            "category": null,
+            "active": true,
+            "price": "40",
+            "unitCost": "0",
+            "costExcludesVat": false,
+            "minStock": 5,
+            "currentStock": 6
+          },
+          {
+            "code": "IBU",
+            "name": "Ibuprofeno 400 mg",
+            "category": null,
+            "active": false,
+            "price": "30",
+            "unitCost": "0",
+            "costExcludesVat": false,
+            "minStock": 5,
+            "currentStock": 1
+          },
+          {
+            "code": "LOR",
+            "name": "Loratadina 10 mg",
+            "category": null,
+            "active": true,
+            "price": "35",
+            "unitCost": "0",
+            "costExcludesVat": false,
+            "minStock": 0,
+            "currentStock": 0
+          }
+        ]
+      },
+      "expected": [
+        {
+          "code": "PAR",
+          "category": "Medicamentos",
+          "suggestedQuantity": 40,
+          "unitCost": "12.50",
+          "costEstimated": false,
+          "totalCost": "500.00",
+          "unitCostText": "$12.50",
+          "reason": "Agotado en consultorio"
+        },
+        {
+          "code": "ABA",
+          "category": "General",
+          "suggestedQuantity": 17,
+          "unitCost": "0.15",
+          "costEstimated": false,
+          "totalCost": "2.55",
+          "unitCostText": "$0.15",
+          "reason": "Stock bajo (3 de 10 mín.)"
+        },
+        {
+          "code": "ACI",
+          "category": "Medicamentos",
+          "suggestedQuantity": 17,
+          "unitCost": "0.20",
+          "costEstimated": true,
+          "totalCost": "3.40",
+          "unitCostText": "≈ $0.20",
+          "reason": "Stock bajo (3 de 10 mín.)"
+        },
+        {
+          "code": "AGU",
+          "category": "Medicamentos",
+          "suggestedQuantity": 17,
+          "unitCost": "6.56",
+          "costEstimated": true,
+          "totalCost": "111.52",
+          "unitCostText": "≈ $6.56",
+          "reason": "Stock bajo (3 de 10 mín.)"
+        },
+        {
+          "code": "GAS",
+          "category": "General",
+          "suggestedQuantity": 4,
+          "unitCost": "25.00",
+          "costEstimated": true,
+          "totalCost": "100.00",
+          "unitCostText": "≈ $25.00",
+          "reason": "Stock bajo (4 de 4 mín.)"
+        }
+      ]
+    }
+  ]
+}

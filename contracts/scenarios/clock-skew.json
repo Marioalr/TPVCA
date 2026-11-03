@@ -1,0 +1,716 @@
+{
+  "scenario": "clock-skew",
+  "covers": [
+    "8.5",
+    "8.7"
+  ],
+  "contract": 20,
+  "protocol": 3,
+  "generatedBy": "tests/TPVC.Tests/TursoSyncEndToEndTests.Scenarios.cs (TPVC_WRITE_GOLDEN=1 lo regenera)",
+  "notes": [
+    "Desfase (pasos 6 a 13): la nube va 10 min adelante de los dos equipos (serverClock). Cada sincronización mide el desfase y desde ahí cada equipo marca con su hora más el desfase (golden/stamping.json): la edición más reciente en el tiempo (la de B) gana aunque los relojes de los equipos estén atrasados.",
+    "Salto de reloj (pasos 14 a 18): el reloj de B salta 3 h adelante sin conexión y marca una edición así (rawWrite, now+3h). Antes de subir, B repara las marcas más de 2 min adelante de la hora de la nube; si no, esa edición le ganaría a todas las de después. La de A, posterior, gana."
+  ],
+  "devices": [
+    {
+      "name": "A",
+      "deviceId": "device-a",
+      "role": "WindowsDesktop",
+      "engine": "pc"
+    },
+    {
+      "name": "B",
+      "deviceId": "device-b",
+      "role": "AndroidTablet",
+      "engine": "kotlin"
+    }
+  ],
+  "watch": {
+    "PatientConsultations": [
+      "Diagnosis"
+    ]
+  },
+  "steps": [
+    {
+      "n": 1,
+      "device": "A",
+      "op": "create",
+      "table": "Patients",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000401",
+        "RecordNumber": "EXP-2020-011",
+        "FullName": "Ana Pérez Núñez",
+        "Gender": "Femenino"
+      },
+      "expect": {
+        "cloud": {
+          "PatientConsultations": {},
+          "tombstones": []
+        },
+        "A": {
+          "PatientConsultations": {},
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "PatientConsultations": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 2,
+      "device": "A",
+      "op": "create",
+      "table": "PatientConsultations",
+      "row": {
+        "SyncId": "10000000-0000-4000-8000-000000000402",
+        "PatientRecordSyncId": "10000000-0000-4000-8000-000000000401",
+        "Folio": "CNS-20200115-011",
+        "ChiefComplaint": "Dolor de garganta",
+        "Diagnosis": "Faringitis aguda (J02.9)"
+      },
+      "expect": {
+        "cloud": {
+          "PatientConsultations": {},
+          "tombstones": []
+        },
+        "A": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "pending": 2,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "PatientConsultations": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 3,
+      "device": "A",
+      "op": "fullSync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "PatientConsultations": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 4,
+      "device": "B",
+      "op": "join",
+      "result": {
+        "ok": true
+      },
+      "expect": {
+        "cloud": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "PatientConsultations": {},
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 5,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 6,
+      "op": "serverClock",
+      "offsetSeconds": 600,
+      "expect": {
+        "cloud": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 7,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 8,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 9,
+      "device": "A",
+      "op": "edit",
+      "table": "PatientConsultations",
+      "syncId": "10000000-0000-4000-8000-000000000402",
+      "set": {
+        "Diagnosis": "Diagnóstico de A"
+      },
+      "expect": {
+        "cloud": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de A"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 10,
+      "device": "B",
+      "op": "edit",
+      "table": "PatientConsultations",
+      "syncId": "10000000-0000-4000-8000-000000000402",
+      "set": {
+        "Diagnosis": "Diagnóstico de B, después"
+      },
+      "expect": {
+        "cloud": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Faringitis aguda (J02.9)"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de A"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de B, después"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 11,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de B, después"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de A"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de B, después"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 12,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de B, después"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de B, después"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de B, después"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 13,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de B, después"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de B, después"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de B, después"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 14,
+      "device": "B",
+      "op": "rawWrite",
+      "table": "PatientConsultations",
+      "syncId": "10000000-0000-4000-8000-000000000402",
+      "stamp": "now+3h",
+      "set": {
+        "Diagnosis": "Diagnóstico de B con el reloj adelantado"
+      },
+      "expect": {
+        "cloud": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de B, después"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de B, después"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de B con el reloj adelantado"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 15,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de B con el reloj adelantado"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de B, después"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de B con el reloj adelantado"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 16,
+      "device": "A",
+      "op": "edit",
+      "table": "PatientConsultations",
+      "syncId": "10000000-0000-4000-8000-000000000402",
+      "set": {
+        "Diagnosis": "Diagnóstico de A, al final"
+      },
+      "expect": {
+        "cloud": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de B con el reloj adelantado"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de A, al final"
+            }
+          },
+          "pending": 1,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de B con el reloj adelantado"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 17,
+      "device": "A",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de A, al final"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de A, al final"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de B con el reloj adelantado"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    },
+    {
+      "n": 18,
+      "device": "B",
+      "op": "sync",
+      "result": {
+        "ok": true,
+        "parked": 0
+      },
+      "expect": {
+        "cloud": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de A, al final"
+            }
+          },
+          "tombstones": []
+        },
+        "A": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de A, al final"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        },
+        "B": {
+          "PatientConsultations": {
+            "10000000-0000-4000-8000-000000000402": {
+              "Diagnosis": "Diagnóstico de A, al final"
+            }
+          },
+          "pending": 0,
+          "parked": 0,
+          "saved": 0
+        }
+      }
+    }
+  ]
+}

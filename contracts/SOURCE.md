@@ -15,6 +15,6 @@ Al actualizar: correr el script, revisar `git diff --stat contracts/`, subir `Sy
 la revisión (la prueba `SyncContractTest` falla hasta hacerlo), y anotar aquí el commit, la versión y la fecha.
 
 **Datos de los vectores.** Los pacientes, teléfonos, correos, URL y tokens son de ejemplo (por ejemplo
-`libsql://consultorio-ejemplo…` y un JWT cuya firma es «signatura-de-ejemplo» en `golden/link-qr.json`). Excepción: los
+la base «consultorio-ejemplo» y un JWT cuya firma es «signatura-de-ejemplo» en `golden/link-qr.json`). Excepción: los
 vectores de la receta y del ticket (`golden/prescription-sheet.json`, `prescription-html-fields.json` y `ticket-text.json`)
 llevan el nombre y la cédula profesional reales del médico, tal como vienen de la PC.

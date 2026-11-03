@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ThemeBackground y ThemeAccent de la PC (modo claro, acento «Azul consultorio») -->
+    <color name="tpvc_background">#FFF8FAFC</color>
+    <color name="tpvc_accent">#FF0369A1</color>
+</resources>

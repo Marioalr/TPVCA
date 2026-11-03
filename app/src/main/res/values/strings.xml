@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:locale="es">
+    <string name="app_name">TPVC</string>
+    <string name="home_title">TPVC</string>
+    <string name="home_subtitle">El consultorio en la tablet y el celular, sincronizado con la PC.</string>
+    <string name="home_version">Versión %1$s</string>
+    <string name="home_contract_revision">Entiende la revisión %1$d del contrato de sincronización</string>
+    <string name="home_not_linked">Esta app todavía no está vinculada</string>
+    <string name="home_link_hint">La vinculación con la PC llega en una versión próxima.</string>
+    <string name="home_link_button">Vincular con la PC</string>
+</resources>

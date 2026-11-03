@@ -1,0 +1,116 @@
+package io.github.marioalr.tpvca.domain.golden
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.File
+
+/**
+ * Cada archivo de `contracts/golden/` está portado (con su prueba) o en la lista de pendientes con el paso que lo porta. Un
+ * vector nuevo de la PC hace fallar esta prueba hasta que se porte o se anote aquí y en `docs/REGLAS.md`: no se puede ignorar
+ * sin que se note.
+ */
+class GoldenCoverageTest {
+    /** Los vectores portados: archivo → la prueba que corre todos sus casos. */
+    private val ported = mapOf(
+        "text-search.json" to "search.TextSearchGoldenTest",
+        "rank-patients.json" to "search.SearchGoldenTest",
+        "rank-products.json" to "search.SearchGoldenTest",
+        "medicine-search.json" to "search.SearchGoldenTest",
+        "catalog-matching.json" to "search.SearchGoldenTest",
+        "alerts.json" to "business.BusinessGoldenTest",
+        "cash-cut.json" to "business.BusinessGoldenTest",
+        "suggested-purchase.json" to "business.BusinessGoldenTest",
+        "inventory-value.json" to "business.BusinessGoldenTest",
+        "business-summary.json" to "business.BusinessGoldenTest",
+        "sales-by-type.json" to "business.BusinessGoldenTest",
+        "best-sellers.json" to "business.BusinessGoldenTest",
+        "purchases.json" to "business.BusinessGoldenTest",
+        "supply-consumption.json" to "business.BusinessGoldenTest",
+        "patient-summary.json" to "patients.PatientsGoldenTest",
+        "patient-identity.json" to "patients.PatientsGoldenTest",
+        "chart-antecedents.json" to "patients.PatientsGoldenTest",
+        "chart-timeline.json" to "patients.PatientsGoldenTest",
+        "latest-vitals.json" to "patients.PatientsGoldenTest",
+        "vitals-evolution.json" to "patients.PatientsGoldenTest",
+        "vitals.json" to "patients.PatientsGoldenTest",
+        "allergy-check.json" to "patients.PatientsGoldenTest",
+        "agenda.json" to "patients.PatientsGoldenTest",
+        "appointment-overlap.json" to "patients.PatientsGoldenTest",
+        "prescription-sheet.json" to "documents.DocumentsGoldenTest",
+        "prescription-html-fields.json" to "documents.DocumentsGoldenTest",
+        "ticket-text.json" to "documents.DocumentsGoldenTest",
+    )
+
+    /** Portados en parte: archivo → los tipos de caso que faltan y su paso (la prueba del archivo los salta por nombre). */
+    private val partial = mapOf(
+        "patient-identity.json" to "K6 (alta y edición: parse-name, compose-name, birth-date, email, validate)",
+    )
+
+    /** Los vectores pendientes: archivo → el paso que los porta. */
+    private val pending = mapOf(
+        "values.json" to "K2 (valores de Hrana en el cable)",
+        "stamping.json" to "K2 (marca de tiempo local)",
+        "lww.json" to "K2 (bajada) y K5 (subida)",
+        "uuid5.json" to "K5",
+        "canonical-json.json" to "K5",
+        "field-stamps.json" to "K5",
+        "patient-merge.json" to "K5",
+        "duplicate-patients.json" to "K5",
+        "folios.json" to "K3",
+        "link-qr.json" to "K3",
+        "lab-files.json" to "K4",
+        "date-mask.json" to "K6",
+        "cie10-catalog.json" to "K7",
+        "cie10-search.json" to "K7",
+        "pediatric-dose.json" to "K7",
+        "consultation-account.json" to "K7",
+        "sheet-charges.json" to "K7",
+        "synced-json-columns.json" to "K7",
+        "checkout.json" to "K7",
+        "handoff-payload.json" to "K8",
+        "handoff-accept.json" to "K8",
+        "linked-device.json" to "K8",
+        "duplicate-catalog.json" to "K9b",
+    )
+
+    private fun property(name: String): File =
+        File(System.getProperty(name) ?: error("Falta la propiedad $name: corra las pruebas con Gradle"))
+
+    private val goldenFiles: Set<String> by lazy {
+        File(property("tpvca.contracts"), "golden").listFiles { f -> f.isFile && f.name.endsWith(".json") }!!.map { it.name }.toSet()
+    }
+
+    @Test
+    fun cadaVectorEstaPortadoOPendiente() {
+        val both = ported.keys intersect pending.keys
+        assertTrue("Portados y pendientes a la vez: $both", both.isEmpty())
+        assertTrue("Parciales que no están en los portados: ${partial.keys - ported.keys}", (partial.keys - ported.keys).isEmpty())
+
+        val listed = ported.keys + pending.keys
+        assertEquals("Vectores de la PC sin portar ni anotar como pendientes (agréguelos aquí y en docs/REGLAS.md)", emptySet<String>(), goldenFiles - listed)
+        assertEquals("Vectores anotados que ya no existen en contracts/golden", emptySet<String>(), listed - goldenFiles)
+    }
+
+    @Test
+    fun cadaVectorPortadoTieneSuPrueba() {
+        for ((file, test) in ported) {
+            val name = "io.github.marioalr.tpvca.domain.$test"
+            val type = runCatching { Class.forName(name) }.getOrNull()
+            assertTrue("$file: no existe la prueba $name", type != null)
+        }
+    }
+
+    /** docs/REGLAS.md nombra cada vector (portado o pendiente con su paso). */
+    @Test
+    fun reglasMdNombraCadaVector() {
+        val doc = File(property("tpvca.docs"), "REGLAS.md").readText()
+        val missing = goldenFiles.filter { "`$it`" !in doc }
+        assertTrue("docs/REGLAS.md no nombra: $missing", missing.isEmpty())
+        for ((file, step) in pending) {
+            val row = doc.lines().firstOrNull { "`$file`" in it }.orEmpty()
+            val firstStep = Regex("K\\d+b?").find(step)!!.value
+            assertTrue("docs/REGLAS.md: $file debe decir su paso ($firstStep)", firstStep in row)
+        }
+    }
+}

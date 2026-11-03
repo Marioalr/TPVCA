@@ -17,14 +17,15 @@ según ese rol (`DevicePermissions`, la misma matriz que `Models/TursoConfig.cs`
 - **La PC es la dueña de la nube.** Esta app nunca corre DDL, nunca siembra datos y nunca escribe `_tpvc_meta` ni
   `DeviceRegistry`: vincular, aprobar y quitar equipos, cambiar la generación y regularizar folios son de la PC.
 - El código de la PC es la referencia: las reglas se portan a Kotlin y se comprueban con los mismos vectores que usa la PC
-  (`contracts/`). Plan completo en TPVC: `docs/PLAN_FASE8_VARIOS_EQUIPOS.md` §7 y `docs/PENDIENTES_ANDROID.md`.
+  (`contracts/`). Qué está portado y qué falta, con su paso: [`docs/REGLAS.md`](docs/REGLAS.md).
+  Plan completo en TPVC: `docs/PLAN_FASE8_VARIOS_EQUIPOS.md` §7 y `docs/PENDIENTES_ANDROID.md`.
 
 ## Módulos
 
 | Módulo | Tipo | Qué tiene |
 |---|---|---|
 | `:sync` | Kotlin/JVM | El contrato de sincronización (`SyncSchema`, `SyncContract.REVISION`). Después: cliente Hrana, motor v2, consulta entre equipos y vinculación. |
-| `:domain` | Kotlin/JVM | Reglas portadas de la PC con sus vectores: roles y permisos (`DevicePermissions`), `TextSearch`. Después: cuenta, folios, signos, dosis, alergias, reportes, receta y ticket. |
+| `:domain` | Kotlin/JVM | Reglas portadas de la PC con sus vectores (K1, lo del celular): roles y permisos (`DevicePermissions`), búsqueda, negocio e inventario, pacientes y agenda, receta y ticket. Cada vector → función → estado en [`docs/REGLAS.md`](docs/REGLAS.md). Después: cuenta, folios, dosis y cobro. |
 | `:data` | Biblioteca de Android | Vacío en K0. Después: Room + SQLCipher y DAO. |
 | `:app` | App de Android | Compose + Material 3, tema con la paleta de la PC (claro, oscuro, ámbar y personalizado) y el inicio. |
 
@@ -38,7 +39,7 @@ Pila: Jetpack Compose con Material 3, Room + SQLCipher, OkHttp, kotlinx.serializ
 | Paso | Qué | Estado |
 |---|---|---|
 | **K0** | Esqueleto con los cuatro módulos, CI, textos en español y tema | ✅ Hecho |
-| K1 | Contrato y reglas del celular con sus vectores: reportes, receta y ticket | Pendiente |
+| **K1** | Contrato y reglas del celular con sus vectores: búsqueda, negocio, pacientes, agenda, receta y ticket ([`docs/REGLAS.md`](docs/REGLAS.md)) | ✅ Hecho |
 | K2 | Cliente Hrana y motor de lectura: primer arranque, descarga completa, cursor por página, recálculo, generación y freno | Pendiente |
 | K3 | Vinculación y seguridad: pegar o escanear la URL y el token, aprobación de la PC, Keystore, SQLCipher, bloqueo y revocación | Pendiente |
 | K4 | Celular: negocio, inventario, pacientes y agenda de solo lectura, compartir receta y ticket. **Primera versión del celular** | Pendiente |
@@ -93,7 +94,8 @@ git diff --stat contracts/
 ```
 
 Si la revisión cambió, revisar el cambio, subir `SyncContract.REVISION` en `:sync`, portar lo que haga falta y anotar el commit
-en `contracts/SOURCE.md`.
+en `contracts/SOURCE.md`. Un vector nuevo hace fallar `GoldenCoverageTest` hasta que se porte o se anote como pendiente con su
+paso (en la prueba y en `docs/REGLAS.md`).
 
 ## Secretos
 

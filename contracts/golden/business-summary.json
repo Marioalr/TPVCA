@@ -2981,7 +2981,7 @@
           "profit": "1330.29",
           "marginPercent": "86.2",
           "tickets": 7,
-          "averageTicket": "220.6",
+          "averageTicket": "220.57",
           "estimatedCostLines": 2,
           "missingCostLines": 2,
           "costNote": "2 renglones con costo estimado (el costo de hoy del producto) · 2 sin costo (cuentan 0)"
@@ -2992,7 +2992,7 @@
           "profit": "325.00",
           "marginPercent": "94.2",
           "tickets": 1,
-          "averageTicket": "345.0",
+          "averageTicket": "345.00",
           "estimatedCostLines": 0,
           "missingCostLines": 0,
           "costNote": ""
@@ -3375,7 +3375,7 @@
           "profit": "500.00",
           "marginPercent": "100.0",
           "tickets": 2,
-          "averageTicket": "250.0",
+          "averageTicket": "250.00",
           "estimatedCostLines": 0,
           "missingCostLines": 0,
           "costNote": ""
@@ -3386,7 +3386,7 @@
           "profit": "300.00",
           "marginPercent": "100.0",
           "tickets": 1,
-          "averageTicket": "300.0",
+          "averageTicket": "300.00",
           "estimatedCostLines": 0,
           "missingCostLines": 0,
           "costNote": ""
@@ -3769,7 +3769,7 @@
           "profit": "107.17",
           "marginPercent": "35.7",
           "tickets": 3,
-          "averageTicket": "100.0",
+          "averageTicket": "100.00",
           "estimatedCostLines": 2,
           "missingCostLines": 0,
           "costNote": "2 renglones con costo estimado (el costo de hoy del producto)"
@@ -3780,7 +3780,7 @@
           "profit": "25.00",
           "marginPercent": "55.6",
           "tickets": 1,
-          "averageTicket": "45.0",
+          "averageTicket": "45.00",
           "estimatedCostLines": 0,
           "missingCostLines": 0,
           "costNote": ""
@@ -4163,7 +4163,7 @@
           "profit": "58.12",
           "marginPercent": "73.6",
           "tickets": 3,
-          "averageTicket": "26.3",
+          "averageTicket": "26.33",
           "estimatedCostLines": 0,
           "missingCostLines": 1,
           "costNote": "1 sin costo (cuenta 0)"
@@ -4557,7 +4557,7 @@
           "profit": "600.00",
           "marginPercent": "100.0",
           "tickets": 2,
-          "averageTicket": "300.0",
+          "averageTicket": "300.00",
           "estimatedCostLines": 0,
           "missingCostLines": 0,
           "costNote": ""
@@ -4951,7 +4951,7 @@
           "profit": "65.00",
           "marginPercent": "100.0",
           "tickets": 2,
-          "averageTicket": "32.5",
+          "averageTicket": "32.50",
           "estimatedCostLines": 0,
           "missingCostLines": 1,
           "costNote": "1 sin costo (cuenta 0)"
@@ -5344,7 +5344,7 @@
           "profit": "350.00",
           "marginPercent": "100.0",
           "tickets": 1,
-          "averageTicket": "350.0",
+          "averageTicket": "350.00",
           "estimatedCostLines": 0,
           "missingCostLines": 0,
           "costNote": ""
@@ -5748,7 +5748,7 @@
           "profit": "25.00",
           "marginPercent": "55.6",
           "tickets": 1,
-          "averageTicket": "45.0",
+          "averageTicket": "45.00",
           "estimatedCostLines": 0,
           "missingCostLines": 0,
           "costNote": ""
@@ -5857,7 +5857,7 @@
           "profit": "49.00",
           "marginPercent": "12.2",
           "tickets": 1,
-          "averageTicket": "400.0",
+          "averageTicket": "400.00",
           "estimatedCostLines": 0,
           "missingCostLines": 0,
           "costNote": ""
@@ -5868,7 +5868,7 @@
           "profit": "400.00",
           "marginPercent": "100.0",
           "tickets": 1,
-          "averageTicket": "400.0",
+          "averageTicket": "400.00",
           "estimatedCostLines": 0,
           "missingCostLines": 0,
           "costNote": ""
@@ -5977,7 +5977,7 @@
           "profit": "10.05",
           "marginPercent": "100.0",
           "tickets": 2,
-          "averageTicket": "5.0",
+          "averageTicket": "5.02",
           "estimatedCostLines": 0,
           "missingCostLines": 0,
           "costNote": ""
@@ -5988,7 +5988,7 @@
           "profit": "400.00",
           "marginPercent": "100.0",
           "tickets": 1,
-          "averageTicket": "400.0",
+          "averageTicket": "400.00",
           "estimatedCostLines": 0,
           "missingCostLines": 0,
           "costNote": ""
@@ -6112,7 +6112,7 @@
           "profit": "98.00",
           "marginPercent": "21.8",
           "tickets": 2,
-          "averageTicket": "224.5",
+          "averageTicket": "224.50",
           "estimatedCostLines": 0,
           "missingCostLines": 0,
           "costNote": ""
@@ -6123,7 +6123,7 @@
           "profit": "400.00",
           "marginPercent": "100.0",
           "tickets": 1,
-          "averageTicket": "400.0",
+          "averageTicket": "400.00",
           "estimatedCostLines": 0,
           "missingCostLines": 0,
           "costNote": ""
@@ -6204,7 +6204,7 @@
           "profit": "30.00",
           "marginPercent": "50.0",
           "tickets": 1,
-          "averageTicket": "60.0",
+          "averageTicket": "60.00",
           "estimatedCostLines": 0,
           "missingCostLines": 0,
           "costNote": ""
@@ -6215,7 +6215,7 @@
           "profit": "-20.00",
           "marginPercent": "-200.0",
           "tickets": 1,
-          "averageTicket": "10.0",
+          "averageTicket": "10.00",
           "estimatedCostLines": 0,
           "missingCostLines": 0,
           "costNote": ""

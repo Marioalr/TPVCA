@@ -7,8 +7,8 @@ Copia de `contracts/` de TPVC (la app de la PC, WPF .NET 10). **No se editan aqu
 |---|---|
 | Revisión del contrato (`sync/schema.json` → `contract`) | 20 |
 | Formato congelado desde (`SyncContract.FrozenRevision`) | 13 |
-| Commit de TPVC | `e9765e4` (main, merge del PR #42) |
-| Versión de TPVC | v1.50.0 |
+| Commit de TPVC | `f271f28` (rama `fix/vectores-ticket-promedio`, PR #43: `averageTicket` con dos decimales y la nota de los signos; la revisión sigue en 20) |
+| Versión de TPVC | v1.50.0 + PR #43 (sin publicar) |
 | Fecha de la copia | 2026-11-03 |
 
 Al actualizar: correr el script, revisar `git diff --stat contracts/`, subir `SyncContract.REVISION` en `:sync` si cambió

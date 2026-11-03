@@ -3,7 +3,7 @@ package io.github.marioalr.tpvca.sync
 import java.io.File
 
 /** La carpeta `contracts/` del repositorio (Gradle la pasa en `tpvca.contracts`). */
-internal object Contracts {
+object Contracts {
     val dir: File by lazy {
         val path = System.getProperty("tpvca.contracts")
             ?: error("Falta la propiedad tpvca.contracts: corra las pruebas con Gradle")

@@ -42,16 +42,21 @@ class GoldenCoverageTest {
         "ticket-text.json" to "documents.DocumentsGoldenTest",
     )
 
+    /** Los que corren en `:sync`, que es quien los usa: archivo → su prueba, junto a `Contracts` en `sync/src/test`. */
+    private val portedInSync = mapOf(
+        "values.json" to "ValuesGoldenTest",
+        "stamping.json" to "SyncRulesGoldenTest",
+        "lww.json" to "SyncRulesGoldenTest",
+    )
+
     /** Portados en parte: archivo → los tipos de caso que faltan y su paso (la prueba del archivo los salta por nombre). */
     private val partial = mapOf(
         "patient-identity.json" to "K6 (alta y edición: parse-name, compose-name, birth-date, email, validate)",
+        "lww.json" to "K5 (server-upsert y server-tombstone: corren el SQL de la subida en SQLite)",
     )
 
     /** Los vectores pendientes: archivo → el paso que los porta. */
     private val pending = mapOf(
-        "values.json" to "K2 (valores de Hrana en el cable)",
-        "stamping.json" to "K2 (marca de tiempo local)",
-        "lww.json" to "K2 (bajada) y K5 (subida)",
         "uuid5.json" to "K5",
         "canonical-json.json" to "K5",
         "field-stamps.json" to "K5",
@@ -83,11 +88,12 @@ class GoldenCoverageTest {
 
     @Test
     fun cadaVectorEstaPortadoOPendiente() {
-        val both = ported.keys intersect pending.keys
+        val done = ported.keys + portedInSync.keys
+        val both = done intersect pending.keys
         assertTrue("Portados y pendientes a la vez: $both", both.isEmpty())
-        assertTrue("Parciales que no están en los portados: ${partial.keys - ported.keys}", (partial.keys - ported.keys).isEmpty())
+        assertTrue("Parciales que no están en los portados: ${partial.keys - done}", (partial.keys - done).isEmpty())
 
-        val listed = ported.keys + pending.keys
+        val listed = done + pending.keys
         assertEquals("Vectores de la PC sin portar ni anotar como pendientes (agréguelos aquí y en docs/REGLAS.md)", emptySet<String>(), goldenFiles - listed)
         assertEquals("Vectores anotados que ya no existen en contracts/golden", emptySet<String>(), listed - goldenFiles)
     }
@@ -98,6 +104,15 @@ class GoldenCoverageTest {
             val name = "io.github.marioalr.tpvca.domain.$test"
             val type = runCatching { Class.forName(name) }.getOrNull()
             assertTrue("$file: no existe la prueba $name", type != null)
+        }
+    }
+
+    @Test
+    fun cadaVectorDeSyncTieneSuPrueba() {
+        for ((file, test) in portedInSync) {
+            val source = File(property("tpvca.syncTests"), "$test.kt")
+            assertTrue("$file: no existe la prueba $source", source.isFile)
+            assertTrue("$file: $test no lo lee", file.removeSuffix(".json") in source.readText())
         }
     }
 

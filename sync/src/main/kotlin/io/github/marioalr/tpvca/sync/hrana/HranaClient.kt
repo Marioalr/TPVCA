@@ -60,21 +60,30 @@ class HranaClient(
 
     override fun query(statements: List<Statement>): List<ResultSet> {
         val results = send(statements.map(::executeRequest) + CLOSE)
-        return statements.indices.map { parseExecute(results.getOrNull(it)) }
+        return parsing { statements.indices.map { parseExecute(results.getOrNull(it)) } }
     }
 
     override fun snapshot(before: List<Statement>, statements: List<Statement>): Snapshot {
         val results = send(before.map(::executeRequest) + batchRequest(statements) + CLOSE)
-        val loose = before.indices.map { parseExecute(results.getOrNull(it)) }
+        return parsing {
+            val loose = before.indices.map { parseExecute(results.getOrNull(it)) }
 
-        val batch = results.getOrNull(before.size)?.jsonObject
-        checkResultError(batch)
-        val result = batch?.get("response")?.jsonObject?.get("result")?.jsonObject
-        // El primer error manda: los pasos que siguen se saltan y la transacción se deshace
-        result?.get("step_errors")?.jsonArray?.firstOrNull { it !is JsonNull }?.let(::throwServiceError)
-        val steps = result?.get("step_results")?.jsonArray
-        // El paso 0 es BEGIN
-        return Snapshot(loose, statements.indices.map { parseResult(steps?.getOrNull(it + 1)) })
+            val batch = results.getOrNull(before.size)?.jsonObject
+            checkResultError(batch)
+            val result = batch?.get("response")?.jsonObject?.get("result")?.jsonObject
+            // El primer error manda: los pasos que siguen se saltan y la transacción se deshace
+            result?.get("step_errors")?.jsonArray?.firstOrNull { it !is JsonNull }?.let(::throwServiceError)
+            val steps = result?.get("step_results")?.jsonArray
+            // El paso 0 es BEGIN
+            Snapshot(loose, statements.indices.map { parseResult(steps?.getOrNull(it + 1)) })
+        }
+    }
+
+    /** Un JSON con otra forma es un error de la respuesta, no una caída de la app. */
+    private inline fun <T> parsing(block: () -> T): T = try {
+        block()
+    } catch (e: IllegalArgumentException) {
+        throw HranaException(HranaException.BAD_RESPONSE, "La respuesta de Turso no tiene la forma esperada.", cause = e)
     }
 
     private fun send(requests: List<JsonObject>): JsonArray {

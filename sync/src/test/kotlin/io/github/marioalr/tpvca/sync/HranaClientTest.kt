@@ -103,6 +103,7 @@ class HranaClientTest {
         assertEquals("HTTP_400", failure(MockResponse().setResponseCode(400).setBody("""{"error":"otra cosa"}""")).code)
         assertTrue(failure(MockResponse().setResponseCode(413).setBody("demasiado")).isTooLargeOrSlow)
         assertEquals(HranaException.BAD_RESPONSE, failure(ok("esto no es JSON")).code)
+        assertEquals(HranaException.BAD_RESPONSE, failure(ok("""{"results":[{"type":"ok","response":{"type":"execute","result":{"cols":[{"name":"a"}],"rows":"no"}}}]}""")).code)
     }
 
     @Test
@@ -146,9 +147,9 @@ class HranaClientTest {
 
     @Test
     fun soloHttps() {
-        assertEquals("https://base-usuario.example.io/v2/pipeline", PipelineUrl.normalize("libsql://base-usuario.example.io"))
-        assertEquals("https://base-usuario.example.io/v2/pipeline", PipelineUrl.normalize("https://base-usuario.example.io/"))
-        assertEquals("https://base-usuario.example.io/v2/pipeline", PipelineUrl.normalize(" base-usuario.example.io?authToken=algo "))
+        assertEquals("https://consultorio-ejemplo.aws-us-east-2.turso.io/v2/pipeline", PipelineUrl.normalize("libsql://consultorio-ejemplo.aws-us-east-2.turso.io"))
+        assertEquals("https://consultorio-ejemplo.aws-us-east-2.turso.io/v2/pipeline", PipelineUrl.normalize("https://consultorio-ejemplo.aws-us-east-2.turso.io/"))
+        assertEquals("https://consultorio-ejemplo.aws-us-east-2.turso.io/v2/pipeline", PipelineUrl.normalize(" consultorio-ejemplo.aws-us-east-2.turso.io?authToken=algo "))
         assertEquals("http://127.0.0.1:8787/v2/pipeline", PipelineUrl.normalize("http://127.0.0.1:8787"))
         assertThrows(IllegalArgumentException::class.java) { PipelineUrl.normalize("http://192.168.1.10:8080") }
         assertThrows(IllegalArgumentException::class.java) { PipelineUrl.normalize("http://base.example.io") }

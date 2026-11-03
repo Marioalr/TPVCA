@@ -31,10 +31,22 @@ class GoldenFile(val name: String, val root: JsonObject) {
     /**
      * Corre [check] en cada caso y falla al final con la lista de los que no pasaron (no solo el primero). [check] devuelve
      * lo que dio la regla, ya como JSON, y se compara con `expected` por valor.
+     *
+     * [checks]: los tipos de caso que porta la prueba (el valor de [key] en cada `input`) y [pending] los que quedan para otro
+     * paso (no se evalúan; `GoldenCoverageTest` dice cuál). Si la PC agrega otro tipo, la prueba falla en lugar de ignorarlo.
+     * `null` si el archivo no tiene tipos.
      */
-    fun run(check: (GoldenCase) -> JsonElement) {
+    fun run(checks: Set<String>? = null, key: String = "check", pending: Set<String> = emptySet(), check: (GoldenCase) -> JsonElement) {
         assertTrue("$name no tiene casos", cases.isNotEmpty())
-        val failures = cases.mapNotNull { case ->
+        val ported = if (checks == null) {
+            cases
+        } else {
+            val found = cases.map { it.string(key) ?: "(sin $key)" }.toSet()
+            val unknown = found - checks - pending
+            assertTrue("$name: tipos de caso sin portar ni pendientes $unknown", unknown.isEmpty())
+            cases.filter { it.string(key) in checks }
+        }
+        val failures = ported.mapNotNull { case ->
             val actual = try {
                 check(case)
             } catch (e: Exception) {
@@ -43,8 +55,10 @@ class GoldenFile(val name: String, val root: JsonObject) {
             if (sameValue(case.expected, actual)) null else "· ${case.name}: se esperaba ${case.expected} y dio $actual"
         }
         if (failures.isNotEmpty()) {
-            fail("$name: ${failures.size} de ${cases.size} casos fallan\n" + failures.joinToString("\n"))
+            fail("$name: ${failures.size} de ${ported.size} casos fallan\n" + failures.joinToString("\n"))
         }
+        val skipped = cases.size - ported.size
+        println("$name: ${ported.size} de ${ported.size} casos pasan" + if (skipped > 0) " ($skipped pendientes: ${pending.sorted().joinToString()})" else "")
     }
 
     private fun sameValue(expected: JsonElement, actual: JsonElement): Boolean {

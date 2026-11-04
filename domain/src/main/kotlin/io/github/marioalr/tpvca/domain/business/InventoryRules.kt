@@ -229,9 +229,11 @@ object StockReviewRules {
     /**
      * Al cerrar un lote (`StockLedger.ClosingDeltas`): el movimiento con su lote (−lo que dice su libro) y el sin lote (0 = no se
      * escribe). Un lote al día baja lo que mostraba aunque el producto quede en negativo; uno de antes de la revisión 11 conserva
-     * el tope de antes.
+     * el tope de antes. Revisión 23: con cualquiera de las dos partes ya escrita aquí, otro equipo ya cerró este lote y ya descontó
+     * lo suyo, aunque aquí siga abierto: no hay nada que escribir ni que quitar, y la parte que falte es la de ese equipo.
      */
-    fun closingDeltas(lotQuantity: Int, lotLedger: Int, productStock: Int): Pair<Int, Int> {
+    fun closingDeltas(lotQuantity: Int, lotLedger: Int, productStock: Int, lotPartWritten: Boolean = false, restPartWritten: Boolean = false): Pair<Int, Int> {
+        if (lotPartWritten || restPartWritten) return 0 to 0
         val legacyLot = lotLedger != lotQuantity
         val removed = if (legacyLot) minOf(lotQuantity, maxOf(productStock, 0)) else lotQuantity
         return -lotLedger to -(removed - lotLedger)

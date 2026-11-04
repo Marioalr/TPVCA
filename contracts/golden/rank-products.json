@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "Búsquedas de productos (Services/TextSearch.RankProducts y Services/Rules/CatalogSearchRules.cs). Los productos de entrada: id, code, name, genericName, presentation, stock (CurrentStock), category (el nombre de su categoría), categoryId, active (true si falta), location y price. 'expected' son los id en orden. Qué es insumo o medicamento: catalog-matching.json.",
     "quantity-prefix (el buscador del Punto de venta, '3*para' agrega 3): la expresión ^\\s*([0-9]{1,3})\\s*\\*\\s*(.*)$ (solo dígitos ASCII; revisión 20: antes era \\d, que en .NET acepta dígitos de cualquier alfabeto, y '٣*para' tronaba al leer el número; ahora no coincide); la cantidad es el número (1 si es 0) y lo que sigue es la búsqueda tal cual; si no coincide, cantidad 1 y el texto completo.",

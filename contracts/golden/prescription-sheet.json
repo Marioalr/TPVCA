@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": "2026-10-12T05:30:00Z",
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "Models/PrescriptionSheet.cs: lo que dice la receta (la misma hoja de la impresión, el HTML y la vista previa). La fecha de la receta es hoy en la zona del consultorio (dd/MM/aaaa).",
     "Edad (PatientRecord.FormatAge): con fecha de nacimiento, meses cumplidos; menos de 1 mes en días, menos de 24 en meses, menos de 6 años en años y meses, después solo años. Sin fecha, la edad guardada en años.",

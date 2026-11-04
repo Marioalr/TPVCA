@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "Marcas por campo de Patients.FieldStampsJson (Services/Rules/PatientFieldStamps, paso 8.22): objeto JSON plano en forma canónica (contracts/golden/canonical-json.json), marcas de 27 caracteres en UTC. Llaves: '<columna>' (último cambio del campo; en una hoja, de su orden: qué renglones tiene y en qué orden), '<hoja>/<RowId>' (renglón agregado o cambiado), '<hoja>/<RowId>/quitado' (renglón quitado), '#piso' (el piso: la marca más nueva de una escritura de la fila completa sin marcas que esta versión ya incluye) y 'UpdatedAtUtc' (el UpdatedAtUtc de la fila con que se mantuvieron). Cualquier otra llave es de una versión más nueva: se conserva tal cual. 'fieldColumns' son las columnas de campos (sin las hojas) que este equipo conoce: con las tres hojas y sus renglones, las llaves 'conocidas', a las que el piso les aplica.",
     "parse: vacío, nulo, dañado, que no es objeto o con una llave repetida (también la misma escrita con escape) = sin marcas; un valor que no es texto se ignora. 'expected' es el texto canónico ('' sin marcas).",

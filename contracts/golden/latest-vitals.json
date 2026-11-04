@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "«Lo esencial» de la ficha (Services/Rules/PatientChartRules.BuildLatestVitals, antes en PatientChartViewModel) a partir de la serie de signos de vitals-evolution.json (de la más vieja a la más nueva). Los valores de entrada son decimales en texto.",
     "En este orden y solo si alguna medición lo tiene: 'T/A (mmHg)' con la última que tiene sistólica y diastólica (value = BloodPressureText de vitals-evolution.json) y la anterior que las tiene: trend 'antes 120/80' con '↑ ' delante si la sistólica subió o '↓ ' si bajó; isUp si subió. 'Peso (kg)', 'IMC' y 'Glucosa (mg/dL)': el último valor que hay y la diferencia con el anterior que lo tiene ('↑ 1.2', '↓ 0.5' o 'sin cambio'; vacío con una sola medición); isUp si subió.",

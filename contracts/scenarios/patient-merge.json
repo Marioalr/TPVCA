@@ -4,7 +4,7 @@
     "8.21",
     "8.22"
   ],
-  "contract": 22,
+  "contract": 23,
   "protocol": 3,
   "generatedBy": "tests/TPVC.Tests/TursoSyncEndToEndTests.Scenarios.cs (TPVC_WRITE_GOLDEN=1 lo regenera)",
   "notes": [

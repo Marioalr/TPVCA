@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "«Consumo de insumos» del panel «Negocio» (BusinessStockRules.SupplyConsumption). Entradas: products, services y sales como en business-summary.json, y movements como en purchases.json.",
     "usedInConsultation: Σ quantity de los SalidaConsulta del periodo (lo usado sin cobrar, del Kardex; cada parte por lote es un movimiento), costo guardado o estimado como en las compras. chargedWithServices: Σ quantity de los renglones de Insumos de un ticket no cancelado del periodo que también cobró una Consulta o un Servicio (en piezas si son piezas sueltas: el Kardex solo anota los paquetes que se abren), con el costo de su renglón.",

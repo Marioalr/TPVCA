@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": "2026-10-11",
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "Services/Rules/CashCutRules.cs. Entran las ventas del día (Sales.Date de 00:00 a 23:59 en la hora del consultorio) con sus renglones.",
     "Forma de pago: el texto en minúsculas sin espacios alrededor; gana la primera regla que se cumple: contiene 'efectivo'; 'débito' o 'debito'; 'crédito' o 'credito'; 'transfer'; si no, otros.",

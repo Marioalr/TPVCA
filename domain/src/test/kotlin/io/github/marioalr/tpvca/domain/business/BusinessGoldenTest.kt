@@ -163,7 +163,7 @@ class BusinessGoldenTest {
                 )
                 else -> {
                     val stock = input.int("productStock")
-                    val (lot, rest) = StockReviewRules.closingDeltas(input.int("lotQuantity"), input.int("lotLedger"), stock)
+                    val (lot, rest) = StockReviewRules.closingDeltas(input.int("lotQuantity"), input.int("lotLedger"), stock, input.bool("lotPartWritten"), input.bool("restPartWritten"))
                     jsonObject("lotDelta" to json(lot), "restDelta" to json(rest), "stockAfter" to json(stock + lot + rest))
                 }
             }

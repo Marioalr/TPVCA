@@ -1245,7 +1245,7 @@ class WriteEngineTest {
         localWriter.create("ProductBatches", batch, mapOf("ProductSyncId" to product, "BatchNumber" to "L-0", "Quantity" to "0"))
         store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))
         val stamp = stampOf("Products", product)
-        writes.closeBatch(batch)
+        assertFalse("Sin ninguna parte aquí nadie más lo cerró", writes.closeBatch(batch))
         assertEquals(stamp, stampOf("Products", product))
         assertEquals(listOf("ProductBatch"), store.outbox().map { it.entityType })
         assertTrue(store.rows("ProductBatches").getValue(batch)["ClosedAtUtc"] != null)
@@ -1265,10 +1265,50 @@ class WriteEngineTest {
         store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))
         val stamp = stampOf("Products", product)
         val stock = store.rows("Products").getValue(product)["CurrentStock"]
-        writes.closeBatch(batch)
+        assertTrue("Debe avisar que otro equipo ya lo cerró", writes.closeBatch(batch))
         assertEquals(stamp, stampOf("Products", product))
         assertEquals(stock, store.rows("Products").getValue(product)["CurrentStock"])
         assertEquals(listOf("ProductBatch"), store.outbox().map { it.entityType })
+    }
+
+    /** Revisión 23: con el libro en 0 por ese cierre se tomaba por un lote de antes y `close-rest:` descontaba otra vez. */
+    @Test
+    fun conUnaSolaParteAquiNoEscribeLaOtraNiTocaElProducto() {
+        cloudPatient()
+        linked()
+        for (prefix in listOf("close:", "close-rest:")) {
+            store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))
+            val batch = writes.registerStockEntry(product, "L-$prefix", null, 5, null, "Entrada", "Dr.")
+            val part = io.github.marioalr.tpvca.sync.rules.SyncIds.derived(prefix, batch)
+            val other = io.github.marioalr.tpvca.sync.rules.SyncIds.derived(if (prefix == "close:") "close-rest:" else "close:", batch)
+            val batchRef = if (prefix == "close:") batch else null
+            localWriter.create("InventoryMovements", part, mapOf("ProductSyncId" to product, "BatchSyncId" to batchRef, "MovementType" to "5", "Quantity" to "5", "Delta" to "-5", "Date" to "2020-01-02 10:00:00.0000000"))
+            store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))
+            val stamp = stampOf("Products", product)
+            val row = store.rows("Products").getValue(product)
+            assertTrue(writes.closeBatch(batch))
+            val after = store.rows("Products").getValue(product)
+            assertEquals(stamp, stampOf("Products", product))
+            assertEquals(row["CurrentStock"], after["CurrentStock"])
+            assertEquals(row["UpdatedAt"], after["UpdatedAt"])
+            assertFalse("No se escribe la otra parte", movements().any { it["SyncId"] == other })
+            val closed = store.rows("ProductBatches").getValue(batch)
+            assertEquals(0L, closed["Quantity"])
+            assertEquals(1L, closed["IsDepleted"])
+            assertTrue(closed["ClosedAtUtc"] != null)
+            assertEquals(listOf("ProductBatch"), store.outbox().map { it.entityType })
+            store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))
+        }
+    }
+
+    @Test
+    fun cerrarUnLoteYaCerradoOQueNoExisteNoAvisa() {
+        cloudPatient()
+        linked()
+        val batch = writes.registerStockEntry(product, "L-1", null, 2, null, "Entrada", "Dr.")
+        assertFalse(writes.closeBatch(batch))
+        assertFalse(writes.closeBatch(batch))
+        assertFalse(writes.closeBatch("10000000-0000-4000-8000-0000000000aa"))
     }
 
     @Test

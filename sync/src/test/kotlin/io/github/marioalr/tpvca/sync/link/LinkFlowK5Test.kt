@@ -437,6 +437,20 @@ class LinkFlowK5Test {
         assertEquals(0, database.store.pendingChanges())
     }
 
+    /** K6: lo mismo con los borradores: uno viejo no vuelve a abrir la base después de borrar, y el borrador se fue con ella. */
+    @Test
+    fun losBorradoresSeVanConElBorradoYUnLocalSideGuardadoYaNoAbreLaBase() {
+        val first = linked()
+        val retained = first.localSide()!!
+        retained.saveDraft("PatientForm", "lo escrito")
+        assertEquals("lo escrito", first.localSide()!!.draft("PatientForm"))
+        revoke("perdido")
+        assertTrue(first.refresh(Refresh.USER) is LinkState.Revoked)
+        assertEquals(WriteRefused.Reason.REVOKED, assertThrows(WriteRefused::class.java) { retained.draft("PatientForm") }.reason)
+        assertEquals(WriteRefused.Reason.REVOKED, assertThrows(WriteRefused::class.java) { retained.saveDraft("PatientForm", "x") }.reason)
+        assertEquals(null, database.store.meta("Draft:PatientForm"))
+    }
+
     @Test
     fun cambiarDeIdentidadCierraLaEscrituraYTerminaDespuesDeMorir() {
         val first = linked()

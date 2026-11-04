@@ -4,12 +4,14 @@ import io.github.marioalr.tpvca.domain.agenda.AppointmentRules
 import io.github.marioalr.tpvca.domain.model.Appointment
 import io.github.marioalr.tpvca.domain.patients.DuplicateCandidate
 import io.github.marioalr.tpvca.domain.patients.DuplicatePatientRules
+import io.github.marioalr.tpvca.domain.patients.DuplicateReason
 import io.github.marioalr.tpvca.sync.ProtocolDate
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
+import java.time.LocalDate
 import java.util.UUID
 
 /** Un aviso que se queda hasta descartarlo: dos `SyncId` y por qué ([kind]: `empalme` o el motivo de un duplicado). Solo son llaves: la pantalla los busca en la base. */
@@ -40,6 +42,87 @@ object SyncNotices {
         fun count(kind: String) = notices.count { it.kind == kind }
         val notice = ReapplyNotice(store.parkedRows().count { it.direction == ParkDirection.REAPPLY }, count(REAPPLY_DEAD_PRINCIPAL), count(REAPPLY_SUPERSEDED), count(REAPPLY_DELETE_BLOCKED))
         return notice.takeIf { it != ReapplyNotice(0, 0, 0, 0) }
+    }
+
+    /** Lo que se descartó con «Entendido», lo más nuevo al final. */
+    const val DISMISSED = "Status:NoticesDismissed"
+    private const val MAX_DISMISSED = 1000
+
+    private fun readKeys(text: String?): List<String> =
+        if (text.isNullOrEmpty()) emptyList() else Json.parseToJsonElement(text).jsonArray.map { it.jsonPrimitive.content }
+
+    private fun writeKeys(keys: List<String>): String = JsonArray(keys.takeLast(MAX_DISMISSED).map { JsonPrimitive(it) }).toString()
+
+    /**
+     * Agrega lo que llegó a lo que ya está (`SyncNotices.AddAsync`): un conflicto ya descartado no se agrega, un par que ya está no se repite y lo nuevo va primero.
+     */
+    fun merged(store: SyncStore, current: Set<SyncNotice>, found: Set<SyncNotice>): Set<SyncNotice> {
+        if (found.isEmpty()) return current
+        val dismissed = readKeys(store.meta(DISMISSED)).toSet()
+        val fresh = found.filter { notice ->
+            if (current.any { it.first == notice.first && it.second == notice.second && it.kind !in REAPPLY_KINDS }) return@filter false
+            keyOf(store, notice) !in dismissed
+        }
+        return (fresh + current).toSet()
+    }
+
+    private fun keyOf(store: SyncStore, notice: SyncNotice): String? {
+        if (notice.kind != OVERLAP) return duplicateKey(notice.first, notice.second)
+        val rows = store.select("Appointments", NOTICE_APPOINTMENT_COLUMNS, "SyncId", listOf(notice.first, notice.second)).mapNotNull(::appointmentOfRow)
+        return if (rows.size == 2) overlapKey(rows[0], rows[1]) else null
+    }
+
+    /** Los avisos de ahora y depurados: citas de hoy en adelante que siguen empalmadas, expedientes activos que se siguen pareciendo. Lo que ya no aplica se quita. */
+    fun load(store: SyncStore, today: LocalDate): ArrivalNotices {
+        val all = read(store.meta(SyncEngine.NOTICES))
+        val dismissedBefore = readKeys(store.meta(DISMISSED))
+        val dismissed = dismissedBefore.toSet()
+        val overlaps = ArrayList<Pair<Appointment, Appointment>>()
+        val duplicates = ArrayList<String>()
+        val keep = LinkedHashSet<SyncNotice>()
+        for (notice in all) {
+            when {
+                notice.kind in REAPPLY_KINDS -> keep += notice
+                notice.kind == OVERLAP -> {
+                    val rows = store.select("Appointments", NOTICE_APPOINTMENT_COLUMNS, "SyncId", listOf(notice.first, notice.second)).mapNotNull(::appointmentOfRow)
+                    val a = rows.firstOrNull { it.syncId.toString() == notice.first }
+                    val b = rows.firstOrNull { it.syncId.toString() == notice.second }
+                    if (a == null || b == null || a.date.isBefore(today) || !AppointmentRules.overlaps(a, b) || overlapKey(a, b) in dismissed) continue
+                    keep += notice
+                    overlaps += if (AppointmentRules.start(a.time) <= AppointmentRules.start(b.time)) a to b else b to a
+                }
+                else -> {
+                    val rows = store.select("Patients", listOf("SyncId", "FullName", "RecordNumber", "BirthDate", "Phone", "IsActive", "MergedIntoSyncId"), "SyncId", listOf(notice.first, notice.second))
+                    val a = rows.firstOrNull { it["SyncId"] == notice.first }
+                    val b = rows.firstOrNull { it["SyncId"] == notice.second }
+                    val reason = if (a != null && b != null) compareRows(a, b) else DuplicateReason.None
+                    if (reason == DuplicateReason.None) continue
+                    keep += notice
+                    duplicates += duplicatePairText(a!!, b!!, reason)
+                }
+            }
+        }
+        // Lo descartado de días que ya pasaron ya no puede volver a llegar como aviso. La fecha es la cuarta parte: las horas también llevan «:»
+        val todayText = today.toString()
+        val dismissedNow = dismissedBefore.filterNot { it.startsWith("empalme:") && it.split(':', limit = 5).let { parts -> parts.size == 5 && parts[3] < todayText } }
+        val meta = HashMap<String, String>()
+        if (keep != all) meta[SyncEngine.NOTICES] = write(keep)
+        if (dismissedNow != dismissedBefore) meta[DISMISSED] = writeKeys(dismissedNow)
+        if (meta.isNotEmpty()) store.apply(StoreChanges(meta = meta))
+        return ArrivalNotices(overlaps, duplicates)
+    }
+
+    /** «Entendido»: guarda las llaves de lo que se veía y lo quita. */
+    fun dismiss(store: SyncStore, kind: NoticeKind) {
+        val all = read(store.meta(SyncEngine.NOTICES))
+        val gone = all.filter { it.kind !in REAPPLY_KINDS && (it.kind == OVERLAP) == (kind == NoticeKind.Overlaps) }
+        if (gone.isEmpty()) return
+        val keys = readKeys(store.meta(DISMISSED)).toMutableList()
+        for (notice in gone) {
+            val key = keyOf(store, notice) ?: continue
+            if (key !in keys) keys += key
+        }
+        store.apply(StoreChanges(meta = mapOf(SyncEngine.NOTICES to write(all - gone.toSet()), DISMISSED to writeKeys(keys))))
     }
 
     fun read(text: String?): Set<SyncNotice> {

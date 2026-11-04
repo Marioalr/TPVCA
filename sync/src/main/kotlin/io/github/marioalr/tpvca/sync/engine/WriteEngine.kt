@@ -14,6 +14,7 @@ import io.github.marioalr.tpvca.sync.hrana.HranaException
 import io.github.marioalr.tpvca.sync.hrana.text
 import io.github.marioalr.tpvca.sync.rules.FolioFactory
 import io.github.marioalr.tpvca.sync.rules.FolioKind
+import io.github.marioalr.tpvca.sync.rules.PatientFormFields
 import io.github.marioalr.tpvca.sync.rules.PatientSheets
 import io.github.marioalr.tpvca.sync.rules.SyncIds
 import kotlinx.serialization.json.JsonArray
@@ -70,8 +71,7 @@ data class SaleResult(val syncId: String, val folio: String)
  * Lo que la app le pide al motor de escritura (K5): cada caso de uso revisa el permiso (`DevicePermissions`, con el rol de su fila de `DeviceRegistry`), escribe todo junto con su
  * entrada en la cola y sube después. **Es la frontera:** el celular no puede anotar expedientes, notas, recetas ni ventas, y el token completo no lo cambia.
  *
- * El rol es `null` si la PC todavía no lo aprueba: sin aprobar no se escribe nada. Con la nube en otro esquema (solo lectura), revocado o sin rol tampoco. Las pantallas de K4b, K6 y K7 llaman
- * esto; hoy solo lo llaman las pruebas.
+ * El rol es `null` si la PC todavía no lo aprueba: sin aprobar no se escribe nada. Con la nube en otro esquema (solo lectura), revocado o sin rol tampoco. Las pantallas de K6 lo llaman; K4b y K7 también lo harán.
  */
 class WriteEngine(
     private val store: SyncStore,
@@ -129,6 +129,30 @@ class WriteEngine(
         val patients = referencedPatient(table, syncId)
         if (!writer.delete(table, syncId)) throw WriteRefused(WriteRefused.Reason.CONFLICT, "Todavía tiene registros que dependen de él.")
         recalculate(patients)
+    }
+
+    /** La fila completa de un expediente, para abrir el formulario. `null` si ya no existe o se dio de baja. */
+    fun patientRow(syncId: String): LocalRow? = guarded {
+        writer.find(writer.table("Patients"), syncId)?.takeIf { it["IsActive"] == 1L }
+    }
+
+    /**
+     * Guardar una edición del formulario (`SavePatientAsync` con su foto, paso 8.21): **solo lo que el médico cambió**, en una transacción con su marca por campo y su entrada en la cola. Una edición sin cambios no
+     * sube nada. `false` si el expediente ya no existe.
+     */
+    fun savePatientEdit(syncId: String, edited: Map<String, Any?>, baseline: Map<String, String?>, stored: Map<String, String?>): Boolean = guarded {
+        if (!WritePolicy.canWrite(requireWritable(), "Patients", creating = false)) refuse("escribir en Patients")
+        store.transaction {
+            val row = writer.find(writer.table("Patients"), syncId)?.takeIf { it["IsActive"] == 1L } ?: return@transaction false
+            val current = PatientFormFields.snapshotOf(row, Clinic.today(clock.instant()))
+            val write = PatientFormFields.toWrite(edited, baseline, stored, current)
+            writer.edit("Patients", syncId, write)
+        }
+    }
+
+    /** El folio probable que se muestra al abrir un alta. El definitivo se toma al guardar: otro equipo pudo usar este mientras tanto. */
+    fun suggestedPatientFolio(): String = guarded {
+        FolioFactory.local(FolioKind.Patient, Clinic.today(clock.instant()), store.select("Patients", listOf("RecordNumber")).map { it["RecordNumber"] as String? })
     }
 
     /** Agregar, quitar o cambiar un renglón de una hoja: sobre la hoja que está en la base, renglón por renglón. */
@@ -198,10 +222,13 @@ class WriteEngine(
 
     /** Un expediente nuevo con su folio. */
     fun newPatient(fullName: String, values: Map<String, Any?> = emptyMap(), syncId: String = SyncIds.random()): Pair<String, String> {
-        val existing = guarded {
+        // Ya se guardó: se fue la luz entre guardar y borrar el borrador, o un segundo «Guardar». No se crea otro ni se gasta otro folio
+        val prior = guarded {
             if (!WritePolicy.canWrite(requireWritable(), "Patients", creating = true)) refuse("crear expedientes")
-            store.select("Patients", listOf("RecordNumber")).map { it["RecordNumber"] as String? }
+            writer.find(writer.table("Patients"), syncId)
         }
+        if (prior != null) return syncId to (prior["RecordNumber"] as String)
+        val existing = guarded { store.select("Patients", listOf("RecordNumber")).map { it["RecordNumber"] as String? } }
         val folio = nextFolio(FolioKind.Patient, existing)
         guarded {
             writer.create("Patients", syncId, values + mapOf("FullName" to fullName, "RecordNumber" to folio, "IsActive" to true, "CreatedAt" to protocolLocalNow()))

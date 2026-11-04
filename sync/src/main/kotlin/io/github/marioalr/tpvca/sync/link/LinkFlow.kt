@@ -5,6 +5,7 @@ import io.github.marioalr.tpvca.sync.Statements
 import io.github.marioalr.tpvca.sync.SyncContract
 import io.github.marioalr.tpvca.sync.engine.ConsumptionBrake
 import io.github.marioalr.tpvca.sync.engine.EraseGuard
+import io.github.marioalr.tpvca.sync.engine.LocalSide
 import io.github.marioalr.tpvca.sync.engine.PendingChanges
 import io.github.marioalr.tpvca.sync.engine.PushHeartbeat
 import io.github.marioalr.tpvca.sync.engine.SavedChange
@@ -538,6 +539,21 @@ class LinkFlow(
                 }
             },
         )
+    }
+
+    /**
+     * Lo que la pantalla guarda aquí sin subirlo: borradores, avisos y lo de «Volver a aplicar». `null` sin credencial o sin token. Como [writes], se pide uno para cada operación y uno viejo falla después de un borrado.
+     */
+    fun localSide(): LocalSide? {
+        val saved = credential ?: return null
+        saved.token ?: return null
+        val issued = eraseCount
+        return LocalSide(database.store()) { block ->
+            writeGuard {
+                if (issued != eraseCount) throw WriteRefused(WriteRefused.Reason.REVOKED, "Los datos de este equipo ya no están disponibles.")
+                block()
+            }
+        }
     }
 
     /** Dos 401 y nada pendiente: se borra la base y el token. Se quedan el `DeviceId` y la URL: la fila de `DeviceRegistry` sigue (§4.7). */

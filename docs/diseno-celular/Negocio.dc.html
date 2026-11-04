@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Negocio (sección oculta de Inicio)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:Inter,system-ui,sans-serif;color:#0F172A}
+a{color:#0369A1;text-decoration:none}a:hover{color:#075985}
+</style>
+</helmet>
+<div style="width: 390px; height: 2440px; box-sizing: border-box; background: #F8FAFC; display: flex; flex-direction: column; font-family: Inter, system-ui, sans-serif; color: #0F172A">
+  <div style="flex: 1; display: flex; flex-direction: column">
+    <div style="display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 20px 0; font-size: 11px; color: #64748B">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      Deslice hacia abajo para volver a Inicio
+    </div>
+    <header style="padding: 8px 20px 12px; display: flex; justify-content: space-between; align-items: center; gap: 8px">
+      <h1 style="margin: 0; font-size: 24px; font-weight: 700">Negocio</h1>
+      <div style="display: flex; gap: 8px">
+        <button style="min-height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid #CBD5E1; background: #FFFFFF; color: #0F172A; font: 500 13px Inter, sans-serif; cursor: pointer">Corte de caja</button>
+        <button aria-label="Exportar a CSV" style="min-height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid #CBD5E1; background: #FFFFFF; color: #0F172A; font: 500 13px Inter, sans-serif; display: flex; align-items: center; gap: 6px; cursor: pointer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>CSV
+        </button>
+      </div>
+    </header>
+
+    <div style="padding: 0 16px 24px; display: flex; flex-direction: column; gap: 16px">
+      <section style="display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap">
+          <sc-for list="{{periods}}" as="p" hint-placeholder-count="6">
+            <button onClick="{{p.pick}}" aria-pressed="{{p.selected}}" style="{{p.style}}">{{p.label}}</button>
+          </sc-for>
+        </div>
+        <span style="font-size: 12px; color: #64748B; margin: 0 4px">{{d.range}}</span>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap">
+          <sc-for list="{{types}}" as="t" hint-placeholder-count="6">
+            <button onClick="{{t.pick}}" aria-pressed="{{t.selected}}" style="{{t.style}}">{{t.label}}</button>
+          </sc-for>
+        </div>
+      </section>
+
+      <section role="note" style="display: flex; gap: 10px; align-items: flex-start; background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 12px; padding: 10px 12px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#92400E" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+        <span style="font-size: 12px; line-height: 1.45; color: #78350F"><b>Costo estimado</b> en {{d.estimated}}: son ventas anteriores a v1.48 y se calculan con el costo de hoy.</span>
+      </section>
+
+      <section style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+        <sc-for list="{{d.cards}}" as="c" hint-placeholder-count="8">
+          <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px">
+            <span style="font-size: 12px; color: #64748B; font-weight: 500">{{c.label}}</span>
+            <span style="font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums">{{c.value}}</span>
+            <span style="font-size: 11px; font-weight: 500; {{c.deltaStyle}}">{{c.delta}}</span>
+          </div>
+        </sc-for>
+      </section>
+
+      <section style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px">
+        <div style="display: flex; justify-content: space-between; align-items: baseline">
+          <h2 style="margin: 0; font-size: 15px; font-weight: 600">Por sección</h2>
+          <span style="font-size: 11px; color: #64748B">toque una para filtrar</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 1.4fr 1fr 1fr 0.7fr; gap: 6px; padding: 8px 0 4px; border-bottom: 1px solid #E2E8F0; font-size: 11px; font-weight: 600; color: #64748B">
+          <span>Sección</span><span style="text-align: right">Ventas</span><span style="text-align: right">Ganancia</span><span style="text-align: right">Margen</span>
+        </div>
+        <sc-for list="{{d.sections}}" as="s" hint-placeholder-count="5">
+          <button style="display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border: none; border-bottom: 1px solid #F1F5F9; background: transparent; text-align: left; cursor: pointer; font-family: Inter, sans-serif; color: #0F172A">
+            <span style="width: 100%; display: grid; grid-template-columns: 1.4fr 1fr 1fr 0.7fr; gap: 6px; font-size: 13px; font-variant-numeric: tabular-nums">
+              <span style="font-weight: 500">{{s.name}}</span>
+              <span style="text-align: right">{{s.sales}}</span>
+              <span style="text-align: right">{{s.profit}}</span>
+              <span style="text-align: right; color: #475569">{{s.margin}}</span>
+            </span>
+            <span style="width: 100%; height: 6px; border-radius: 3px; background: #F1F5F9; overflow: hidden; display: block">
+              <span style="display: block; height: 6px; border-radius: 3px; background: #0369A1; width: {{s.share}}"></span>
+            </span>
+            <span style="font-size: 11px; color: #64748B">{{s.share}} de las ventas · costo {{s.cost}}</span>
+          </button>
+        </sc-for>
+      </section>
+
+      <section style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; justify-content: space-between; align-items: baseline">
+          <h2 style="margin: 0; font-size: 15px; font-weight: 600">En el tiempo</h2>
+          <span style="display: flex; gap: 12px; font-size: 11px; color: #475569">
+            <span style="display: flex; align-items: center; gap: 4px"><span style="width: 10px; height: 10px; border-radius: 2px; background: #BAE6FD"></span>Ventas</span>
+            <span style="display: flex; align-items: center; gap: 4px"><span style="width: 10px; height: 10px; border-radius: 2px; background: #0369A1"></span>Ganancia</span>
+          </span>
+        </div>
+        <div role="img" aria-label="{{d.chartLabel}}" style="height: 140px; display: flex; align-items: flex-end; gap: {{d.barGap}}; border-bottom: 1px solid #CBD5E1">
+          <sc-for list="{{d.bars}}" as="b" hint-placeholder-count="31">
+            <span style="flex: 1; min-width: 0; height: {{b.sales}}; background: #BAE6FD; border-radius: 3px 3px 0 0; display: flex; align-items: flex-end">
+              <span style="display: block; width: 100%; height: {{b.profit}}; background: #0369A1; border-radius: 3px 3px 0 0"></span>
+            </span>
+          </sc-for>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 11px; color: #64748B">
+          <span>{{d.axisStart}}</span><span>{{d.axisEnd}}</span>
+        </div>
+      </section>
+
+      <section style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
+          <h2 style="margin: 0; font-size: 15px; font-weight: 600">Medicamentos más vendidos</h2>
+          <div style="display: flex; background: #F1F5F9; border-radius: 9px; padding: 3px; gap: 3px">
+            <sc-for list="{{rankModes}}" as="m" hint-placeholder-count="2">
+              <button onClick="{{m.pick}}" aria-pressed="{{m.selected}}" style="{{m.style}}">{{m.label}}</button>
+            </sc-for>
+          </div>
+        </div>
+        <sc-for list="{{top}}" as="t" hint-placeholder-count="5">
+          <div style="display: flex; align-items: center; gap: 10px; min-height: 40px; border-bottom: 1px solid #F1F5F9">
+            <span style="width: 18px; font-size: 13px; font-weight: 700; color: #64748B">{{t.rank}}</span>
+            <span style="flex: 1; display: flex; flex-direction: column; gap: 1px"><span style="font-size: 14px">{{t.name}}</span><span style="font-size: 11px; color: #64748B">{{t.detail}}</span></span>
+            <span style="font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums">{{t.value}}</span>
+          </div>
+        </sc-for>
+        <h3 style="margin: 6px 0 0; font-size: 13px; font-weight: 600; color: #475569">Servicios más pedidos</h3>
+        <sc-for list="{{d.services}}" as="s" hint-placeholder-count="3">
+          <div style="display: flex; align-items: center; gap: 10px; min-height: 36px">
+            <span style="flex: 1; font-size: 14px">{{s.name}}</span>
+            <span style="font-size: 12px; color: #64748B; font-variant-numeric: tabular-nums">{{s.count}}</span>
+            <span style="width: 74px; text-align: right; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums">{{s.income}}</span>
+          </div>
+        </sc-for>
+      </section>
+
+      <section style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; justify-content: space-between; align-items: baseline">
+          <h2 style="margin: 0; font-size: 15px; font-weight: 600">Compras</h2>
+          <span style="font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums">{{d.purchasesTotal}}</span>
+        </div>
+        <span style="font-size: 12px; font-weight: 600; color: #64748B">Por proveedor</span>
+        <sc-for list="{{d.suppliers}}" as="s" hint-placeholder-count="3">
+          <div style="display: flex; justify-content: space-between; font-size: 13px; min-height: 30px; align-items: center"><span>{{s.name}} <span style="color: #64748B">· {{s.entries}}</span></span><span style="font-weight: 600; font-variant-numeric: tabular-nums">{{s.total}}</span></div>
+        </sc-for>
+        <span style="font-size: 12px; font-weight: 600; color: #64748B; margin-top: 4px">Por tipo</span>
+        <div style="display: flex; justify-content: space-between; font-size: 13px; min-height: 30px; align-items: center"><span>Medicamentos</span><span style="font-weight: 600; font-variant-numeric: tabular-nums">{{d.purchasesMeds}}</span></div>
+        <div style="display: flex; justify-content: space-between; font-size: 13px; min-height: 30px; align-items: center"><span>Insumos</span><span style="font-weight: 600; font-variant-numeric: tabular-nums">{{d.purchasesSupplies}}</span></div>
+      </section>
+
+      <section style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px">
+        <div style="display: flex; justify-content: space-between; align-items: baseline">
+          <h2 style="margin: 0; font-size: 15px; font-weight: 600">Consumo de insumos</h2>
+          <span style="font-size: 11px; color: #64748B">en consultas y servicios</span>
+        </div>
+        <sc-for list="{{d.consumption}}" as="c" hint-placeholder-count="4">
+          <div style="display: flex; align-items: center; gap: 10px; min-height: 36px; border-bottom: 1px solid #F1F5F9">
+            <span style="flex: 1; font-size: 14px">{{c.name}}</span>
+            <span style="font-size: 12px; color: #64748B; font-variant-numeric: tabular-nums">{{c.qty}}</span>
+            <span style="width: 70px; text-align: right; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums">{{c.cost}}</span>
+          </div>
+        </sc-for>
+      </section>
+
+      <section style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center">
+        <span style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 600">Valor del inventario</span><span style="font-size: 12px; color: #64748B">Existencias por costo con IVA · hoy</span></span>
+        <span style="font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums">$48,210</span>
+      </section>
+
+      <p style="margin: 0 4px; font-size: 12px; line-height: 1.5; color: #64748B">Mismas cuentas que el panel «Negocio» de la PC. Las ventas canceladas no cuentan; la consulta no tiene costo propio y sus insumos cuentan cuando se cobran aparte.</p>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":2440}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { period: 'ant', type: 'todo', rank: 'qty' };
+  }
+  renderVals() {
+    const { period, type, rank } = this.state;
+    const chipOn = 'min-height: 36px; padding: 0 12px; border-radius: 18px; border: 1px solid #0369A1; background: #0369A1; color: #FFFFFF; font: 500 13px Inter, sans-serif; cursor: pointer';
+    const chipOff = 'min-height: 36px; padding: 0 12px; border-radius: 18px; border: 1px solid #CBD5E1; background: #FFFFFF; color: #0F172A; font: 500 13px Inter, sans-serif; cursor: pointer';
+    const typeOn = 'min-height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid #0F172A; background: #0F172A; color: #FFFFFF; font: 500 12px Inter, sans-serif; cursor: pointer';
+    const typeOff = 'min-height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid #E2E8F0; background: #F1F5F9; color: #334155; font: 500 12px Inter, sans-serif; cursor: pointer';
+    const segOn = 'min-height: 30px; padding: 0 10px; border-radius: 7px; border: none; background: #FFFFFF; color: #0F172A; font: 600 12px Inter, sans-serif; cursor: pointer';
+    const segOff = 'min-height: 30px; padding: 0 10px; border-radius: 7px; border: none; background: transparent; color: #475569; font: 500 12px Inter, sans-serif; cursor: pointer';
+    const up = 'color: #047857';
+    const down = 'color: #B91C1C';
+    const flat = 'color: #64748B';
+    const card = (label, value, delta, style) => ({ label, value, delta, deltaStyle: style });
+    const series = (n, seed, scale) => Array.from({ length: n }, (_, i) => {
+      const s = 30 + ((i * 37 + seed) % 61);
+      const closed = (i + seed) % 7 === 6;
+      const sales = closed ? 4 : Math.round(s * scale);
+      return { sales: sales + '%', profit: (closed ? 50 : 52 + ((i * 13 + seed) % 9)) + '%' };
+    });
+    const data = {
+      hoy: {
+        range: 'Lunes 3 de noviembre · contra el lunes 27 de octubre', estimated: '0 de 31 renglones',
+        cards: [card('Ventas', '$3,480', '▲ 12 % contra el periodo anterior', up), card('Costo', '$1,130', '▲ 9 %', flat), card('Ganancia', '$2,350', '▲ 15 %', up), card('Margen', '67.5 %', '▲ 1.4 puntos', up), card('Tickets', '12', '▲ 2', up), card('Ticket promedio', '$290', '▼ 3 %', down), card('Compras', '$0', 'sin entradas hoy', flat), card('Valor del inventario', '$48,210', 'hoy', flat)],
+        sections: [ { name: 'Consultas', sales: '$1,800', cost: '$0', profit: '$1,800', margin: '100 %', share: '52%' }, { name: 'Medicamentos', sales: '$1,240', cost: '$800', profit: '$440', margin: '35 %', share: '36%' }, { name: 'Insumos', sales: '$260', cost: '$210', profit: '$50', margin: '19 %', share: '7%' }, { name: 'Servicios', sales: '$180', cost: '$120', profit: '$60', margin: '33 %', share: '5%' }, { name: 'Otros', sales: '$0', cost: '$0', profit: '$0', margin: '—', share: '0%' } ],
+        bars: series(9, 3, 1), barGap: '6px', axisStart: '9:00', axisEnd: '18:00', chartLabel: 'Ventas y ganancia por hora de hoy',
+        services: [ { name: 'Curación', count: '2', income: '$300' }, { name: 'Inyección', count: '1', income: '$80' } ],
+        purchasesTotal: '$0', suppliers: [ { name: 'Sin entradas', entries: 'hoy', total: '$0' } ], purchasesMeds: '$0', purchasesSupplies: '$0',
+        consumption: [ { name: 'Gasa estéril 10x10', qty: '4 pzas', cost: '$14.40' }, { name: 'Jeringa 5 ml', qty: '2', cost: '$24.00' } ]
+      },
+      mes: {
+        range: '1 – 3 de noviembre · contra 1 – 3 de octubre', estimated: '0 de 96 renglones',
+        cards: [card('Ventas', '$9,870', '▲ 6 % contra el periodo anterior', up), card('Costo', '$3,200', '▲ 4 %', flat), card('Ganancia', '$6,670', '▲ 8 %', up), card('Margen', '67.6 %', '▲ 0.9 puntos', up), card('Tickets', '34', '▲ 3', up), card('Ticket promedio', '$290', '▼ 2 %', down), card('Compras', '$2,140', '▼ 40 %', flat), card('Valor del inventario', '$48,210', 'hoy', flat)],
+        sections: [ { name: 'Consultas', sales: '$5,100', cost: '$0', profit: '$5,100', margin: '100 %', share: '52%' }, { name: 'Medicamentos', sales: '$3,420', cost: '$2,200', profit: '$1,220', margin: '36 %', share: '35%' }, { name: 'Insumos', sales: '$860', cost: '$640', profit: '$220', margin: '26 %', share: '9%' }, { name: 'Servicios', sales: '$490', cost: '$360', profit: '$130', margin: '27 %', share: '5%' }, { name: 'Otros', sales: '$0', cost: '$0', profit: '$0', margin: '—', share: '0%' } ],
+        bars: series(3, 5, 1), barGap: '18px', axisStart: '1 nov', axisEnd: '3 nov', chartLabel: 'Ventas y ganancia por día, 1 a 3 de noviembre',
+        services: [ { name: 'Curación', count: '5', income: '$750' }, { name: 'Inyección', count: '3', income: '$240' }, { name: 'Nebulización', count: '1', income: '$120' } ],
+        purchasesTotal: '$2,140', suppliers: [ { name: 'LUIN', entries: '1 pedido', total: '$2,140' } ], purchasesMeds: '$1,780', purchasesSupplies: '$360',
+        consumption: [ { name: 'Gasa estéril 10x10', qty: '11 pzas', cost: '$39.60' }, { name: 'Jeringa 5 ml', qty: '6', cost: '$72.00' }, { name: 'Guantes de látex', qty: '14 pzas', cost: '$56.00' } ]
+      },
+      ant: {
+        range: '1 – 31 de octubre · contra 1 – 30 de septiembre', estimated: '12 de 812 renglones',
+        cards: [card('Ventas', '$61,350', '▲ 8 % contra el periodo anterior', up), card('Costo', '$19,370', '▲ 6 %', flat), card('Ganancia', '$41,980', '▲ 10 %', up), card('Margen', '68.4 %', '▲ 1.0 puntos', up), card('Tickets', '214', '▲ 11', up), card('Ticket promedio', '$287', '▲ 2 %', up), card('Compras', '$21,790', '▲ 18 %', flat), card('Valor del inventario', '$48,210', 'hoy', flat)],
+        sections: [ { name: 'Consultas', sales: '$31,200', cost: '$0', profit: '$31,200', margin: '100 %', share: '51%' }, { name: 'Medicamentos', sales: '$21,470', cost: '$13,980', profit: '$7,490', margin: '35 %', share: '35%' }, { name: 'Insumos', sales: '$5,520', cost: '$3,960', profit: '$1,560', margin: '28 %', share: '9%' }, { name: 'Servicios', sales: '$3,160', cost: '$1,430', profit: '$1,730', margin: '55 %', share: '5%' }, { name: 'Otros', sales: '$0', cost: '$0', profit: '$0', margin: '—', share: '0%' } ],
+        bars: series(31, 2, 1), barGap: '2px', axisStart: '1 oct', axisEnd: '31 oct', chartLabel: 'Ventas y ganancia por día de octubre; los domingos casi sin ventas',
+        services: [ { name: 'Curación', count: '38', income: '$5,700' }, { name: 'Inyección', count: '27', income: '$2,160' }, { name: 'Retiro de puntos', count: '9', income: '$1,350' } ],
+        purchasesTotal: '$21,790', suppliers: [ { name: 'LUIN', entries: '3 pedidos', total: '$12,430' }, { name: 'Nadro', entries: '2 pedidos', total: '$8,210' }, { name: 'Entrada sin pedido', entries: '4 entradas', total: '$1,150' } ], purchasesMeds: '$17,920', purchasesSupplies: '$3,870',
+        consumption: [ { name: 'Gasa estéril 10x10', qty: '46 pzas', cost: '$165.60' }, { name: 'Jeringa 5 ml', qty: '30', cost: '$360.00' }, { name: 'Guantes de látex', qty: '60 pzas', cost: '$240.00' }, { name: 'Venda elástica 10 cm', qty: '8', cost: '$200.00' } ]
+      },
+      anio: {
+        range: '1 de enero – 3 de noviembre · contra el mismo tramo de 2025', estimated: '1,904 de 7,410 renglones',
+        cards: [card('Ventas', '$598,400', '▲ 15 % contra el periodo anterior', up), card('Costo', '$191,300', '▲ 13 %', flat), card('Ganancia', '$407,100', '▲ 17 %', up), card('Margen', '68.0 %', '▲ 0.8 puntos', up), card('Tickets', '2,087', '▲ 196', up), card('Ticket promedio', '$287', '▲ 4 %', up), card('Compras', '$231,600', '▲ 12 %', flat), card('Valor del inventario', '$48,210', 'hoy', flat)],
+        sections: [ { name: 'Consultas', sales: '$305,200', cost: '$0', profit: '$305,200', margin: '100 %', share: '51%' }, { name: 'Medicamentos', sales: '$209,400', cost: '$136,100', profit: '$73,300', margin: '35 %', share: '35%' }, { name: 'Insumos', sales: '$53,900', cost: '$39,800', profit: '$14,100', margin: '26 %', share: '9%' }, { name: 'Servicios', sales: '$29,900', cost: '$15,400', profit: '$14,500', margin: '48 %', share: '5%' }, { name: 'Otros', sales: '$0', cost: '$0', profit: '$0', margin: '—', share: '0%' } ],
+        bars: series(11, 1, 1), barGap: '8px', axisStart: 'ene', axisEnd: 'nov', chartLabel: 'Ventas y ganancia por mes de 2026',
+        services: [ { name: 'Curación', count: '402', income: '$60,300' }, { name: 'Inyección', count: '288', income: '$23,040' }, { name: 'Retiro de puntos', count: '94', income: '$14,100' } ],
+        purchasesTotal: '$231,600', suppliers: [ { name: 'LUIN', entries: '31 pedidos', total: '$129,800' }, { name: 'Nadro', entries: '22 pedidos', total: '$88,400' }, { name: 'Entrada sin pedido', entries: '41 entradas', total: '$13,400' } ], purchasesMeds: '$190,100', purchasesSupplies: '$41,500',
+        consumption: [ { name: 'Gasa estéril 10x10', qty: '512 pzas', cost: '$1,843' }, { name: 'Jeringa 5 ml', qty: '318', cost: '$3,816' }, { name: 'Guantes de látex', qty: '700 pzas', cost: '$2,800' }, { name: 'Venda elástica 10 cm', qty: '86', cost: '$2,150' } ]
+      }
+    };
+    const periodDefs = [ { id: 'hoy', label: 'Hoy' }, { id: 'semana', label: 'Esta semana' }, { id: 'mes', label: 'Este mes' }, { id: 'ant', label: 'Mes anterior' }, { id: 'anio', label: 'Este año' }, { id: 'rango', label: 'Rango…' } ];
+    const typeDefs = [ { id: 'todo', label: 'Todo' }, { id: 'cons', label: 'Consultas' }, { id: 'med', label: 'Medicamentos' }, { id: 'ins', label: 'Insumos' }, { id: 'serv', label: 'Servicios' }, { id: 'otros', label: 'Otros' } ];
+    const key = data[period] ? period : (period === 'semana' ? 'hoy' : 'ant');
+    const d = data[key];
+    const byQty = [
+      { rank: '1', name: 'Tempra 500 mg tabletas', detail: 'Paracetamol', value: '68' },
+      { rank: '2', name: 'Amoxicilina 500 mg cápsulas', detail: 'Amoxicilina', value: '45' },
+      { rank: '3', name: 'Ibuprofeno 400 mg tabletas', detail: 'Ibuprofeno', value: '39' },
+      { rank: '4', name: 'Omeprazol 20 mg cápsulas', detail: 'Omeprazol', value: '27' },
+      { rank: '5', name: 'Gasa estéril 10x10 cm', detail: 'Insumo · piezas sueltas', value: '46 pzas' }
+    ];
+    const byProfit = [
+      { rank: '1', name: 'Omeprazol 20 mg cápsulas', detail: 'Omeprazol · margen 41 %', value: '$670' },
+      { rank: '2', name: 'Tempra 500 mg tabletas', detail: 'Paracetamol · margen 22 %', value: '$720' },
+      { rank: '3', name: 'Ibuprofeno 400 mg tabletas', detail: 'Ibuprofeno · margen 30 %', value: '$640' },
+      { rank: '4', name: 'Amoxicilina 500 mg cápsulas', detail: 'Amoxicilina · margen 9 %', value: '$344' },
+      { rank: '5', name: 'Loratadina 10 mg tabletas', detail: 'Loratadina · margen 35 %', value: '$290' }
+    ];
+    return {
+      periods: periodDefs.map((p) => ({ ...p, selected: p.id === period ? 'true' : 'false', style: p.id === period ? chipOn : chipOff, pick: () => this.setState({ period: p.id }) })),
+      types: typeDefs.map((t) => ({ ...t, selected: t.id === type ? 'true' : 'false', style: t.id === type ? typeOn : typeOff, pick: () => this.setState({ type: t.id }) })),
+      rankModes: [ { id: 'qty', label: 'Cantidad' }, { id: 'profit', label: 'Ganancia' } ].map((m) => ({ ...m, selected: m.id === rank ? 'true' : 'false', style: m.id === rank ? segOn : segOff, pick: () => this.setState({ rank: m.id }) })),
+      top: rank === 'qty' ? byQty : byProfit,
+      d
+    };
+  }
+}
+</script>
+</body>
+</html>

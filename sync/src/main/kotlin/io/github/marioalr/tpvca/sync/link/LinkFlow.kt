@@ -58,6 +58,8 @@ class LinkFlow(
     private val elapsedMillis: () -> Long = { clock.millis() },
     /** Solo para las pruebas con un servidor local: la app nunca lo activa. */
     private val allowLoopback: Boolean = false,
+    /** Mientras el motor corre una sincronización de verdad (la insignia de la cabecera del celular). */
+    private val onSyncing: (Boolean) -> Unit = {},
 ) {
     @Volatile
     private var credential: DeviceCredential? = null
@@ -281,8 +283,13 @@ class LinkFlow(
 
     private fun syncNow(saved: DeviceCredential, trigger: SyncTrigger, forceHeartbeat: Boolean): LinkState {
         lastCheck = clock.instant()
-        val outcome = session(saved).engine.sync(trigger)
-        return publish(settle(saved, outcome, forceHeartbeat))
+        onSyncing(true)
+        try {
+            val outcome = session(saved).engine.sync(trigger)
+            return publish(settle(saved, outcome, forceHeartbeat))
+        } finally {
+            onSyncing(false)
+        }
     }
 
     /** Lo que el motor acaba de leer se guarda aquí antes de decidir nada: si la fila cambió de rol, la app lo sigue desde esta revisión. */
@@ -373,6 +380,24 @@ class LinkFlow(
         if (current !is LinkState.Revoked || !current.erased) return state
         notices.clearRevocation()
         return publish(LinkState.NotLinked())
+    }
+
+    /** La última sincronización que terminó bien, de la base; `null` si nunca o si no hay base. */
+    @Synchronized
+    fun lastSuccess(): Instant? {
+        val saved = credential ?: return null
+        if (saved.token == null || !loaded) return null
+        return database.store().meta(SyncEngine.LAST_SUCCESS)?.let { runCatching { Instant.parse(it) }.getOrNull() }
+    }
+
+    /**
+     * Una conexión aparte para bajar a pedido (un resultado de laboratorio): no pasa por la cadencia ni por el motor. Sin esperar a la llamada en curso, para
+     * que abrir un archivo no quede detrás de una sincronización. `null` sin token.
+     */
+    fun fileConnection(): HranaConnection? {
+        val saved = credential ?: return null
+        val token = saved.token ?: return null
+        return connect(saved.url, token)
     }
 
     private fun session(saved: DeviceCredential): Session {

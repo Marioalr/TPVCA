@@ -5,6 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
+import io.github.marioalr.tpvca.data.clinic.ClinicDao
 import io.github.marioalr.tpvca.data.entity.CategoryEntity
 import io.github.marioalr.tpvca.data.entity.ClinicalServiceEntity
 import io.github.marioalr.tpvca.data.entity.ClinicProfileEntity
@@ -43,6 +44,9 @@ import io.github.marioalr.tpvca.data.entity.SyncTombstoneEntity
     exportSchema = false,
 )
 abstract class TpvcaDatabase : RoomDatabase() {
+    /** Lo que leen las pantallas (K4). Lo que baja lo escribe `RoomSyncStore`. */
+    abstract fun clinic(): ClinicDao
+
     companion object {
         fun open(context: Context, name: String, helperFactory: SupportSQLiteOpenHelper.Factory): TpvcaDatabase =
             Room.databaseBuilder(context.applicationContext, TpvcaDatabase::class.java, name).openHelperFactory(helperFactory).build()

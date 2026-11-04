@@ -31,6 +31,13 @@ class EncryptedLocalDatabase(
     @Synchronized
     override fun store(): SyncStore = store ?: RoomSyncStore(open(), assetsDir).also { store = it }
 
+    /** La base abierta, para las lecturas de las pantallas. Es la misma que usa el motor y se cierra al borrarse. */
+    @Synchronized
+    fun database(): TpvcaDatabase {
+        store()
+        return checkNotNull(database)
+    }
+
     private fun open(): TpvcaDatabase {
         val opened = TpvcaDatabase.open(app, name, helperFactory(passphrase()))
         database = opened

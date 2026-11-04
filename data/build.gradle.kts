@@ -52,6 +52,7 @@ dependencies {
     api(libs.androidx.room.runtime)
     ksp(libs.androidx.room.compiler)
     implementation(libs.sqlcipher.android)
+    implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)

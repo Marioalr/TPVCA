@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Inicio</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:Inter,system-ui,sans-serif;color:#0F172A}
+a{color:#0369A1;text-decoration:none}a:hover{color:#075985}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F8FAFC; display: flex; flex-direction: column; font-family: Inter, system-ui, sans-serif; color: #0F172A; position: relative; overflow: hidden">
+  <sc-if value="{{showInicio}}" hint-placeholder-val="{{true}}">
+    <div onWheel="{{inicioWheel}}" onTouchStart="{{touchStart}}" onTouchEnd="{{inicioTouchEnd}}" style="flex: 1; min-height: 0; display: flex; flex-direction: column; padding-bottom: 72px">
+      <header style="padding: 20px 20px 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px">
+        <div style="display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 13px; color: #64748B">Lunes 3 de noviembre</span>
+          <h1 style="margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.01em">Buenos días</h1>
+        </div>
+        <button style="display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 18px; border: 1px solid #E2E8F0; background: #FFFFFF; font: 500 12px Inter, sans-serif; color: #047857; cursor: pointer" aria-label="Estado de la sincronización: hace 2 minutos">
+          <span style="width: 8px; height: 8px; border-radius: 4px; background: #059669"></span>
+          Hace 2 min
+        </button>
+      </header>
+
+      <main style="flex: 1; overflow: auto; padding: 4px 16px 24px; display: flex; flex-direction: column; gap: 16px">
+        <section style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+          <div style="display: flex; flex-direction: column; gap: 4px">
+            <span style="font-size: 12px; color: #64748B; font-weight: 500">Ventas de hoy</span>
+            <span style="font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums">$3,480</span>
+            <span style="font-size: 12px; color: #047857; font-weight: 500">▲ 12 % contra el lunes pasado</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px; border-left: 1px solid #E2E8F0; padding-left: 12px">
+            <span style="font-size: 12px; color: #64748B; font-weight: 500">Citas de hoy</span>
+            <span style="font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums">7</span>
+            <span style="font-size: 12px; color: #64748B">3 pendientes</span>
+          </div>
+        </section>
+
+        <section style="display: flex; flex-direction: column; gap: 8px">
+          <h2 style="margin: 0 4px; font-size: 15px; font-weight: 600">Avisos</h2>
+          <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; overflow: hidden">
+            <a href="Inventario.dc.html" style="display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 0 16px; color: #0F172A; border-bottom: 1px solid #E2E8F0">
+              <span style="width: 32px; height: 32px; border-radius: 16px; background: #FEE2E2; display: flex; align-items: center; justify-content: center; flex-shrink: 0">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B91C1C" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+              </span>
+              <span style="flex: 1; font-size: 14px; font-weight: 500">Revisar inventario</span>
+              <span style="font-size: 14px; font-weight: 600; color: #B91C1C">2</span>
+            </a>
+            <a href="Inventario.dc.html" style="display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 0 16px; color: #0F172A; border-bottom: 1px solid #E2E8F0">
+              <span style="width: 32px; height: 32px; border-radius: 16px; background: #FEF3C7; display: flex; align-items: center; justify-content: center; flex-shrink: 0">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B45309" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>
+              </span>
+              <span style="flex: 1; font-size: 14px; font-weight: 500">Stock bajo</span>
+              <span style="font-size: 14px; font-weight: 600; color: #B45309">5</span>
+            </a>
+            <a href="Inventario.dc.html" style="display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 0 16px; color: #0F172A; border-bottom: 1px solid #E2E8F0">
+              <span style="width: 32px; height: 32px; border-radius: 16px; background: #FEF3C7; display: flex; align-items: center; justify-content: center; flex-shrink: 0">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B45309" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              </span>
+              <span style="flex: 1; font-size: 14px; font-weight: 500">Lotes por vencer (30 días)</span>
+              <span style="font-size: 14px; font-weight: 600; color: #B45309">3</span>
+            </a>
+            <a href="Agenda.dc.html" style="display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 0 16px; color: #0F172A">
+              <span style="width: 32px; height: 32px; border-radius: 16px; background: #E0F2FE; display: flex; align-items: center; justify-content: center; flex-shrink: 0">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0369A1" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>
+              </span>
+              <span style="flex: 1; font-size: 14px; font-weight: 500">Empalme en la agenda</span>
+              <span style="font-size: 14px; font-weight: 600; color: #0369A1">1</span>
+            </a>
+          </div>
+        </section>
+
+        <section style="display: flex; flex-direction: column; gap: 8px">
+          <div style="display: flex; justify-content: space-between; align-items: baseline; margin: 0 4px">
+            <h2 style="margin: 0; font-size: 15px; font-weight: 600">Próximas citas</h2>
+            <a href="Agenda.dc.html" style="font-size: 13px; font-weight: 500">Ver agenda</a>
+          </div>
+          <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; overflow: hidden">
+            <a href="Ficha.dc.html" style="display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 0 16px; color: #0F172A; border-bottom: 1px solid #E2E8F0">
+              <span style="font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; width: 48px">10:30</span>
+              <span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 14px; font-weight: 500">Ana López Ruiz</span><span style="font-size: 12px; color: #64748B">Seguimiento · 30 min</span></span>
+            </a>
+            <a href="Ficha.dc.html" style="display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 0 16px; color: #0F172A">
+              <span style="font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; width: 48px">11:00</span>
+              <span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 14px; font-weight: 500">Juan Pérez Gómez</span><span style="font-size: 12px; color: #64748B">Consulta general · 30 min</span></span>
+            </a>
+          </div>
+        </section>
+
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0 8px; font-size: 11px; color: #64748B">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg>
+          Deslice hacia arriba para ver el negocio
+        </div>
+      </main>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{showNegocio}}" hint-placeholder-val="{{false}}">
+    <div onWheel="{{negocioWheel}}" onTouchStart="{{touchStart}}" onTouchEnd="{{negocioTouchEnd}}" style="flex: 1; min-height: 0; overflow: auto; padding-bottom: 72px">
+      <dc-import name="Negocio" hint-size="390px,2440px"></dc-import>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{menuOpen}}" hint-placeholder-val="{{false}}">
+    <div style="position: absolute; left: 0; top: 0; right: 0; bottom: 72px; background: rgba(15,23,42,0.32)"></div>
+    <div role="menu" aria-label="Acciones rápidas" style="position: absolute; right: 20px; bottom: 164px; width: 260px; background: #FFFFFF; border-radius: 16px; border: 1px solid #E2E8F0; box-shadow: 0 12px 32px rgba(15,23,42,0.18); overflow: hidden">
+      <a href="Pacientes.dc.html" role="menuitem" style="display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; color: #0F172A; border-bottom: 1px solid #E2E8F0">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0369A1" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <span style="font-size: 14px; font-weight: 500">Buscar paciente</span>
+      </a>
+      <button role="menuitem" disabled style="width: 100%; display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 0 16px; border: none; border-bottom: 1px solid #E2E8F0; background: #FFFFFF; text-align: left; cursor: not-allowed">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18M12 14v4M10 16h4"/></svg>
+        <span style="display: flex; flex-direction: column; gap: 2px"><span style="font: 500 14px Inter, sans-serif; color: #64748B">Agendar cita</span><span style="font: 400 11px Inter, sans-serif; color: #64748B">En la siguiente versión</span></span>
+      </button>
+      <button role="menuitem" disabled style="width: 100%; display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 0 16px; border: none; background: #FFFFFF; text-align: left; cursor: not-allowed">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>
+        <span style="display: flex; flex-direction: column; gap: 2px"><span style="font: 500 14px Inter, sans-serif; color: #64748B">Entrada de mercancía</span><span style="font: 400 11px Inter, sans-serif; color: #64748B">En la siguiente versión</span></span>
+      </button>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{showInicio}}" hint-placeholder-val="{{true}}">
+    <button onClick="{{toggleMenu}}" aria-label="{{fabLabel}}" aria-expanded="{{menuExpanded}}" style="position: absolute; right: 20px; bottom: 92px; width: 60px; height: 60px; border-radius: 30px; border: none; background: {{accent}}; color: #FFFFFF; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 20px rgba(3,105,161,0.32); cursor: pointer">
+      <sc-if value="{{menuOpen}}" hint-placeholder-val="{{false}}">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </sc-if>
+      <sc-if value="{{menuClosed}}" hint-placeholder-val="{{true}}">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </sc-if>
+    </button>
+  </sc-if>
+
+  <nav aria-label="Secciones" style="position: absolute; left: 0; right: 0; bottom: 0; height: 72px; background: #FFFFFF; border-top: 1px solid #E2E8F0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr))">
+    <a href="Main.dc.html" aria-current="page" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: 600; color: {{accent}}">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>Inicio</a>
+    <a href="Pacientes.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: 500; color: #64748B">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M17 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3"/></svg>Pacientes</a>
+    <a href="Agenda.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: 500; color: #64748B">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>Agenda</a>
+    <a href="Inventario.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: 500; color: #64748B">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>Inventario</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#0369A1","options":["#0369A1","#D97706","#0D9488","#7C3AED"]},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { menu: false, screen: 'inicio' };
+    this.startY = null;
+  }
+  renderVals() {
+    const open = this.state.menu;
+    const negocio = this.state.screen === 'negocio';
+    const toNegocio = () => this.setState({ screen: 'negocio', menu: false });
+    const toInicio = () => this.setState({ screen: 'inicio' });
+    const endY = (e) => (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientY : null);
+    return {
+      accent: this.props.accent ?? '#0369A1',
+      menuOpen: open && !negocio,
+      menuClosed: !open,
+      menuExpanded: open ? 'true' : 'false',
+      fabLabel: open ? 'Cerrar acciones rápidas' : 'Acciones rápidas',
+      toggleMenu: () => this.setState({ menu: !open }),
+      showInicio: !negocio,
+      showNegocio: negocio,
+      touchStart: (e) => { this.startY = e.touches && e.touches[0] ? e.touches[0].clientY : null; },
+      inicioTouchEnd: (e) => { const y = endY(e); if (this.startY !== null && y !== null && this.startY - y > 60) toNegocio(); },
+      negocioTouchEnd: (e) => { const y = endY(e); if (this.startY !== null && y !== null && y - this.startY > 60 && e.currentTarget.scrollTop <= 0) toInicio(); },
+      inicioWheel: (e) => { if (e.deltaY > 40) toNegocio(); },
+      negocioWheel: (e) => { if (e.deltaY < -40 && e.currentTarget.scrollTop <= 0) toInicio(); }
+    };
+  }
+}
+</script>
+</body>
+</html>

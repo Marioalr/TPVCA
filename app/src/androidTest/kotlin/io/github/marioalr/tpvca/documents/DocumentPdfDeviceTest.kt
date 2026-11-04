@@ -131,6 +131,39 @@ class DocumentPdfDeviceTest {
         render(file, "alergias")
     }
 
+    /** Revisión de K4: la vista no se detiene a las 30 páginas; cada una se dibuja al llegar a ella. */
+    @Test
+    fun unPdfLargoSeVeCompletoDeUnaEnUna() {
+        val file = File(out, "largo.pdf")
+        val document = android.graphics.pdf.PdfDocument()
+        for (i in 1..40) {
+            val page = document.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(300, 400, i).create())
+            page.canvas.drawText("Página $i", 20f, 50f, Paint().apply { textSize = 24f })
+            document.finishPage(page)
+        }
+        file.outputStream().use(document::writeTo)
+        document.close()
+        DocumentPages.open(file, "application/pdf").use { pages ->
+            assertEquals(40, pages.count)
+            assertEquals(400f / 300f, pages.aspect, 0.01f)
+            for (index in listOf(39, 0, 30)) {
+                val bitmap = pages.render(index, 600)
+                assertEquals(800, bitmap.height)
+                assertTrue((0 until bitmap.height step 2).any { y -> (0 until bitmap.width step 2).any { x -> bitmap.getPixel(x, y) != Color.WHITE } })
+            }
+        }
+    }
+
+    @Test
+    fun unaFotoGrandeSeReduceAlAnchoDeLaPantalla() {
+        val file = File(out, "foto.jpg")
+        Bitmap.createBitmap(3000, 2000, Bitmap.Config.RGB_565).also { b -> file.outputStream().use { b.compress(Bitmap.CompressFormat.JPEG, 50, it) } }
+        DocumentPages.open(file, "image/jpeg").use { pages ->
+            assertEquals(1, pages.count)
+            assertTrue(pages.render(0, 700).width < 3000)
+        }
+    }
+
     @Test
     fun elTicketEsDe80Mm() {
         val file = File(out, "ticket.pdf")

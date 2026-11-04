@@ -14,9 +14,9 @@ class TpvcaApplication : Application() {
         super.onCreate()
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
-                override fun onStart(owner: LifecycleOwner) = graph.controller.onForeground()
+                override fun onStart(owner: LifecycleOwner) = graph.onForeground()
 
-                override fun onStop(owner: LifecycleOwner) = graph.controller.onBackground()
+                override fun onStop(owner: LifecycleOwner) = graph.onBackground()
             },
         )
     }

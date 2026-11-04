@@ -173,7 +173,8 @@ fun readHome(env: PhoneEnv, today: LocalDate): HomeView {
     val (expired, near) = StockAlertRules.splitByExpiration(batches, today) { productById[it.productId] }
     val appointments = reader.appointmentsFrom(today)
     val (count, pending) = HomeAgendaRules.todayCounts(appointments.map { it.appointment }.filter { it.date == today })
-    val byId = appointments.associateBy { it.appointment.syncId }
+    // Por la cita misma, no por su SyncId: uno dañado se lee como vacío y juntaría a dos pacientes
+    val byAppointment = java.util.IdentityHashMap<io.github.marioalr.tpvca.domain.model.Appointment, AppointmentRow>().apply { appointments.forEach { put(it.appointment, it) } }
     return HomeView(
         salesToday = sales,
         salesChange = BusinessReportRules.changeText(change),
@@ -186,7 +187,7 @@ fun readHome(env: PhoneEnv, today: LocalDate): HomeView {
         nearExpiry = near.size,
         expired = expired.size,
         overlaps = HomeAgendaRules.overlapCount(appointments.map { it.appointment }, today),
-        upcoming = HomeAgendaRules.upcoming(appointments.map { it.appointment }, today).mapNotNull { byId[it.syncId] },
+        upcoming = HomeAgendaRules.upcoming(appointments.map { it.appointment }, today).mapNotNull { byAppointment[it] },
     )
 }
 
@@ -194,7 +195,7 @@ fun readHome(env: PhoneEnv, today: LocalDate): HomeView {
 fun InicioScreen(env: PhoneEnv, status: PhoneStatus, dataVersion: Long, nav: PhoneNav, onSync: () -> Unit, onResumeBrake: () -> Unit, onOpenNegocio: () -> Unit) {
     io.github.marioalr.tpvca.ui.link.PatientDataWindow()
     val today = env.today()
-    val state by load(dataVersion, today) { readHome(env, today) }
+    val state by load(today, refresh = dataVersion) { readHome(env, today) }
     val scroll = rememberScrollState()
     var menuOpen by remember { mutableStateOf(false) }
     val swipe = rememberEdgeSwipe(towardsTop = true, scroll) { if (!menuOpen) onOpenNegocio() }
@@ -328,7 +329,7 @@ private fun Upcoming(view: HomeView, today: LocalDate, nav: PhoneNav) {
                 if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(PhoneColors.Border))
                 val a = row.appointment
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 60.dp).clickable { nav.open(PhoneDetail.Ficha(row.patientSyncId)) }.padding(horizontal = 16.dp, vertical = 8.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 60.dp).clickable(enabled = isOpenableSyncId(row.patientSyncId)) { nav.open(PhoneDetail.Ficha(row.patientSyncId)) }.padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {

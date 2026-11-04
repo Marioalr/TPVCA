@@ -60,6 +60,8 @@ class LinkFlow(
     private val allowLoopback: Boolean = false,
     /** Mientras el motor corre una sincronización de verdad (la insignia de la cabecera del celular). */
     private val onSyncing: (Boolean) -> Unit = {},
+    /** Antes de borrar nada: desde aquí, las pantallas ya no leen ni escriben (`DataGate`). Regresa cuando termine lo que estaba en curso. */
+    private val onEraseStarting: () -> Unit = {},
 ) {
     @Volatile
     private var credential: DeviceCredential? = null
@@ -348,6 +350,7 @@ class LinkFlow(
 
     /** Dos 401 y nada pendiente: se borra la base y el token. Se quedan el `DeviceId` y la URL: la fila de `DeviceRegistry` sigue (§4.7). */
     private fun onTokenWipe(saved: DeviceCredential) {
+        onEraseStarting()
         val kept = saved.copy(token = null)
         vault.save(kept)
         credential = kept
@@ -357,6 +360,7 @@ class LinkFlow(
     }
 
     private fun eraseAll() {
+        onEraseStarting()
         session = null
         credential = null
         database.erase()

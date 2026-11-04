@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -263,7 +264,7 @@ fun ChipRow(gap: Dp = 8.dp, content: @Composable () -> Unit) {
 
 /** Un botón del diseño: relleno o con borde, con al menos 48 dp de toque. */
 @Composable
-fun PButton(label: String, modifier: Modifier = Modifier, filled: Boolean = false, icon: ImageVector? = null, height: Dp = 44.dp, radius: Dp = 10.dp, description: String? = null, fill: Boolean = false, onClick: () -> Unit) {
+fun PButton(label: String, modifier: Modifier = Modifier, filled: Boolean = false, icon: ImageVector? = null, height: Dp = 44.dp, radius: Dp = 10.dp, description: String? = null, fill: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     Box(
         modifier
             .heightIn(min = 48.dp)
@@ -271,7 +272,7 @@ fun PButton(label: String, modifier: Modifier = Modifier, filled: Boolean = fals
                 role = Role.Button
                 if (description != null) contentDescription = description
             }
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Row(
@@ -284,8 +285,13 @@ fun PButton(label: String, modifier: Modifier = Modifier, filled: Boolean = fals
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
         ) {
-            icon?.let { Icon(it, null, Modifier.size(16.dp), tint = if (filled) Color.White else PhoneColors.Text) }
-            PText(label, size = if (filled) 14.sp else 13.sp, weight = if (filled) FontWeight.SemiBold else FontWeight.Medium, color = if (filled) Color.White else PhoneColors.Text, align = TextAlign.Center)
+            val ink = when {
+                filled -> Color.White
+                enabled -> PhoneColors.Text
+                else -> PhoneColors.Muted
+            }
+            icon?.let { Icon(it, null, Modifier.size(16.dp), tint = ink) }
+            PText(label, size = if (filled) 14.sp else 13.sp, weight = if (filled) FontWeight.SemiBold else FontWeight.Medium, color = ink, align = TextAlign.Center)
         }
     }
 }
@@ -332,16 +338,32 @@ sealed interface Loaded<out T> {
     data object Failed : Loaded<Nothing>
 }
 
-/** Lee en un hilo de fondo cada vez que cambia una llave. Mientras lee se sigue viendo lo anterior. */
+/** Lo leído junto con las llaves para las que se leyó. */
+private class Keyed<T>(val keys: List<Any?>, val value: Loaded<T>)
+
+/**
+ * Lee en un hilo de fondo. **Lo de otras [keys] nunca se muestra:** al cambiar una llave (otro periodo, otro día) regresa [Loaded.Loading] hasta tener lo suyo, y una lectura vieja se descarta.
+ * [refresh] es «lo mismo, más al día» (bajó algo): mientras lee se sigue viendo lo anterior, que sigue siendo de estas llaves.
+ */
 @Composable
-fun <T> load(vararg keys: Any?, block: () -> T): State<Loaded<T>> = produceState<Loaded<T>>(Loaded.Loading, *keys) {
-    value = try {
-        Loaded.Ready(withContext(Dispatchers.IO) { block() })
-    } catch (e: CancellationException) {
-        throw e
-    } catch (_: Exception) {
-        Loaded.Failed
+fun <T> load(vararg keys: Any?, refresh: Any? = null, block: () -> T): State<Loaded<T>> {
+    val identity = keys.toList()
+    val loaded = produceState<Keyed<T>?>(null, *keys, refresh) {
+        value = Keyed(
+            identity,
+            try {
+                Loaded.Ready(withContext(Dispatchers.IO) { block() })
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                Loaded.Failed
+            } catch (_: OutOfMemoryError) {
+                // Un documento enorme no cierra la app
+                Loaded.Failed
+            },
+        )
     }
+    return rememberUpdatedState(loaded.value?.takeIf { it.keys == identity }?.value ?: Loaded.Loading)
 }
 
 /** Lo que dice la pantalla mientras no hay datos, o [content] con ellos. */

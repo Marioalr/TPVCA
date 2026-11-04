@@ -26,6 +26,11 @@ object LabFileRules {
 
     data class Chunk(val index: Int, val size: Int, val sha256: String)
 
+    private val SHA256 = Regex("^[0-9a-fA-F]{64}$")
+
+    /** `ContentSha256` viene de la nube: antes de usarlo en una ruta o una consulta. */
+    fun isSha256(text: String?): Boolean = text != null && SHA256.matches(text)
+
     fun chunkCount(sizeBytes: Long): Int = ((sizeBytes + CHUNK_SIZE - 1) / CHUNK_SIZE).toInt()
 
     /** Cómo se parte [content]: el último trozo puede ser más chico. */
@@ -61,6 +66,7 @@ sealed class LabFetch(open val message: String?) {
 /** Baja un archivo completo a pedido: abrir un resultado no cuenta para el freno de bytes (regla de la PC, `lab-files.json`). Bloquea: corre fuera del hilo principal. */
 class LabFileDownloader(private val connection: HranaConnection) {
     fun download(sha256: String): LabFetch {
+        if (!LabFileRules.isSha256(sha256)) return LabFetch.Broken
         try {
             val args = listOf<HranaValue>(HranaValue.Text(sha256))
             val state = connection.query(listOf(Statement(LabFileRules.STATE_SQL, args))).single().rows.firstOrNull() ?: return LabFetch.NotInCloud
@@ -68,7 +74,7 @@ class LabFileDownloader(private val connection: HranaConnection) {
             if (state.text("CompletedAtUtc").isNullOrEmpty()) return LabFetch.Uploading
             val size = state.text("SizeBytes")?.toLongOrNull() ?: return LabFetch.Broken
             val chunkCount = state.text("ChunkCount")?.toIntOrNull() ?: return LabFetch.Broken
-            if (size > LabFileRules.MAX_FILE_BYTES) return LabFetch.Broken
+            if (size < 0 || size > LabFileRules.MAX_FILE_BYTES || chunkCount < 0) return LabFetch.Broken
 
             val content = ByteArrayOutputStream(size.toInt())
             var first = 0
@@ -79,7 +85,10 @@ class LabFileDownloader(private val connection: HranaConnection) {
                 for (i in 0 until expected) {
                     val row = rows.getOrNull(i) ?: return LabFetch.Broken
                     if (row.text("ChunkIndex")?.toIntOrNull() != first + i) return LabFetch.Broken
-                    content.write(ValueCodec.bytesOf(row.getValue("Data")))
+                    val piece = ValueCodec.bytesOf(row.getValue("Data"))
+                    // Lo que llega no se junta sin tope: nunca más de lo que el archivo dijo medir
+                    if (content.size().toLong() + piece.size > size) return LabFetch.Broken
+                    content.write(piece)
                 }
                 first += LabFileRules.CHUNKS_PER_READ
             }
@@ -88,7 +97,8 @@ class LabFileDownloader(private val connection: HranaConnection) {
             return LabFetch.Ok(bytes, state.text("MimeType").orEmpty())
         } catch (e: HranaException) {
             return LabFetch.Failed(e.message)
-        } catch (_: NoSuchElementException) {
+        } catch (_: RuntimeException) {
+            // Una fila que no se puede leer no tumba la app: el archivo llegó dañado
             return LabFetch.Broken
         }
     }

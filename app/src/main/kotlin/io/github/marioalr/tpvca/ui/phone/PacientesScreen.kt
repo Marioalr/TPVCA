@@ -54,6 +54,12 @@ private enum class PatientList(val label: String) { Recent("Recientes"), Today("
 /** Un renglón ya armado: se lee en un hilo de fondo. */
 class PatientListItem(val row: PatientRow, val detail: String)
 
+/** La búsqueda de la PC. Por el renglón mismo, no por su `SyncId`: uno dañado se lee como vacío y juntaría a dos pacientes. */
+fun searchPatients(all: List<PatientRow>, query: String): List<PatientRow> {
+    val rows = java.util.IdentityHashMap<io.github.marioalr.tpvca.domain.model.Patient, PatientRow>().apply { all.forEach { put(it.patient, it) } }
+    return PatientSearchRules.rank(all.map { it.patient }, query).mapNotNull { rows[it] }
+}
+
 /** "EXP-2026-014 · 34 años · cita hoy 10:30" o "… · última visita 28 oct". */
 fun patientDetail(row: PatientRow, today: LocalDate, todayTime: String?): String {
     val age = row.patient.ageDisplay(today)
@@ -78,7 +84,7 @@ fun PacientesScreen(env: PhoneEnv, dataVersion: Long, nav: PhoneNav) {
     var listName by rememberSaveable { mutableStateOf(PatientList.Recent.name) }
     val list = PatientList.valueOf(listName)
 
-    val state by load(dataVersion, today, list) {
+    val state by load(today, list, refresh = dataVersion) {
         val appointments = env.reader.appointmentsBetween(today, today.plusDays(1)).filter { !it.appointment.isCancelled }
         val todayTimes = appointments.sortedBy { AppointmentRules.start(it.appointment.time) }
             .groupBy { it.patientSyncId }.mapValues { AppointmentRules.timeText(it.value.first().appointment.time) }
@@ -96,7 +102,7 @@ fun PacientesScreen(env: PhoneEnv, dataVersion: Long, nav: PhoneNav) {
         rows.map { PatientListItem(it, patientDetail(it, today, todayTimes[it.syncId])) } to todayTimes
     }
 
-    val allForSearch by load(dataVersion, query.isBlank()) { if (query.isBlank()) emptyList() else env.reader.allPatients() }
+    val allForSearch by load(query.isBlank(), refresh = dataVersion) { if (query.isBlank()) emptyList() else env.reader.allPatients() }
     val searchResults by androidx.compose.runtime.produceState<List<PatientListItem>?>(null, query, allForSearch) {
         val all = (allForSearch as? Loaded.Ready)?.value
         if (query.isBlank() || all == null) {
@@ -106,8 +112,7 @@ fun PacientesScreen(env: PhoneEnv, dataVersion: Long, nav: PhoneNav) {
         delay(120)
         val times = (state as? Loaded.Ready)?.value?.second.orEmpty()
         value = withContext(Dispatchers.Default) {
-            val bySync = all.associateBy { it.patient.syncId }
-            PatientSearchRules.rank(all.map { it.patient }, query).mapNotNull { bySync[it.syncId] }.map { PatientListItem(it, patientDetail(it, today, times[it.syncId])) }
+            searchPatients(all, query).map { PatientListItem(it, patientDetail(it, today, times[it.syncId])) }
         }
     }
 
@@ -164,7 +169,7 @@ private fun PatientListRow(item: PatientListItem, onClick: () -> Unit) {
     val patient = item.row.patient
     val big = isBigText()
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 68.dp).clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().heightIn(min = 68.dp).clickable(enabled = isOpenableSyncId(item.row.syncId), onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {

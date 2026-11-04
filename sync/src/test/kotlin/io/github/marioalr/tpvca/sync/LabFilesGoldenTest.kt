@@ -64,7 +64,7 @@ class LabFilesGoldenTest {
     }
 
     /** Una nube con un archivo: responde lo que lee `LabFileDownloader`. */
-    private class Cloud(val bytes: ByteArray, val completed: String? = "2026-11-03", val evicted: String? = null, val exists: Boolean = true, val corrupt: Boolean = false, val fail: Boolean = false) : HranaConnection {
+    private class Cloud(val bytes: ByteArray, val declaredSize: Long = bytes.size.toLong(), val completed: String? = "2026-11-03", val evicted: String? = null, val exists: Boolean = true, val corrupt: Boolean = false, val fail: Boolean = false) : HranaConnection {
         val requests = mutableListOf<Statement>()
 
         private fun row(vararg pairs: Pair<String, HranaValue>) = TreeMap<String, HranaValue>(String.CASE_INSENSITIVE_ORDER).apply { putAll(pairs) }
@@ -81,7 +81,7 @@ class LabFilesGoldenTest {
                         ResultSet(
                             listOf(
                                 row(
-                                    "SizeBytes" to HranaValue.Integer(bytes.size.toString()), "ChunkCount" to HranaValue.Integer(LabFileRules.chunkCount(bytes.size.toLong()).toString()),
+                                    "SizeBytes" to HranaValue.Integer(declaredSize.toString()), "ChunkCount" to HranaValue.Integer(LabFileRules.chunkCount(bytes.size.toLong()).toString()),
                                     "MimeType" to HranaValue.Text("application/pdf"), "CompletedAtUtc" to (completed?.let { HranaValue.Text(it) } ?: HranaValue.Null), "EvictedAtUtc" to (evicted?.let { HranaValue.Text(it) } ?: HranaValue.Null),
                                 ),
                             ),
@@ -115,6 +115,19 @@ class LabFilesGoldenTest {
         assertEquals("application/pdf", fetched.mimeType)
         // 3 MB = 6 trozos: el estado y dos lecturas, desde el trozo 0 y desde el 4
         assertEquals(listOf("0", "4"), cloud.requests.drop(1).map { (it.args[1] as HranaValue.Integer).value })
+    }
+
+    /** Revisión de K4: un dato dañado de la nube no tumba la app ni se junta sin tope. */
+    @Test
+    fun loDanadoDeLaNubeNoLanzaNiCreceSinTope() {
+        assertEquals("Un tamaño negativo", LabFetch.Broken, LabFileDownloader(Cloud(sample, declaredSize = -1)).download(sha))
+        assertEquals("Mayor que el tope", LabFetch.Broken, LabFileDownloader(Cloud(sample, declaredSize = LabFileRules.MAX_FILE_BYTES + 1)).download(sha))
+        val small = Cloud(sample, declaredSize = 10)
+        assertEquals("Trozos que pasan de lo declarado", LabFetch.Broken, LabFileDownloader(small).download(sha))
+        assertEquals("Se detiene en la primera lectura", 2, small.requests.size)
+        val notHex = Cloud(sample)
+        assertEquals("Un SHA-256 que no lo es", LabFetch.Broken, LabFileDownloader(notHex).download("../../base"))
+        assertTrue("Ni se pregunta", notHex.requests.isEmpty())
     }
 
     @Test

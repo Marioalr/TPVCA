@@ -25,4 +25,6 @@ object PhoneText {
     const val COPY_NOT_FOUND = "Este registro ya no está en este equipo."
     const val SHARE_FAILED = "No se pudo preparar el documento."
     const val SHARE_TITLE = "Compartir"
+    const val PREVIEW_FAILED = "No se pudo abrir el documento aquí. Compartir manda el archivo completo."
+    const val LAB_OPEN_FAILED = "No se pudo abrir el resultado. No se borró nada: intente de nuevo."
 }

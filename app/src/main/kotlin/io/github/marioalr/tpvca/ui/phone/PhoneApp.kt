@@ -60,11 +60,13 @@ import io.github.marioalr.tpvca.data.clinic.ClinicReader
 import io.github.marioalr.tpvca.documents.LabFiles
 import io.github.marioalr.tpvca.documents.SharedDocuments
 import io.github.marioalr.tpvca.domain.Clinic
+import io.github.marioalr.tpvca.domain.model.EMPTY_SYNC_ID
 import kotlinx.coroutines.delay
 import java.io.File
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.util.UUID
 
 /** Lo que usan las pantallas del celular. [labFiles] `null` en la versión con datos de prueba, que no tiene nube. */
 class PhoneEnv(
@@ -150,7 +152,7 @@ class PhoneNav(
  * está antes que esto: mientras esté bloqueada, nada de aquí se compone, y al desbloquear regresa a Inicio.
  */
 @Composable
-fun PhoneApp(env: PhoneEnv, status: PhoneStatus, dataVersion: Long, onSync: () -> Unit, onResumeBrake: () -> Unit) {
+fun PhoneApp(env: PhoneEnv, status: PhoneStatus, dataVersion: Long, onSync: () -> Unit, onResumeBrake: () -> Unit, initialPreview: PreviewDoc? = null) {
     // Tema claro también en un equipo en modo oscuro: los iconos de la barra de estado van oscuros
     val view = LocalView.current
     val context = LocalContext.current
@@ -161,14 +163,13 @@ fun PhoneApp(env: PhoneEnv, status: PhoneStatus, dataVersion: Long, onSync: () -
             controller.isAppearanceLightNavigationBars = true
         }
     }
-    LaunchedEffect(Unit) { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { env.documents.purgeOld() } }
 
     var tabName by rememberSaveable { mutableStateOf(PhoneTab.Inicio.name) }
     val tab = PhoneTab.valueOf(tabName)
     var negocio by rememberSaveable { mutableStateOf(false) }
     var stack by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var inventoryNotices by rememberSaveable { mutableStateOf(false) }
-    var previewDoc by remember { mutableStateOf<PreviewDoc?>(null) }
+    var previewDoc by remember { mutableStateOf(initialPreview) }
     val filters = remember { NegocioFilters() }
 
     val detail = stack.lastOrNull()?.let(PhoneDetail::decode)
@@ -177,12 +178,14 @@ fun PhoneApp(env: PhoneEnv, status: PhoneStatus, dataVersion: Long, onSync: () -
             open = { stack = stack + it.encode() },
             back = { stack = stack.dropLast(1) },
             select = {
+                previewDoc = null
                 tabName = it.name
                 stack = emptyList()
                 negocio = false
                 inventoryNotices = false
             },
             openInventoryWithNotices = {
+                previewDoc = null
                 tabName = PhoneTab.Inventario.name
                 stack = emptyList()
                 inventoryNotices = true
@@ -349,7 +352,10 @@ fun DetailHeader(backTo: String, nav: PhoneNav, trailing: @Composable () -> Unit
 }
 
 /** El archivo a mostrar dentro de la app. No se guarda en ningún estado que Android restaure. */
-class PreviewDoc(val title: String, val file: File, val mimeType: String, val shareName: String? = null)
+class PreviewDoc(val title: String, val file: File, val mimeType: String)
+
+/** Un `SyncId` que se puede abrir: nunca una ficha desde un `SyncId` vacío o dañado. */
+fun isOpenableSyncId(id: String?): Boolean = id != null && id != EMPTY_SYNC_ID.toString() && runCatching { UUID.fromString(id) }.isSuccess
 
 @Composable
 fun EndSpacer(height: androidx.compose.ui.unit.Dp = 16.dp) = Spacer(Modifier.height(height))

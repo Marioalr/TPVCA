@@ -3,6 +3,7 @@ package io.github.marioalr.tpvca.data.clinic
 import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Query
+import androidx.room.Transaction
 import io.github.marioalr.tpvca.data.entity.CategoryEntity
 import io.github.marioalr.tpvca.data.entity.ClinicProfileEntity
 import io.github.marioalr.tpvca.data.entity.ClinicalServiceEntity
@@ -78,6 +79,20 @@ interface ClinicDao {
     @Query("SELECT COUNT(*) FROM PatientConsultations WHERE PatientRecordSyncId = :patient")
     fun consultationCount(patient: String): Int
 
+    /** Las recetas, sin depender de cuántas consultas se hayan cargado. */
+    @Query(
+        "SELECT * FROM PatientConsultations WHERE PatientRecordSyncId = :patient AND PrescriptionsJson NOT IN ('', '[]') " +
+            "ORDER BY Date DESC LIMIT :limit",
+    )
+    fun prescriptionConsultations(patient: String, limit: Int): List<PatientConsultationEntity>
+
+    @Query("SELECT COUNT(*) FROM PatientConsultations WHERE PatientRecordSyncId = :patient AND PrescriptionsJson NOT IN ('', '[]')")
+    fun prescriptionCount(patient: String): Int
+
+    /** Todas las que pidieron estudios: son pocas, y Laboratorio no dice que no hay cuando hay. */
+    @Query("SELECT * FROM PatientConsultations WHERE PatientRecordSyncId = :patient AND LabOrderJson <> '' ORDER BY Date DESC")
+    fun labOrderConsultations(patient: String): List<PatientConsultationEntity>
+
     @Query("SELECT * FROM LabResults WHERE PatientRecordSyncId = :patient ORDER BY ResultDate DESC, SyncId")
     fun labResults(patient: String): List<LabResultEntity>
 
@@ -136,6 +151,14 @@ interface ClinicDao {
 
     @Query("SELECT * FROM SaleItems WHERE SaleSyncId IN (SELECT SyncId FROM Sales WHERE Date >= :from AND Date < :to)")
     fun saleItemsBetween(from: String, to: String): List<SaleItemEntity>
+
+    /** Las ventas de un rango con sus renglones, en una sola foto: una sincronización a la mitad no las descuadra. */
+    @Transaction
+    fun salesWithItems(from: String, to: String): Pair<List<SaleEntity>, List<SaleItemEntity>> = sales(from, to) to saleItemsBetween(from, to)
+
+    /** Una venta con sus renglones, en una sola foto. */
+    @Transaction
+    fun saleWithItems(syncId: String): Pair<SaleEntity?, List<SaleItemEntity>> = sale(syncId) to saleItems(syncId)
 
     // ------------------------------------------------------------------ membrete
 

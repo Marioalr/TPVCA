@@ -4,6 +4,7 @@ import io.github.marioalr.tpvca.data.entity.InventoryMovementEntity
 import io.github.marioalr.tpvca.data.entity.LabResultEntity
 import io.github.marioalr.tpvca.data.entity.PatientConsultationEntity
 import io.github.marioalr.tpvca.data.entity.SaleEntity
+import io.github.marioalr.tpvca.data.security.DataGate
 import io.github.marioalr.tpvca.domain.business.BusinessReportData
 import io.github.marioalr.tpvca.domain.business.InventoryListRules
 import io.github.marioalr.tpvca.domain.business.InventoryRow
@@ -59,39 +60,53 @@ data class LetterheadFiles(val crest: File?, val header: File?)
  * Todo lo que leen las pantallas del celular: siempre en un hilo de fondo (Room no deja hacerlo en el principal) y con **límites** en lo que puede crecer. No
  * guarda nada: cada lectura es de la base. Los `Int` que reciben las reglas de negocio se reparten aquí, por lectura, porque las reglas comparan por Id local.
  */
-class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -> File) {
+class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -> File, private val gate: DataGate = DataGate()) {
     private fun patientRow(c: PatientListColumns) = PatientRow(c.syncId, ClinicMappers.patient(c), ClinicMappers.dateTimeOrNull(c.lastVisit))
 
     /** Todos, para la búsqueda y A–Z (solo las columnas de la lista). */
-    fun allPatients(): List<PatientRow> = dao().patientList().map(::patientRow)
+    fun allPatients(): List<PatientRow> = gate.read { dao().patientList().map(::patientRow) }
 
-    fun recentPatients(limit: Int = RECENT_PATIENTS): List<PatientRow> =
+    fun recentPatients(limit: Int = RECENT_PATIENTS): List<PatientRow> = gate.read {
         dao().recentPatients(limit).map(::patientRow).filter { it.lastVisit != null }
+    }
 
-    fun patient(syncId: String): Patient? = dao().patient(syncId)?.let(ClinicMappers::patient)
+    fun patient(syncId: String): Patient? = gate.read { dao().patient(syncId)?.let(ClinicMappers::patient) }
 
-    fun consultations(patient: String, limit: Int = CONSULTATIONS_PAGE, offset: Int = 0): List<ConsultationRow> =
+    fun consultations(patient: String, limit: Int = CONSULTATIONS_PAGE, offset: Int = 0): List<ConsultationRow> = gate.read {
         dao().consultations(patient, limit, offset).map { consultationRow(it) }
+    }
 
-    fun consultationCount(patient: String): Int = dao().consultationCount(patient)
+    fun consultationCount(patient: String): Int = gate.read { dao().consultationCount(patient) }
 
-    fun consultation(syncId: String): ConsultationRow? = dao().consultation(syncId)?.let(::consultationRow)
+    fun consultation(syncId: String): ConsultationRow? = gate.read { dao().consultation(syncId)?.let(::consultationRow) }
+
+    /** Las consultas con receta, de la más nueva a la más vieja, aunque no estén en la página cargada de Consultas. */
+    fun prescriptionConsultations(patient: String, limit: Int = CONSULTATIONS_PAGE): List<ConsultationRow> =
+        gate.read { dao().prescriptionConsultations(patient, limit).map(::consultationRow) }
+
+    fun prescriptionCount(patient: String): Int = gate.read { dao().prescriptionCount(patient) }
+
+    /** Todas las consultas que pidieron estudios. */
+    fun labOrderConsultations(patient: String): List<ConsultationRow> =
+        gate.read { dao().labOrderConsultations(patient).map(::consultationRow).filter { it.consultation.labStudies.isNotEmpty() } }
 
     private fun consultationRow(e: PatientConsultationEntity) = ConsultationRow(e.syncId, ClinicMappers.consultation(e))
 
-    fun labResults(patient: String): List<LabResultRow> = dao().labResults(patient).map(::labResult)
+    fun labResults(patient: String): List<LabResultRow> = gate.read { dao().labResults(patient).map(::labResult) }
 
     private fun labResult(e: LabResultEntity) = LabResultRow(
         e.syncId, e.title, e.laboratory, ClinicMappers.dateOnlyOrNull(e.resultDate), e.notes, e.mimeType, e.pageCount.toInt(), e.sizeBytes, e.fileName, e.contentSha256,
     )
 
-    fun patientAppointments(patient: String): List<Appointment> = dao().patientAppointments(patient).map(ClinicMappers::appointment)
+    fun patientAppointments(patient: String): List<Appointment> = gate.read { dao().patientAppointments(patient).map(ClinicMappers::appointment) }
 
-    fun appointmentsBetween(from: LocalDate, to: LocalDate): List<AppointmentRow> =
+    fun appointmentsBetween(from: LocalDate, to: LocalDate): List<AppointmentRow> = gate.read {
         dao().appointmentsBetween(ClinicMappers.protocol(from), ClinicMappers.protocol(to)).map { AppointmentRow(it.patientRecordSyncId, ClinicMappers.appointment(it)) }
+    }
 
-    fun appointmentsFrom(from: LocalDate): List<AppointmentRow> =
+    fun appointmentsFrom(from: LocalDate): List<AppointmentRow> = gate.read {
         dao().appointmentsFrom(ClinicMappers.protocol(from)).map { AppointmentRow(it.patientRecordSyncId, ClinicMappers.appointment(it)) }
+    }
 
     private class Catalog(val products: List<Product>, val ids: Map<String, Int>, val batches: List<ProductBatch>, val batchesByProduct: Map<String, List<ProductBatch>>)
 
@@ -108,16 +123,16 @@ class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -
         return Catalog(products, ids, batches, emptyMap())
     }
 
-    fun products(): List<Product> = catalog(withBatches = false).products
+    fun products(): List<Product> = gate.read { catalog(withBatches = false).products }
 
     /** El inventario con sus alertas. `SyncId` → renglón, con el `SyncId` en [InventoryEntry]. */
-    fun inventory(today: LocalDate): List<InventoryEntry> {
+    fun inventory(today: LocalDate): List<InventoryEntry> = gate.read {
         val c = catalog(withBatches = true)
         val syncIds = c.ids.entries.associate { (s, i) -> i to s }
-        return InventoryListRules.rows(c.products, c.batches, today).map { InventoryEntry(syncIds.getValue(it.product.id), it) }
+        InventoryListRules.rows(c.products, c.batches, today).map { InventoryEntry(syncIds.getValue(it.product.id), it) }
     }
 
-    fun movements(product: String, limit: Int = PRODUCT_MOVEMENTS): List<MovementRow> = dao().productMovements(product, limit).map(::movementRow)
+    fun movements(product: String, limit: Int = PRODUCT_MOVEMENTS): List<MovementRow> = gate.read { dao().productMovements(product, limit).map(::movementRow) }
 
     private fun movementRow(e: InventoryMovementEntity): MovementRow {
         val type = MovementRules.typeOf(e.movementType.toInt())
@@ -130,7 +145,7 @@ class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -
     }
 
     /** Las ventas y los movimientos de [from] (incluido) a [to] (sin incluir), con el catálogo completo. */
-    fun businessReport(from: LocalDate, to: LocalDate): BusinessReportData {
+    fun businessReport(from: LocalDate, to: LocalDate): BusinessReportData = gate.read {
         val d = dao()
         val c = catalog(withBatches = false)
         val serviceEntities = d.services()
@@ -170,16 +185,19 @@ class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -
                 reason = m.reason,
             )
         }
-        return BusinessReportData(saleLines, movements, c.products, services)
+        BusinessReportData(saleLines, movements, c.products, services)
     }
 
-    /** Las ventas de ese día con sus renglones, para `CashCutRules`. */
-    fun salesOfDay(day: LocalDate): List<Sale> {
-        val d = dao()
-        val from = ClinicMappers.protocol(day)
-        val to = ClinicMappers.protocol(day.plusDays(1))
-        val items = d.saleItemsBetween(from, to).groupBy { it.saleSyncId }
-        return d.sales(from, to).map { s ->
+    /** Las ventas de ese día con sus renglones, para `CashCutRules`, de una sola foto de la base. */
+    fun salesOfDay(day: LocalDate): List<Sale> = cashDay(day).first
+
+    fun ticketsOfDay(day: LocalDate): List<SaleRow> = cashDay(day).second
+
+    /** Lo del corte y sus tickets, de la misma foto: no se descuadran si baja algo a la mitad. */
+    fun cashDay(day: LocalDate): Pair<List<Sale>, List<SaleRow>> = gate.read {
+        val (sales, allItems) = dao().salesWithItems(ClinicMappers.protocol(day), ClinicMappers.protocol(day.plusDays(1)))
+        val items = allItems.groupBy { it.saleSyncId }
+        sales.map { s ->
             Sale(
                 date = ClinicMappers.dateTime(s.date),
                 total = ClinicMappers.decimal(s.total),
@@ -189,42 +207,44 @@ class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -
                     SaleItem(i.isService != 0L, i.quantity.toInt(), ClinicMappers.decimal(i.unitPrice), ClinicMappers.decimal(i.subtotal))
                 },
             )
-        }
+        } to sales.map(::saleRow)
     }
-
-    fun ticketsOfDay(day: LocalDate): List<SaleRow> =
-        dao().sales(ClinicMappers.protocol(day), ClinicMappers.protocol(day.plusDays(1))).map(::saleRow)
 
     private fun saleRow(s: SaleEntity) = SaleRow(
         s.syncId, s.folio, ClinicMappers.dateTime(s.date), s.patientName.ifBlank { s.customerName }, s.paymentMethod, ClinicMappers.decimal(s.total), s.isCancelled != 0L,
     )
 
     /** El ticket de una venta, como lo reimprime la PC (`PosViewModel.Records`): cada renglón con `ProductName`. */
-    fun receipt(saleSyncId: String): SaleReceipt? {
-        val d = dao()
-        val s = d.sale(saleSyncId) ?: return null
-        return SaleReceipt(
-            folio = s.folio,
-            originalFolio = s.originalFolio,
-            date = ClinicMappers.dateTime(s.date),
-            patientName = s.patientName,
-            paymentMethod = s.paymentMethod,
-            cashier = s.cashier,
-            items = d.saleItems(saleSyncId).map { SaleReceiptItem(it.productName, it.quantity.toInt(), ClinicMappers.decimal(it.unitPrice)) },
-        )
+    fun receipt(saleSyncId: String): SaleReceipt? = gate.read {
+        val (s, items) = dao().saleWithItems(saleSyncId)
+        s?.let {
+            SaleReceipt(
+                folio = it.folio,
+                originalFolio = it.originalFolio,
+                date = ClinicMappers.dateTime(it.date),
+                patientName = it.patientName,
+                paymentMethod = it.paymentMethod,
+                cashier = it.cashier,
+                items = items.map { i -> SaleReceiptItem(i.productName, i.quantity.toInt(), ClinicMappers.decimal(i.unitPrice)) },
+            )
+        }
     }
 
-    fun profile(): ClinicProfile = ClinicMappers.profile(dao().profile())
+    fun profile(): ClinicProfile = gate.read { ClinicMappers.profile(dao().profile()) }
 
-    /** El membrete de `ClinicAssets`, por su hash; los que no hayan bajado quedan en `null` y la receta sale sin ellos, como en la PC. */
-    fun letterhead(): LetterheadFiles {
+    /**
+     * El membrete de `ClinicAssets`, por su hash; los que no hayan bajado quedan en `null` y la receta sale sin ellos, como en la PC. El hash viene de la nube: solo hexadecimal, porque
+     * con él se arma una ruta.
+     */
+    fun letterhead(): LetterheadFiles = gate.read {
         val p = dao().profile()
         val dir = assetsDir()
-        fun file(hash: String?) = hash?.takeIf { it.isNotEmpty() }?.lowercase(java.util.Locale.ROOT)?.let { File(dir, it) }?.takeIf { it.isFile }
-        return LetterheadFiles(file(p?.crestImageHash), file(p?.headerImageHash))
+        fun file(hash: String?) = hash?.takeIf { HEX.matches(it) }?.lowercase(java.util.Locale.ROOT)?.let { File(dir, it) }?.takeIf { it.isFile }
+        LetterheadFiles(file(p?.crestImageHash), file(p?.headerImageHash))
     }
 
     companion object {
+        private val HEX = Regex("^[0-9a-fA-F]+$")
         const val RECENT_PATIENTS = 50
         const val CONSULTATIONS_PAGE = 20
         const val PRODUCT_MOVEMENTS = 20

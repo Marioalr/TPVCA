@@ -20,12 +20,17 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.marioalr.tpvca.data.RoomSyncStore
 import io.github.marioalr.tpvca.data.TpvcaDatabase
+import io.github.marioalr.tpvca.data.clinic.AppointmentRow
 import io.github.marioalr.tpvca.data.clinic.ClinicReader
+import io.github.marioalr.tpvca.data.clinic.PatientRow
 import io.github.marioalr.tpvca.dev.PhoneDemoSeed
 import io.github.marioalr.tpvca.documents.SharedDocuments
 import io.github.marioalr.tpvca.domain.Clinic
@@ -237,6 +242,155 @@ class PhoneAppTest {
         waitText("Con aviso")
         compose.waitUntil(5000) { compose.onAllNodesWithText("Omeprazol", substring = true).fetchSemanticsNodes().isEmpty() }
         waitText("Amoxicilina")
+    }
+
+    // ------------------------------------------------------------------ revisión de K4
+
+    /** Lo de otro periodo o de otro día nunca se ve con el título nuevo. */
+    @Test
+    fun loDeOtraLlaveNoSeMuestraYLaLecturaViejaSeDescarta() {
+        var key by mutableStateOf("A")
+        val release = java.util.concurrent.CountDownLatch(1)
+        val seen = java.util.Collections.synchronizedList(mutableListOf<String>())
+        var thread: Thread? = null
+        compose.setContent {
+            val current = key
+            val state by load(current) {
+                thread = Thread.currentThread()
+                if (current == "B") release.await(5, java.util.concurrent.TimeUnit.SECONDS)
+                current
+            }
+            seen.add(current + "=" + (state as? Loaded.Ready)?.value)
+        }
+        compose.waitUntil(5000) { seen.contains("A=A") }
+        assertTrue("Fuera del hilo principal", thread !== android.os.Looper.getMainLooper().thread)
+        key = "B"
+        compose.waitForIdle()
+        assertEquals("Con la llave nueva y sin lo suyo: cargando", "B=null", seen.last())
+        release.countDown()
+        compose.waitUntil(5000) { seen.contains("B=B") }
+        assertTrue("Nunca lo de A bajo B: $seen", "B=A" !in seen)
+    }
+
+    /** Lo mismo más al día se sigue viendo mientras lee: no parpadea cada 120 s. */
+    @Test
+    fun alRefrescarSeSigueViendoLoAnterior() {
+        var version by mutableStateOf(0)
+        val seen = java.util.Collections.synchronizedList(mutableListOf<String>())
+        compose.setContent {
+            val v = version
+            val state by load("A", refresh = v) { "v$v" }
+            seen.add(((state as? Loaded.Ready)?.value).toString())
+        }
+        compose.waitUntil(5000) { seen.contains("v0") }
+        seen.clear()
+        version = 1
+        compose.waitForIdle()
+        compose.waitUntil(5000) { seen.contains("v1") }
+        assertTrue("$seen", "null" !in seen)
+    }
+
+    @Test
+    fun sinMemoriaSeDiceYNoSeCierraLaApp() {
+        var result: Loaded<String>? = null
+        compose.setContent { result = load("A") { throw OutOfMemoryError() }.value }
+        compose.waitUntil(5000) { result == Loaded.Failed }
+    }
+
+    /** Abrir un resultado dañado da un mensaje: nada se lanza hasta la pantalla. */
+    @Test
+    fun abrirUnResultadoDanadoDaUnMensaje() {
+        val lab = io.github.marioalr.tpvca.data.clinic.LabResultRow("id", "BH", "", null, "", "application/pdf", 1, -1, "b.pdf", "no-es-hexadecimal")
+        val cache = io.github.marioalr.tpvca.data.security.LabFileCache(File(context.cacheDir, "lab-prueba"), object : io.github.marioalr.tpvca.data.security.SecretWrapper {
+            override fun wrap(plain: ByteArray) = plain
+            override fun unwrap(wrapped: ByteArray) = wrapped
+            override fun destroy() = Unit
+        })
+        val withLab = PhoneEnv(env.reader, env.documents, io.github.marioalr.tpvca.documents.LabFiles(cache, env.documents.gate) { null })
+        val damaged = openLabResult(withLab, lab, env.documents.ticket())
+        assertEquals(null, damaged.doc)
+        assertTrue(damaged.error!!.isNotBlank())
+        val noCloud = openLabResult(env, lab, env.documents.ticket())
+        assertEquals(null, noCloud.doc)
+        assertTrue(noCloud.error!!.isNotBlank())
+    }
+
+    private fun previewFile(): File {
+        val bitmap = android.graphics.Bitmap.createBitmap(10, 10, android.graphics.Bitmap.Config.ARGB_8888)
+        return env.documents.writeView(env.documents.ticket(), "Resultado.jpg") { f -> f.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, it) } }
+    }
+
+    @Test
+    fun unaPestanaCierraLaVistaYBorraElArchivo() {
+        val file = previewFile()
+        compose.setContent { TpvcTheme(TpvcThemes.claro) { PhoneApp(env, PhoneStatus(null, false, null, false, ""), 0L, {}, {}, initialPreview = PreviewDoc("Resultado", file, "image/jpeg")) } }
+        compose.waitForIdle()
+        compose.onNodeWithTag(PhoneTags.PREVIEW).assertExists()
+        assertTrue(file.exists())
+        tab(PhoneTab.Agenda)
+        assertEquals(0, compose.onAllNodes(androidx.compose.ui.test.hasTestTag(PhoneTags.PREVIEW)).fetchSemanticsNodes().size)
+        compose.onNodeWithTag(PhoneTags.AGENDA).assertExists()
+        assertTrue("Se borra al cerrar", !file.exists())
+    }
+
+    @Test
+    fun abrirUnaConsultaEnsenaTodoElPlan() {
+        val assets = File(context.cacheDir, "membrete-phone")
+        val store = RoomSyncStore(database, assets)
+        fun row(table: String, values: Map<String, Any?>) {
+            val full = LinkedHashMap<String, Any?>()
+            for (c in io.github.marioalr.tpvca.sync.SyncContract.bundledSchema.tables.first { it.table == table }.columns) {
+                full[c.name] = when {
+                    c.nullable -> null
+                    c.timeKind != null -> io.github.marioalr.tpvca.sync.ProtocolDate.MIN
+                    c.remoteType == "INTEGER" -> 0L
+                    c.remoteType == "REAL" -> 0.0
+                    c.clrType == "decimal" -> "0"
+                    else -> ""
+                }
+            }
+            full["UpdatedAtUtc"] = "2026-01-01 00:00:00.0000000"
+            full["SyncedAtUtc"] = "2026-01-01 00:00:00.000"
+            full.putAll(values)
+            store.apply(io.github.marioalr.tpvca.sync.engine.StoreChanges(writes = listOf(io.github.marioalr.tpvca.sync.engine.RowWrite(table, values["SyncId"] as String, full, isNew = true))))
+        }
+        val patient = "11111111-1111-1111-1111-111111111111"
+        row("Patients", mapOf("SyncId" to patient, "FullName" to "Paciente Plan Largo", "RecordNumber" to "E-1", "IsActive" to 1L, "LastVisit" to "2026-11-01 10:00:00.0000000"))
+        row("PatientConsultations", mapOf("SyncId" to "22222222-2222-2222-2222-222222222222", "PatientRecordSyncId" to patient, "Date" to "2026-11-01 10:00:00.0000000", "Diagnosis" to "J02.9", "ChiefComplaint" to "Motivo\nSegundo motivo", "TreatmentPlan" to "Primero\nÚltima indicación del plan"))
+        show()
+        tab(PhoneTab.Pacientes)
+        waitText("Plan Largo")
+        compose.onNodeWithText("Paciente Plan Largo").performClick()
+        waitText("Consultas")
+        compose.onNodeWithText("Consultas").performClick()
+        waitText("Ver toda la nota")
+        assertEquals("Cerrada, el primer renglón", 0, compose.onAllNodesWithText("Última indicación del plan", substring = true).fetchSemanticsNodes().size)
+        compose.onNodeWithText("Ver toda la nota", useUnmergedTree = true).performScrollTo().performClick()
+        waitText("Última indicación del plan")
+        waitText("Segundo motivo")
+    }
+
+    /** Dos pacientes con el `SyncId` de la cita dañado no se confunden, y un expediente vacío no se abre. */
+    @Test
+    fun unSyncIdDanadoNoAbreAOtroPaciente() {
+        fun appointment(name: String) = io.github.marioalr.tpvca.domain.model.Appointment(patientName = name, date = java.time.LocalDate.of(2026, 11, 4), time = "10:00")
+        val rows = listOf(
+            AppointmentRow("aaaaaaaa-0000-0000-0000-000000000001", appointment("Ana")),
+            AppointmentRow("aaaaaaaa-0000-0000-0000-000000000002", appointment("Luis")),
+            AppointmentRow("", appointment("Sin expediente")),
+            AppointmentRow("no-es-un-uuid", appointment("Dañado")),
+        )
+        val agenda = agendaOfDay(rows).associate { it.first.appointment.patientName to it.second }
+        assertEquals("aaaaaaaa-0000-0000-0000-000000000001", agenda["Ana"])
+        assertEquals("aaaaaaaa-0000-0000-0000-000000000002", agenda["Luis"])
+        assertEquals(null, agenda["Sin expediente"])
+        assertEquals(null, agenda["Dañado"])
+        assertTrue(!isOpenableSyncId("00000000-0000-0000-0000-000000000000"))
+        assertTrue(!isOpenableSyncId(""))
+
+        fun patient(id: String, name: String) = PatientRow(id, io.github.marioalr.tpvca.domain.model.Patient(fullName = name), null)
+        val found = searchPatients(listOf(patient("dañado-1", "Ana Uno"), patient("dañado-2", "Ana Dos")), "ana").map { it.syncId to it.patient.fullName }.toSet()
+        assertEquals(setOf("dañado-1" to "Ana Uno", "dañado-2" to "Ana Dos"), found)
     }
 
     // ------------------------------------------------------------------ el rol

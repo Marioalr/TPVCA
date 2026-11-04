@@ -76,7 +76,7 @@ fun InventarioScreen(env: PhoneEnv, dataVersion: Long, startWithNotices: Boolean
     var query by remember { mutableStateOf("") }
     var filterName by rememberSaveable(startWithNotices) { mutableStateOf(if (startWithNotices) StockFilter.Notices.name else StockFilter.All.name) }
     val filter = StockFilter.valueOf(filterName)
-    val entries by load(dataVersion, today) { env.reader.inventory(today) }
+    val entries by load(today, refresh = dataVersion) { env.reader.inventory(today) }
     val shown by produceState<Loaded<List<InventoryEntry>>>(Loaded.Loading, entries, query, filter) {
         val loaded = entries
         if (loaded !is Loaded.Ready) {
@@ -178,7 +178,7 @@ fun ProductoScreen(env: PhoneEnv, syncId: String, dataVersion: Long, nav: PhoneN
     // El motivo de un movimiento puede traer el nombre de un paciente
     PatientDataWindow()
     val today = env.today()
-    val state by load(dataVersion, syncId, today) {
+    val state by load(syncId, today, refresh = dataVersion) {
         env.reader.inventory(today).firstOrNull { it.syncId == syncId } to env.reader.movements(syncId)
     }
     Column(Modifier.fillMaxSize().testTag(PhoneTags.PRODUCTO)) {

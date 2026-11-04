@@ -138,8 +138,17 @@ object BusinessCsv {
 
     private fun percent(value: BigDecimal?) = value?.let { NetDecimal.custom(it, 1, 1) }.orEmpty()
 
+    private val PLAIN_NUMBER = Regex("^-?[0-9]+(\\.[0-9]+)?$")
+
+    /**
+     * Excel y compañía ejecutan como fórmula un texto que empieza con `=`, `+`, `-`, `@`, tabulador, retorno o salto de línea (un producto llamado `=HYPERLINK(…)`): se le antepone un
+     * apóstrofo. Un número negativo (`-12.50`) sigue siendo un número.
+     */
+    internal fun neutralize(text: String): String =
+        if (text.isNotEmpty() && text[0] in "=+-@\t\r\n" && !PLAIN_NUMBER.matches(text)) "'$text" else text
+
     private fun cell(value: Any?): String {
-        val text = value?.toString().orEmpty()
+        val text = neutralize(value?.toString().orEmpty())
         return if (text.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"" + text.replace("\"", "\"\"") + "\"" else text
     }
 }

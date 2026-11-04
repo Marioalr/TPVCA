@@ -55,7 +55,7 @@ class LabFileCache(private val dir: File, private val wrapper: SecretWrapper, pr
         wrapper.destroy()
     }
 
-    /** Solo el SHA-256 en hexadecimal: de la base, pero nunca se arma una ruta con otra cosa. */
+    /** Solo hexadecimal: viene de la base, y nunca se arma una ruta con otra cosa. */
     private fun name(sha256: String): String = sha256.lowercase(java.util.Locale.ROOT).also { require(it.all { c -> c in '0'..'9' || c in 'a'..'f' }) { "SHA-256 inválido" } }
 
     companion object {

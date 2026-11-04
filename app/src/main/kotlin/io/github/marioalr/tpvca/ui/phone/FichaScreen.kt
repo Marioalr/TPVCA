@@ -68,7 +68,7 @@ import java.time.LocalDate
 private enum class FichaTab(val label: String) { Resumen("Resumen"), Consultas("Consultas"), Recetas("Recetas"), Lab("Laboratorio") }
 
 /** La receta en PDF de una consulta, con su fecha y sus signos, como la reimprime la PC (`ConsultationDetailViewModel`). Corre en un hilo de fondo. */
-fun buildPrescriptionFile(env: PhoneEnv, context: Context, patient: Patient, row: ConsultationRow): File {
+fun buildPrescriptionFile(env: PhoneEnv, context: Context, patient: Patient, row: ConsultationRow, ticket: Long, forViewing: Boolean): File {
     val c = row.consultation
     val sheet = PrescriptionSheet.create(
         patient,
@@ -85,7 +85,8 @@ fun buildPrescriptionFile(env: PhoneEnv, context: Context, patient: Patient, row
         BitmapFactory.decodeResource(context.resources, R.drawable.receta_whatsapp),
         BitmapFactory.decodeResource(context.resources, R.drawable.receta_ubicacion),
     )
-    return env.documents.write("Receta.pdf") { PrescriptionPdf.write(sheet, images, it) }
+    val write: (File) -> Unit = { PrescriptionPdf.write(sheet, images, it) }
+    return if (forViewing) env.documents.writeView(ticket, "Receta.pdf", write) else env.documents.write(ticket, "Receta.pdf", write)
 }
 
 /** La ficha, **solo para consultar**: aquí no hay ningún control para editar. */
@@ -98,12 +99,17 @@ fun FichaScreen(env: PhoneEnv, syncId: String, origin: PhoneTab, dataVersion: Lo
     val backLabel = if (origin == PhoneTab.Inicio) "Inicio" else origin.label
 
     var pages by remember(syncId) { mutableStateOf(1) }
-    val state by load(dataVersion, syncId, pages) {
+    var prescriptionPages by remember(syncId) { mutableStateOf(1) }
+    val state by load(syncId, refresh = Triple(dataVersion, pages, prescriptionPages)) {
         val reader = env.reader
+        val page = io.github.marioalr.tpvca.data.clinic.ClinicReader.CONSULTATIONS_PAGE
         FichaData(
             reader.patient(syncId),
-            reader.consultations(syncId, limit = pages * io.github.marioalr.tpvca.data.clinic.ClinicReader.CONSULTATIONS_PAGE),
+            reader.consultations(syncId, limit = pages * page),
             reader.consultationCount(syncId),
+            reader.prescriptionConsultations(syncId, limit = prescriptionPages * page),
+            reader.prescriptionCount(syncId),
+            reader.labOrderConsultations(syncId),
             reader.labResults(syncId),
             reader.patientAppointments(syncId),
         )
@@ -126,7 +132,7 @@ fun FichaScreen(env: PhoneEnv, syncId: String, origin: PhoneTab, dataVersion: Lo
                     when (tab) {
                         FichaTab.Resumen -> Summary(env, patient, data, today, nav)
                         FichaTab.Consultas -> Consultations(data, today) { pages += 1 }
-                        FichaTab.Recetas -> Prescriptions(env, patient, data, today, nav) { pages += 1 }
+                        FichaTab.Recetas -> Prescriptions(env, patient, data, today, nav) { prescriptionPages += 1 }
                         FichaTab.Lab -> Lab(env, data, today, nav)
                     }
                 }
@@ -135,7 +141,17 @@ fun FichaScreen(env: PhoneEnv, syncId: String, origin: PhoneTab, dataVersion: Lo
     }
 }
 
-private class FichaData(val patient: Patient?, val consultations: List<ConsultationRow>, val consultationCount: Int, val labs: List<LabResultRow>, val appointments: List<Appointment>)
+private class FichaData(
+    val patient: Patient?,
+    val consultations: List<ConsultationRow>,
+    val consultationCount: Int,
+    /** Las recetas y los estudios se leen aparte: no dependen de cuántas consultas se hayan cargado. */
+    val prescriptions: List<ConsultationRow>,
+    val prescriptionCount: Int,
+    val labOrders: List<ConsultationRow>,
+    val labs: List<LabResultRow>,
+    val appointments: List<Appointment>,
+)
 
 @Composable
 private fun Identity(patient: Patient, today: LocalDate) {
@@ -253,8 +269,7 @@ private fun Summary(env: PhoneEnv, patient: Patient, data: FichaData, today: Loc
                 if (note.isNotBlank()) PText(PatientChartRules.firstLine(note), size = 13.sp, color = PhoneColors.Soft, lineHeight = 19.sp)
             }
         }
-        val withPrescription = data.consultations.firstOrNull { it.consultation.prescriptions.any { p -> p.medicineName.isNotBlank() } }
-        withPrescription?.let { PrescriptionCard(env, patient, it, today, nav) }
+        data.prescriptions.firstOrNull { r -> r.consultation.prescriptions.any { p -> p.medicineName.isNotBlank() } }?.let { PrescriptionCard(env, patient, it, today, nav) }
     }
     val next = AgendaRules.nextAppointment(data.appointments, today)
     PCard(padding = 0.dp) {
@@ -330,18 +345,20 @@ private fun PrescriptionCard(env: PhoneEnv, patient: Patient, row: ConsultationR
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PButton("Compartir receta", Modifier.weight(1f), filled = true, fill = true) {
+                    val ticket = env.documents.ticket()
                     scope.launch {
                         failed = false
                         val intent = withContext(Dispatchers.IO) {
-                            runCatching { env.documents.shareIntent(buildPrescriptionFile(env, context, patient, row), "application/pdf") }.getOrNull()
+                            runCatching { env.documents.shareIntent(buildPrescriptionFile(env, context, patient, row, ticket, forViewing = false), "application/pdf") }.getOrNull()
                         }
                         if (intent == null) failed = true else context.startActivity(Intent.createChooser(intent, PhoneText.SHARE_TITLE))
                     }
                 }
                 PButton("Ver PDF") {
+                    val ticket = env.documents.ticket()
                     scope.launch {
                         failed = false
-                        val file = withContext(Dispatchers.IO) { runCatching { buildPrescriptionFile(env, context, patient, row) }.getOrNull() }
+                        val file = withContext(Dispatchers.IO) { runCatching { buildPrescriptionFile(env, context, patient, row, ticket, forViewing = true) }.getOrNull() }
                         if (file == null) failed = true else nav.preview(PreviewDoc("Receta", file, "application/pdf"))
                     }
                 }
@@ -368,12 +385,11 @@ private fun Consultations(data: FichaData, today: LocalDate, onMore: () -> Unit)
             Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 PText(listOf(PhoneFormat.shortDate(c.date.toLocalDate(), today), entry.side).filter { it.isNotBlank() }.joinToString(" · "), size = 13.sp, weight = FontWeight.SemiBold, color = PhoneColors.Muted)
                 PText(entry.title, size = 15.sp, weight = FontWeight.Medium)
-                for (line in entry.lines) LabeledLine(line.label, line.value)
-                if (open) {
-                    LabeledLine("Interrogatorio", c.systemsReview)
-                    LabeledLine("Exploración", c.physicalExamination)
-                    LabeledLine("Nota", c.notes)
-                    LabeledLine("Indicaciones de laboratorio", c.labIndications)
+                // Cerrada, el primer renglón de cada cosa; abierta, toda la nota sin recortar
+                for (line in if (open) PatientChartRules.fullNote(c) else entry.lines) LabeledLine(line.label, line.value)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    PText(if (open) "Ver menos" else "Ver toda la nota", size = 12.sp, weight = FontWeight.Medium, color = PhoneColors.Accent)
+                    Icon(if (open) PhoneIcons.ChevronUp else PhoneIcons.ChevronDown, null, Modifier.size(14.dp), tint = PhoneColors.Accent)
                 }
             }
         }
@@ -389,16 +405,16 @@ private fun LabeledLine(label: String, value: String) {
 
 @Composable
 private fun Prescriptions(env: PhoneEnv, patient: Patient, data: FichaData, today: LocalDate, nav: PhoneNav, onMore: () -> Unit) {
-    val rows = data.consultations.filter { r -> r.consultation.prescriptions.any { it.medicineName.isNotBlank() } }
-    if (rows.isEmpty()) PCard { Message("Sin recetas todavía") }
+    val rows = data.prescriptions.filter { r -> r.consultation.prescriptions.any { it.medicineName.isNotBlank() } }
+    if (data.prescriptionCount == 0) PCard { Message("Sin recetas todavía") }
     for (row in rows) PrescriptionCard(env, patient, row, today, nav)
-    MoreButton(data.consultations.size, data.consultationCount, onMore)
+    MoreButton(data.prescriptions.size, data.prescriptionCount, onMore)
 }
 
 /** Lo pedido en cada consulta y los resultados recibidos, con su archivo. El archivo baja a pedido (`lab-files.json`) y se guarda cifrado. */
 @Composable
 private fun Lab(env: PhoneEnv, data: FichaData, today: LocalDate, nav: PhoneNav) {
-    val orders = data.consultations.filter { it.consultation.labStudies.isNotEmpty() }
+    val orders = data.labOrders
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Heading("Resultados recibidos", Modifier.padding(horizontal = 4.dp))
         PCard {
@@ -426,6 +442,25 @@ private fun Lab(env: PhoneEnv, data: FichaData, today: LocalDate, nav: PhoneNav)
     }
 }
 
+/** Lo que salió de abrir un resultado: el documento o qué decirle al médico. */
+class LabOpen(val doc: PreviewDoc?, val error: String?)
+
+/** Nunca lanza: un dato dañado, un disco lleno o un Keystore ocupado terminan en un mensaje, no en un cierre de la app. Sale en `cache/vista`. */
+fun openLabResult(env: PhoneEnv, lab: LabResultRow, ticket: Long): LabOpen = try {
+    val fetch = env.labFiles?.open(lab.sha256, lab.mimeType, ticket) ?: LabFetch.Failed(null)
+    if (fetch is LabFetch.Ok) {
+        val isPdf = fetch.mimeType == "application/pdf"
+        val file = env.documents.writeView(ticket, if (isPdf) "Resultado.pdf" else "Resultado.jpg") { it.writeBytes(fetch.bytes) }
+        LabOpen(PreviewDoc("Resultado", file, if (isPdf) "application/pdf" else "image/jpeg"), null)
+    } else {
+        LabOpen(null, fetch.message)
+    }
+} catch (_: Exception) {
+    LabOpen(null, PhoneText.LAB_OPEN_FAILED)
+} catch (_: OutOfMemoryError) {
+    LabOpen(null, PhoneText.LAB_OPEN_FAILED)
+}
+
 @Composable
 private fun LabRow(env: PhoneEnv, lab: LabResultRow, today: LocalDate, nav: PhoneNav) {
     val scope = rememberCoroutineScope()
@@ -436,19 +471,10 @@ private fun LabRow(env: PhoneEnv, lab: LabResultRow, today: LocalDate, nav: Phon
             scope.launch {
                 busy = true
                 message = null
-                val result = withContext(Dispatchers.IO) {
-                    val fetch = env.labFiles?.open(lab.sha256, lab.mimeType) ?: LabFetch.Failed(null)
-                    if (fetch is LabFetch.Ok) {
-                        val isPdf = fetch.mimeType == "application/pdf"
-                        val file = env.documents.write(if (isPdf) "Resultado.pdf" else "Resultado.jpg") { it.writeBytes(fetch.bytes) }
-                        Triple(file, if (isPdf) "application/pdf" else "image/jpeg", null)
-                    } else {
-                        Triple(null, null, fetch.message)
-                    }
-                }
+                val ticket = env.documents.ticket()
+                val result = withContext(Dispatchers.IO) { openLabResult(env, lab, ticket) }
                 busy = false
-                val (file, mime, error) = result
-                if (file != null && mime != null) nav.preview(PreviewDoc("Resultado", file, mime, file.name)) else message = error
+                result.doc?.let(nav.preview) ?: run { message = result.error }
             }
         }.padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),

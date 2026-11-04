@@ -101,21 +101,20 @@ fun NegocioScreen(env: PhoneEnv, filters: NegocioFilters, dataVersion: Long, nav
     val kind = filters.kind
     val period = BusinessReportRules.periodFor(kind, today, filters.customFrom, filters.customTo)
     val previous = BusinessReportRules.previousPeriod(kind, period)
-    val data by load(dataVersion, period, previous) {
+    val data by load(period, previous, refresh = dataVersion) {
         val (from, to) = BusinessPanel.readRange(period, previous)
         env.reader.businessReport(from, to)
     }
+    // Las cuentas también fuera del hilo principal. Sin los datos de este periodo no se calcula ni se exporta nada
+    val ready = (data as? Loaded.Ready)?.value
+    val computed by load(kind, period, previous, filters.type, filters.ranking, refresh = ready) {
+        ready?.let { BusinessPanel.compute(it, kind, period, previous, filters.type, filters.ranking) }
+    }
+    val view: BusinessPanelView? = (computed as? Loaded.Ready)?.value
     val scroll = rememberScrollState()
     val swipe = rememberEdgeSwipe(towardsTop = false, scroll, onClose)
     var picking by remember { mutableStateOf(false) }
     var csvFailed by remember { mutableStateOf(false) }
-
-    val loaded = data
-    val view: BusinessPanelView? = (loaded as? Loaded.Ready)?.let {
-        remember(it.value, filters.type, filters.ranking, period, previous) {
-            BusinessPanel.compute(it.value, kind, period, previous, filters.type, filters.ranking)
-        }
-    }
 
     Column(
         Modifier
@@ -134,15 +133,16 @@ fun NegocioScreen(env: PhoneEnv, filters: NegocioFilters, dataVersion: Long, nav
         TitleRow("Negocio", Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 12.dp)) {
           Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PButton("Corte de caja", height = 40.dp) { nav.open(PhoneDetail.Corte) }
-            PButton("CSV", icon = PhoneIcons.Download, height = 40.dp, description = "Exportar a CSV") {
+            PButton("CSV", icon = PhoneIcons.Download, height = 40.dp, description = "Exportar a CSV", enabled = view != null) {
                 val current = view ?: return@PButton
+                val ticket = env.documents.ticket()
                 scope.launch {
                     csvFailed = false
                     val intent = withContext(Dispatchers.IO) {
                         runCatching {
                             val now = env.localNow()
                             val csv = BusinessPanel.csv(current, env.reader.profile().clinicName, now)
-                            val file = env.documents.write(BusinessCsv.fileName(now)) { it.writeText(BusinessCsv.BOM + csv, Charsets.UTF_8) }
+                            val file = env.documents.write(ticket, BusinessCsv.fileName(now)) { it.writeText(BusinessCsv.BOM + csv, Charsets.UTF_8) }
                             env.documents.shareIntent(file, "text/csv")
                         }.getOrNull()
                     }
@@ -170,9 +170,9 @@ fun NegocioScreen(env: PhoneEnv, filters: NegocioFilters, dataVersion: Long, nav
                 }
             }
             when {
-                loaded is Loaded.Failed -> Message(PhoneText.READ_ERROR)
-                view == null -> Message(PhoneText.LOADING)
-                else -> Panel(view, filters, (loaded as Loaded.Ready).value.products)
+                data is Loaded.Failed || computed is Loaded.Failed -> Message(PhoneText.READ_ERROR)
+                view == null || ready == null -> Message(PhoneText.LOADING)
+                else -> Panel(view, filters, ready.products)
             }
         }
     }
@@ -581,8 +581,9 @@ fun CorteScreen(env: PhoneEnv, dataVersion: Long, nav: PhoneNav) {
     val today = env.today()
     var day by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(today.toString()) }
     val date = LocalDate.parse(day)
-    val state by load(dataVersion, date) {
-        CashCutRules.compute(env.reader.salesOfDay(date), date) to env.reader.ticketsOfDay(date)
+    val state by load(date, refresh = dataVersion) {
+        val (sales, tickets) = env.reader.cashDay(date)
+        CashCutRules.compute(sales, date) to tickets
     }
     Column(Modifier.fillMaxSize().testTag(PhoneTags.CORTE)) {
         DetailHeader("Negocio", nav)
@@ -653,19 +654,22 @@ fun TicketScreen(env: PhoneEnv, saleSyncId: String, nav: PhoneNav) {
                     Message(PhoneText.COPY_NOT_FOUND)
                 } else {
                     Heading(receipt.folio, Modifier.padding(horizontal = 4.dp), size = 21.sp, weight = FontWeight.Bold)
-                    fun makePdf() = env.documents.write("Ticket.pdf") { TicketPdf.write(receipt, profile, it) }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         PButton("Compartir ticket", Modifier.weight(1f), filled = true, fill = true) {
+                            val ticket = env.documents.ticket()
                             scope.launch {
                                 failed = false
-                                val intent = withContext(Dispatchers.IO) { runCatching { env.documents.shareIntent(makePdf(), "application/pdf") }.getOrNull() }
+                                val intent = withContext(Dispatchers.IO) {
+                                    runCatching { env.documents.shareIntent(env.documents.write(ticket, "Ticket.pdf") { TicketPdf.write(receipt, profile, it) }, "application/pdf") }.getOrNull()
+                                }
                                 if (intent == null) failed = true else context.startActivity(Intent.createChooser(intent, PhoneText.SHARE_TITLE))
                             }
                         }
                         PButton("Ver PDF") {
+                            val ticket = env.documents.ticket()
                             scope.launch {
                                 failed = false
-                                val file = withContext(Dispatchers.IO) { runCatching { makePdf() }.getOrNull() }
+                                val file = withContext(Dispatchers.IO) { runCatching { env.documents.writeView(ticket, "Ticket.pdf") { TicketPdf.write(receipt, profile, it) } }.getOrNull() }
                                 if (file == null) failed = true else nav.preview(PreviewDoc("Ticket", file, "application/pdf"))
                             }
                         }

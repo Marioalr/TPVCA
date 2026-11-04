@@ -10,6 +10,7 @@ import io.github.marioalr.tpvca.BuildConfig
 import io.github.marioalr.tpvca.data.LocalStore
 import io.github.marioalr.tpvca.data.SqlCipher
 import io.github.marioalr.tpvca.data.clinic.ClinicReader
+import io.github.marioalr.tpvca.data.security.DataGate
 import io.github.marioalr.tpvca.data.security.EncryptedCredentialVault
 import io.github.marioalr.tpvca.data.security.EncryptedLocalDatabase
 import io.github.marioalr.tpvca.data.security.KeystoreSecretWrapper
@@ -28,6 +29,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import java.io.File
 
 /**
@@ -43,6 +45,10 @@ class AppGraph(context: Context) {
     private val states = MutableStateFlow<LinkState?>(null)
 
     private val syncing = MutableStateFlow(false)
+
+    /** Se cierra antes de borrar nada; se abre otra vez cuando hay datos. */
+    private val gate = DataGate()
+    private val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val labCache = LabFileCache(File(app.noBackupFilesDir, "laboratorio"), KeystoreSecretWrapper(app, "tpvca.laboratorio"))
     private val deviceFiles = DeviceFiles(app, labCache)
     private val assetsDir = File(app.filesDir, "membrete")
@@ -64,9 +70,13 @@ class AppGraph(context: Context) {
         deviceName = deviceName(app),
         eraseFiles = deviceFiles::erase,
         connect = { url, token -> HranaClient(url, token, BuildConfig.VERSION_NAME, http) },
-        onState = { states.value = it },
+        onState = {
+            if (it is LinkState.Linked) gate.reopen()
+            states.value = it
+        },
         elapsedMillis = SystemClock::elapsedRealtime,
         onSyncing = { syncing.value = it },
+        onEraseStarting = gate::close,
     )
 
     val controller = LinkController(
@@ -88,10 +98,26 @@ class AppGraph(context: Context) {
                 database.database().clinic()
             },
             { assetsDir },
+            gate,
         ),
-        documents = SharedDocuments(app),
-        labFiles = LabFiles(labCache) { flow.fileConnection() },
+        documents = SharedDocuments(app, gate),
+        labFiles = LabFiles(labCache, gate) { flow.fileConnection() },
     )
+
+    /** Al volver: lo compartido que ya pasó de su tiempo y lo que quedó de una vista si el proceso murió. */
+    fun onForeground() {
+        controller.onForeground()
+        background.launch {
+            phone.documents.purgeOld()
+            phone.documents.purgeViews()
+        }
+    }
+
+    /** Al irse: lo que se estaba viendo no se queda en la caché. Lo compartido sí, porque la otra app lo lee después. */
+    fun onBackground() {
+        controller.onBackground()
+        background.launch { phone.documents.purgeViews() }
+    }
 
     private companion object {
         /** El nombre que el médico le puso al equipo («Galaxy Tab S9») o su modelo: es lo que pregunta la PC al aprobar. */

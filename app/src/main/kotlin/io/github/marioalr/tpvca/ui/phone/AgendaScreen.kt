@@ -40,13 +40,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.marioalr.tpvca.data.clinic.AppointmentRow
 import io.github.marioalr.tpvca.domain.agenda.AgendaRules
+import io.github.marioalr.tpvca.domain.agenda.MarkedAppointment
+import io.github.marioalr.tpvca.domain.model.Appointment
 import io.github.marioalr.tpvca.domain.agenda.AppointmentRules
 import io.github.marioalr.tpvca.domain.patients.PatientSummaryRules
 import io.github.marioalr.tpvca.ui.link.PatientDataWindow
 import java.time.LocalDate
 
 private const val STRIP_DAYS = 6L
+
+/** Cada cita con el expediente que abre. Por la cita misma, no por su `SyncId`: uno dañado se lee como vacío y abriría a otro paciente. */
+fun agendaOfDay(rows: List<AppointmentRow>): List<Pair<MarkedAppointment, String?>> {
+    val patients = java.util.IdentityHashMap<Appointment, String>().apply { rows.forEach { put(it.appointment, it.patientSyncId) } }
+    return AgendaRules.todayAppointments(rows.map { it.appointment }).map { it to patients[it.appointment]?.takeIf(::isOpenableSyncId) }
+}
 
 /**
  * La agenda de solo lectura: seis días desde hoy, como el diseño, y con ‹ › se recorre de seis en seis. Las citas salen de [AgendaRules.todayAppointments] (sin canceladas,
@@ -61,12 +70,7 @@ fun AgendaScreen(env: PhoneEnv, dataVersion: Long, nav: PhoneNav) {
     val start = LocalDate.parse(startText)
     val day = LocalDate.parse(dayText)
 
-    val state by load(dataVersion, day) {
-        val rows = env.reader.appointmentsBetween(day, day.plusDays(1))
-        val marked = AgendaRules.todayAppointments(rows.map { it.appointment })
-        val patients = rows.associate { it.appointment.syncId to it.patientSyncId }
-        marked.map { it to patients[it.appointment.syncId] }
-    }
+    val state by load(day, refresh = dataVersion) { agendaOfDay(env.reader.appointmentsBetween(day, day.plusDays(1))) }
 
     fun moveStrip(days: Long) {
         val next = start.plusDays(days)

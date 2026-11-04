@@ -119,6 +119,22 @@ class BusinessPanelTest {
         assertEquals("Consultorio Médico", BusinessPanel.csv(panel(), " ", LocalDateTime.of(2026, 11, 4, 9, 5)).split("\r\n")[0].split(",")[1])
     }
 
+    /** Revisión de K4: un nombre no se puede ejecutar como fórmula al abrir el CSV en Excel. La regla, para que la PC la repita. */
+    @Test
+    fun elCsvNoLlevaFormulas() {
+        for (danger in listOf("=HYPERLINK(\"http://x\")", "+1+1", "-1+1", "@SUM(A1)", "\tx", "\rx", "\nx", "-")) {
+            assertEquals(danger, "'$danger", BusinessCsv.neutralize(danger))
+        }
+        for (safe in listOf("-12.50", "-12", "12.50", "Tempra", "", " =1", "▲ 2.0 %")) {
+            assertEquals(safe, safe, BusinessCsv.neutralize(safe))
+        }
+        val attack = panel().copy(topProducts = panel().topProducts.map { it.copy(name = "=1+1,\"x\"") }, summary = panel().summary.copy(profit = BigDecimal("-3.00")))
+        val lines = BusinessPanel.csv(attack, "=CMD()", LocalDateTime.of(2026, 11, 4, 9, 5)).split("\r\n")
+        assertEquals("PANEL DEL NEGOCIO,'=CMD()", lines[0])
+        assertTrue("Primero el apóstrofo, después las comillas: $lines", lines.any { it.startsWith("\"'=1+1,\"\"x\"\"\",Medicamentos,") })
+        assertTrue("Un negativo sigue siendo número", lines.contains("Utilidad bruta,-3.00,Comparado con el periodo anterior,▲ 22.8 %") || lines.any { it.startsWith("Utilidad bruta,-3.00,") })
+    }
+
     @Test
     fun laFechaDelRango() {
         assertEquals(LocalDate.of(2026, 2, 28), BusinessCsv.parseDate(" 28/02/2026 "))

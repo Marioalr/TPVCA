@@ -6,6 +6,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.marioalr.tpvca.data.RoomSyncStore
 import io.github.marioalr.tpvca.data.TpvcaDatabase
+import io.github.marioalr.tpvca.data.security.DataGate
+import io.github.marioalr.tpvca.data.security.DataGateClosedException
 import io.github.marioalr.tpvca.domain.search.PatientSearchRules
 import io.github.marioalr.tpvca.domain.text.MexicanText
 import io.github.marioalr.tpvca.sync.ProtocolDate
@@ -149,6 +151,74 @@ class ClinicReaderTest {
         assertNotNull(reader.letterhead().crest)
         assertNull(reader.letterhead().header)
         assertEquals("Dra.", reader.profile().doctorName)
+    }
+
+    /** Revisión de K4: con la puerta cerrada nadie toca la base, así que una lectura tardía no la vuelve a crear con otra llave. */
+    @Test
+    fun conLaPuertaCerradaNoSeTocaLaBase() {
+        var opened = 0
+        val gate = DataGate()
+        val guarded = ClinicReader({
+            opened++
+            database.clinic()
+        }, { assets }, gate)
+        guarded.allPatients()
+        assertEquals(1, opened)
+        gate.close()
+        val reads = listOf<() -> Any?>(
+            { guarded.allPatients() }, { guarded.recentPatients() }, { guarded.patient("x") }, { guarded.consultations("x") }, { guarded.consultationCount("x") }, { guarded.labResults("x") },
+            { guarded.prescriptionConsultations("x") }, { guarded.prescriptionCount("x") }, { guarded.labOrderConsultations("x") }, { guarded.patientAppointments("x") },
+            { guarded.appointmentsBetween(today, today) }, { guarded.appointmentsFrom(today) }, { guarded.products() }, { guarded.inventory(today) }, { guarded.movements("x") },
+            { guarded.businessReport(today, today) }, { guarded.cashDay(today) }, { guarded.receipt("x") }, { guarded.profile() }, { guarded.letterhead() },
+        )
+        for (read in reads) assertTrue(runCatching { read() }.exceptionOrNull() is DataGateClosedException)
+        assertEquals("Ninguna abrió la base", 1, opened)
+        gate.reopen()
+        guarded.allPatients()
+        assertEquals(2, opened)
+    }
+
+    /** Revisión de K4: las recetas y los estudios viejos no dependen de la página cargada de Consultas. */
+    @Test
+    fun lasRecetasYLosEstudiosViejosSeEncuentranSinCargarConsultas() {
+        val patient = row("Patients", mapOf("FullName" to "Ana", "IsActive" to 1L))
+        row("PatientConsultations", mapOf("PatientRecordSyncId" to patient, "Date" to at(today.minusYears(3), 9), "Folio" to "VIEJA", "PrescriptionsJson" to """[{"MedicineName":"Tempra","Dosage":"1"}]""", "LabOrderJson" to """{"Studies":[{"Name":"BH"}],"Indications":""}"""))
+        for (i in 0 until 45) row("PatientConsultations", mapOf("PatientRecordSyncId" to patient, "Date" to at(today.minusDays(i.toLong()), 9), "Folio" to "N-$i", "PrescriptionsJson" to "[]"))
+        flush()
+        assertTrue("No está en la primera página", reader.consultations(patient).none { it.consultation.folio == "VIEJA" })
+        assertEquals(listOf("VIEJA"), reader.prescriptionConsultations(patient).map { it.consultation.folio })
+        assertEquals(1, reader.prescriptionCount(patient))
+        assertEquals(listOf("VIEJA"), reader.labOrderConsultations(patient).map { it.consultation.folio })
+    }
+
+    /** Revisión de K4: el corte y sus tickets salen de una sola transacción, no de dos lecturas sueltas. */
+    @Test
+    fun elCorteSaleDeUnaSolaFoto() {
+        val sale = row("Sales", mapOf("Date" to at(today, 10), "Folio" to "T-1", "Total" to "10.00", "PaymentMethod" to "Efectivo"))
+        row("SaleItems", mapOf("SaleSyncId" to sale, "ProductName" to "X", "Quantity" to 1L, "UnitPrice" to "10.00", "Subtotal" to "10.00"))
+        flush()
+        val real = database.clinic()
+        val calls = mutableListOf<String>()
+        val spy = java.lang.reflect.Proxy.newProxyInstance(ClinicDao::class.java.classLoader, arrayOf(ClinicDao::class.java)) { _, method, args ->
+            calls.add(method.name)
+            method.invoke(real, *(args ?: emptyArray()))
+        } as ClinicDao
+        val (sales, tickets) = ClinicReader({ spy }, { assets }).cashDay(today)
+        assertEquals(listOf("salesWithItems"), calls)
+        assertEquals(1, sales.single().items.size)
+        assertEquals("T-1", tickets.single().folio)
+        calls.clear()
+        assertEquals(1, ClinicReader({ spy }, { assets }).receipt(sale)!!.items.size)
+        assertEquals(listOf("saleWithItems"), calls)
+    }
+
+    /** Revisión de K4: el hash del membrete viene de la nube y con él se arma una ruta. */
+    @Test
+    fun unHashDelMembreteQueNoEsHexadecimalNoSaleDeSuCarpeta() {
+        File(assets.parentFile, "secreto").writeText("x")
+        assets.mkdirs()
+        store.saveProfile(mapOf("Id" to 1L, "UpdatedAtUtc" to "x", "CrestImageHash" to "../secreto", "DoctorName" to "Dra."))
+        assertNull(reader.letterhead().crest)
     }
 
     /** Lo que tarda en la JVM con SQLite (referencia: un celular es más lento; SQLCipher agrega algo más). Se imprime en el reporte de la prueba y se revisa un tope holgado. */

@@ -57,6 +57,7 @@ class AppGraph(context: Context) {
         },
         connect = { url, token -> HranaClient(url, token, BuildConfig.VERSION_NAME, http) },
         onState = { states.value = it },
+        elapsedMillis = SystemClock::elapsedRealtime,
     )
 
     val controller = LinkController(

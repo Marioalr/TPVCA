@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import io.github.marioalr.tpvca.domain.devices.DeviceRole
 import io.github.marioalr.tpvca.link.Gate
 import io.github.marioalr.tpvca.sync.link.LinkCode
+import io.github.marioalr.tpvca.sync.link.LinkProblem
 import io.github.marioalr.tpvca.sync.link.LinkState
 import io.github.marioalr.tpvca.ui.home.HomeLayout
 import io.github.marioalr.tpvca.ui.home.HomeLink
@@ -44,14 +45,15 @@ fun AppRoot(
             null -> Unit
             is LinkState.NotLinked -> NotLinked(state, deviceSecure, versionName, contractRevision, layout, actions, qrReader)
             is LinkState.Linked -> TpvcTheme {
-                HomeScreen(versionName, contractRevision, layout, link = HomeLink.Linked(state.role, state.code, state.clinicName, state.notice))
+                HomeScreen(versionName, contractRevision, layout, link = HomeLink.Linked(state.role, state.code, state.clinicName, state.notice, state.braked), onResumeBrake = actions::resumeBrake)
             }
             is LinkState.WaitingApproval -> Light { WaitingScreen(state, actions) }
-            is LinkState.Downloading -> Light { DownloadingScreen() }
+            is LinkState.Downloading -> Light { DownloadingScreen(state, actions) }
             is LinkState.NeedsToken -> Light { NeedsToken(state, deviceSecure, actions, qrReader) }
             is LinkState.WrongRole -> Light { WrongRoleScreen(actions) }
             is LinkState.CloudProblem -> Light { CloudProblemScreen(state, actions) }
             is LinkState.Revoked -> Light { RevokedScreen(state, actions) }
+            LinkState.LocalError -> Light { LocalErrorScreen(actions) }
         }
     }
 }
@@ -95,7 +97,11 @@ private fun NotLinked(
         LinkStep.Scan -> Light {
             QrScanScreen(
                 qrReader,
-                onData = { actions.link(it.url, it.token, it.clinicName, role) },
+                onData = {
+                    // Sale del escáner ya: si lo rechaza, el formulario dice por qué
+                    step = LinkStep.Form
+                    actions.link(it.url, it.token, it.clinicName, role)
+                },
                 decode = LinkCode::decode,
                 onBack = { step = LinkStep.Form },
             )
@@ -103,17 +109,39 @@ private fun NotLinked(
     }
 }
 
+/** Lo pegado o escaneado se queda aquí, en memoria, por si hay que confirmar el host: no viaja en el estado. */
 @Composable
 private fun NeedsToken(state: LinkState.NeedsToken, deviceSecure: Boolean, actions: LinkActions, qrReader: QrReader) {
-    var scanning by remember(state) { mutableStateOf(false) }
+    var scanning by remember { mutableStateOf(false) }
+    var submitted by remember { mutableStateOf<Pair<String, String?>?>(null) }
+    fun submit(token: String, url: String?) {
+        submitted = token to url
+        actions.replaceToken(token, url, null)
+    }
     if (scanning) {
         QrScanScreen(
             qrReader,
-            onData = { actions.replaceToken(it.token, it.url) },
+            onData = {
+                // Sale del escáner ya: si lo rechaza, la pantalla del token dice por qué
+                scanning = false
+                submit(it.token, it.url)
+            },
             decode = LinkCode::decode,
             onBack = { scanning = false },
         )
     } else {
-        TokenScreen(state, deviceSecure, actions, onScan = { scanning = true })
+        TokenScreen(state, deviceSecure, actions, onSubmit = ::submit, onScan = { scanning = true })
+        val change = state.problem as? LinkProblem.HostChange
+        val pending = submitted
+        if (change != null && pending != null) {
+            HostChangeDialog(
+                change.host,
+                onConfirm = {
+                    submitted = null
+                    actions.replaceToken(pending.first, pending.second, change.host)
+                },
+                onCancel = { submitted = null },
+            )
+        }
     }
 }

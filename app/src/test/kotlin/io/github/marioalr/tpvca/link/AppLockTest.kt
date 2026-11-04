@@ -2,6 +2,7 @@ package io.github.marioalr.tpvca.link
 
 import io.github.marioalr.tpvca.domain.devices.DeviceRole
 import io.github.marioalr.tpvca.sync.link.LinkState
+import io.github.marioalr.tpvca.ui.link.CameraBinding
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -75,6 +76,28 @@ class AppLockTest {
         assertEquals(Gate.NoSecureLock, gateFor(linked, DeviceRole.AndroidMobileAdmin, locked = false, deviceSecure = false))
         assertEquals(Gate.NoSecureLock, gateFor(linked, DeviceRole.AndroidTablet, locked = false, deviceSecure = false))
         assertEquals(Gate.Open, gateFor(LinkState.NotLinked(), null, locked = true, deviceSecure = false))
+    }
+
+    @Test
+    fun sinSaberQueHayGuardadoQuedaCerrado() {
+        assertEquals(Gate.Locked, gateFor(LinkState.LocalError, null, locked = true, deviceSecure = true))
+        assertEquals(Gate.NoSecureLock, gateFor(LinkState.LocalError, null, locked = true, deviceSecure = false))
+        assertEquals("Ya desbloqueó: ve el error, no datos", Gate.Open, gateFor(LinkState.LocalError, null, locked = false, deviceSecure = true))
+        assertEquals("Con credencial conocida, el rol decide", Gate.Locked, gateFor(LinkState.LocalError, DeviceRole.AndroidMobileAdmin, locked = true, deviceSecure = true))
+    }
+
+    @Test
+    fun laCamaraNoSeEnciendeSiYaSalioYSeApagaAlSalir() {
+        val calls = ArrayList<String>()
+        val late = CameraBinding()
+        late.leave()
+        late.bindWhenReady({ calls += "unbind" }) { calls += "bind" }
+        assertEquals(emptyList<String>(), calls)
+
+        val normal = CameraBinding()
+        normal.bindWhenReady({ calls += "unbind" }) { calls += "bind" }
+        normal.leave()
+        assertEquals(listOf("bind", "unbind"), calls)
     }
 
     @Test

@@ -20,6 +20,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -74,13 +75,23 @@ object LinkTags {
     const val UNLOCK = "locked-unlock"
     const val SCAN_SCREEN = "scan-screen"
     const val SETTINGS = "open-settings"
+    const val FORGET = "forget"
+    const val FORGET_CONFIRM = "forget-confirm"
+    const val HOST_CONFIRM = "host-confirm"
+    const val RESUME = "brake-resume"
+    const val CLOUD_REPLACE = "cloud-replace"
+    const val TOKEN_URL = "token-url"
 }
 
 /** Lo que las pantallas le piden a la app. */
 interface LinkActions {
     fun link(url: String, token: String, clinicName: String, role: DeviceRole)
 
-    fun replaceToken(token: String, url: String?)
+    fun replaceToken(token: String, url: String?, confirmedHost: String?)
+
+    fun requestToken()
+
+    fun resumeBrake()
 
     fun refreshNow()
 
@@ -155,6 +166,10 @@ private fun problemText(problem: LinkProblem): String = when (problem) {
     LinkProblem.NoSecureLock -> stringResource(R.string.link_no_secure_lock)
     is LinkProblem.BadUrl -> problem.message
     LinkProblem.EmptyToken -> stringResource(R.string.link_empty_token)
+    LinkProblem.BadToken -> stringResource(R.string.link_bad_token)
+    is LinkProblem.HostChange -> stringResource(R.string.host_body, problem.host)
+    LinkProblem.OtherClinic -> stringResource(R.string.link_other_clinic)
+    is LinkProblem.CloudUnverified -> stringResource(R.string.link_cloud_unverified, problem.message)
     LinkProblem.CredentialLost -> stringResource(R.string.link_credential_lost)
 }
 
@@ -303,31 +318,89 @@ fun WaitingScreen(state: LinkState.WaitingApproval, actions: LinkActions) {
                 Text(stringResource(R.string.waiting_refresh))
             }
         }
-        TextButton(onClick = actions::forget, Modifier.heightIn(min = 48.dp).testTag(LinkTags.WAITING_CANCEL)) {
-            Text(stringResource(R.string.waiting_cancel))
-        }
+        if (state.braked) ResumeBrakeButton(actions)
+        ForgetButton(stringResource(R.string.waiting_cancel), actions, LinkTags.WAITING_CANCEL)
     }
 }
 
 @Composable
-fun DownloadingScreen() {
+fun DownloadingScreen(state: LinkState.Downloading, actions: LinkActions) {
     LinkPage {
         Title(stringResource(R.string.downloading_title))
         Body(stringResource(R.string.downloading_hint))
+        state.notice?.let { Warning(it, Modifier.testTag(LinkTags.PROBLEM)) }
         CircularProgressIndicator()
+        if (state.braked) {
+            ResumeBrakeButton(actions)
+        } else if (state.notice != null) {
+            OutlinedButton(onClick = actions::refreshNow, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.cloud_retry)) }
+        }
+    }
+}
+
+/** *Reanudar*: el freno no se quita solo, como en la PC. */
+@Composable
+fun ResumeBrakeButton(actions: LinkActions) {
+    Button(onClick = actions::resumeBrake, Modifier.heightIn(min = 48.dp).testTag(LinkTags.RESUME)) { Text(stringResource(R.string.brake_resume)) }
+}
+
+/** Borrar nunca va a un solo toque: primero dice qué se pierde. */
+@Composable
+private fun ForgetButton(label: String, actions: LinkActions, tag: String = LinkTags.FORGET) {
+    var asking by remember { mutableStateOf(false) }
+    TextButton(onClick = { asking = true }, Modifier.heightIn(min = 48.dp).testTag(tag)) { Text(label) }
+    if (asking) {
+        AlertDialog(
+            onDismissRequest = { asking = false },
+            title = { Text(stringResource(R.string.forget_title)) },
+            text = { Text(stringResource(R.string.forget_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        asking = false
+                        actions.forget()
+                    },
+                    Modifier.testTag(LinkTags.FORGET_CONFIRM),
+                ) { Text(stringResource(R.string.forget_confirm)) }
+            },
+            dismissButton = { TextButton(onClick = { asking = false }) { Text(stringResource(R.string.forget_cancel)) } },
+        )
+    }
+}
+
+/** Muestra el host nuevo antes de que el token salga hacia allá. */
+@Composable
+fun HostChangeDialog(host: String, onConfirm: () -> Unit, onCancel: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.host_title)) },
+        text = { Text(stringResource(R.string.host_body, host)) },
+        confirmButton = { TextButton(onClick = onConfirm, Modifier.testTag(LinkTags.HOST_CONFIRM)) { Text(stringResource(R.string.host_confirm)) } },
+        dismissButton = { TextButton(onClick = onCancel) { Text(stringResource(R.string.host_cancel)) } },
+    )
+}
+
+@Composable
+fun LocalErrorScreen(actions: LinkActions) {
+    LinkPage {
+        Title(stringResource(R.string.local_error_title))
+        Body(stringResource(R.string.local_error_body))
+        OutlinedButton(onClick = actions::refreshNow, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.cloud_retry)) }
     }
 }
 
 /** La diferencia entre un 401 y un token mal copiado es solo el texto: los dos se resuelven pegando otro y ninguno borra nada por sí solo. */
 @Composable
-fun TokenScreen(state: LinkState.NeedsToken, deviceSecure: Boolean, actions: LinkActions, onScan: () -> Unit) {
+fun TokenScreen(state: LinkState.NeedsToken, deviceSecure: Boolean, actions: LinkActions, onSubmit: (String, String?) -> Unit, onScan: () -> Unit) {
     SecureWindow()
     var token by remember { mutableStateOf("") }
+    var url by remember { mutableStateOf("") }
     LinkPage(LinkTags.TOKEN_SCREEN) {
         Title(stringResource(R.string.token_title))
         Body(
             stringResource(
                 when {
+                    state.manual -> R.string.token_manual
                     state.erased -> R.string.token_erased
                     state.malformed -> R.string.token_malformed
                     else -> R.string.token_rejected
@@ -336,22 +409,31 @@ fun TokenScreen(state: LinkState.NeedsToken, deviceSecure: Boolean, actions: Lin
         )
         if (state.pending > 0) {
             Warning(pluralStringResource(R.plurals.token_pending, state.pending, state.pending))
-        } else if (!state.erased) {
+        } else if (!state.erased && !state.manual) {
             Body(stringResource(R.string.token_nothing_lost))
         }
-        state.problem?.let { Warning(problemText(it), Modifier.testTag(LinkTags.PROBLEM)) }
+        state.problem?.takeIf { it !is LinkProblem.HostChange }?.let { Warning(problemText(it), Modifier.testTag(LinkTags.PROBLEM)) }
+        if (state.manual) {
+            OutlinedTextField(
+                url,
+                { url = it },
+                Modifier.fillMaxWidth().testTag(LinkTags.TOKEN_URL),
+                label = { Text(stringResource(R.string.token_optional_url)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),
+            )
+        }
         TokenField(token, { token = it })
         Button(
-            onClick = { actions.replaceToken(token, null) },
+            onClick = { onSubmit(token, url.ifBlank { null }) },
             enabled = deviceSecure && token.isNotBlank(),
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(LinkTags.TOKEN_SUBMIT),
         ) { Text(stringResource(R.string.token_submit)) }
         OutlinedButton(onClick = onScan, enabled = deviceSecure, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
             Text(stringResource(R.string.token_scan))
         }
-        if (state.pending == 0) {
-            TextButton(onClick = actions::forget, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.token_other_cloud)) }
-        }
+        if (state.pending == 0) ForgetButton(stringResource(R.string.token_other_cloud), actions)
+        if (state.manual) TextButton(onClick = actions::refreshNow, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.token_back)) }
     }
 }
 
@@ -370,7 +452,12 @@ fun CloudProblemScreen(state: LinkState.CloudProblem, actions: LinkActions) {
         Title(stringResource(R.string.cloud_title))
         Warning(state.message, Modifier.testTag(LinkTags.PROBLEM))
         OutlinedButton(onClick = actions::refreshNow, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.cloud_retry)) }
-        TextButton(onClick = actions::forget, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.token_other_cloud)) }
+        if (state.canReplace) {
+            OutlinedButton(onClick = actions::requestToken, Modifier.heightIn(min = 48.dp).testTag(LinkTags.CLOUD_REPLACE)) {
+                Text(stringResource(R.string.token_title))
+            }
+        }
+        if (state.canForget) ForgetButton(stringResource(R.string.token_other_cloud), actions)
     }
 }
 

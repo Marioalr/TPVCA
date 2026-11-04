@@ -25,6 +25,23 @@
     <string name="link_no_secure_lock">Este equipo no tiene bloqueo de pantalla. Actívelo en Ajustes para poder vincularlo: los datos del consultorio se guardan protegidos por él.</string>
     <string name="link_open_settings">Abrir Ajustes</string>
     <string name="link_empty_token">Falta el token.</string>
+    <string name="link_bad_token">El token trae caracteres que un token no lleva. Cópielo otra vez del panel de Turso.</string>
+    <string name="link_other_clinic">Esa nube es de otro consultorio. No se guardó nada y este equipo sigue como estaba.</string>
+    <string name="link_cloud_unverified">No se pudo comprobar de quién es esa nube, así que no se guardó nada: %1$s</string>
+    <string name="host_title">¿Cambiar de nube?</string>
+    <string name="host_body">Esto manda el token a otra dirección: %1$s. Siga solo si la reconoce: quien controle esa dirección tendría el token.</string>
+    <string name="host_confirm">Usar esta nube</string>
+    <string name="host_cancel">No cambiar</string>
+    <string name="forget_title">¿Desvincular este equipo?</string>
+    <string name="forget_body">Se borran de este equipo la credencial, la base y los borradores. Lo que ya está en la nube no se toca. Para usarlo otra vez hay que vincularlo y la PC debe aprobarlo como un equipo nuevo.</string>
+    <string name="forget_confirm">Desvincular y borrar</string>
+    <string name="forget_cancel">No borrar</string>
+    <string name="local_error_title">No se pudo abrir lo guardado en este equipo</string>
+    <string name="local_error_body">No se borró nada. Puede ser pasajero: se vuelve a intentar solo.</string>
+    <string name="brake_resume">Reanudar</string>
+    <string name="token_manual">Pegue el token de la nube correcta o escanee su QR. Nada de aquí se borra.</string>
+    <string name="token_optional_url">URL de la base (si cambió)</string>
+    <string name="token_back">Regresar</string>
     <string name="link_credential_lost">La credencial de este equipo ya no se puede abrir, así que se borraron sus datos. Vincúlelo otra vez.</string>
 
     <string name="scan_title">Escanear el QR</string>

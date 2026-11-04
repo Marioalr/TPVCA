@@ -81,6 +81,9 @@ Mientras no haya WorkManager (K5), `AUTOMATIC` y `USER` son solo cómo se llama 
 QR, ni código de confirmación generado: esa vinculación (§4.4 del plan) la descartó el médico el 2026-10-11 y la PC nunca la tuvo. Lo que
 se compara en las dos pantallas son los últimos 6 caracteres del `DeviceId`.
 
+0. **Solo hosts de Turso** (`*.turso.io`), pegados o escaneados: a ese host va el token y de él se aceptan aprobaciones y revocaciones. Es más estricto que la PC, que acepta cualquier host con
+   punto: una URL propia de otro dominio no se podría vincular. Lo invisible al pegar (espacios duros, ancho cero) se quita del token; lo demás que no sea ASCII visible se rechaza, igual que un puerto
+   que no sea el de Turso.
 1. **Se niega sin bloqueo de pantalla seguro** (`KeyguardManager.isDeviceSecure`), sin guardar ni conectar nada.
 2. El médico elige el rol y escanea el QR (CameraX + ML Kit con el modelo incluido) o pega la URL y el token. Un QR que no se puede leer pide
    pegarlos a mano.
@@ -120,7 +123,16 @@ Con la app cerrada no corre nada: WorkManager es de K5.
 | **Token mal copiado** | HTTP 400 con "JWT" | Nada; **no cuenta** para borrarse | Todo | "Parece incompleto o mal copiado" |
 
 - Después de una revocación, volver a vincular toma **otro `DeviceId`**: las filas de `DeviceRegistry` nunca se borran, y la revocada no se puede aprobar otra vez.
-- Un token nuevo de **otra base** se detiene en `OtherCloud`: el `clinicId` queda en la credencial, así que no baja nada ni toca lo de aquí.
+- **Un token nuevo con otro host** no sale hasta que el médico confirme ese host en pantalla. Después se lee `_tpvc_meta` de esa nube **antes de guardar**: si es de otro consultorio o no se puede saber,
+  nada cambia y la pantalla del token sigue ahí.
+- **Una nube ajena no decide nada.** Tanto en el primer arranque como en la bajada incremental, el consultorio se revisa antes que su fila: no recibe latido, no lo pone a esperar y una fila suya no lo borra.
+  Una nube sin `clinicId` tampoco decide sobre un equipo que ya es de un consultorio.
+- **Desvincular** siempre pregunta antes y dice qué se borra. No se ofrece con «sin verificar» (se ofrece pegar otra URL), con «otra versión» ni con un error local.
+- **Freno de consumo:** como en la PC, no se quita solo ni al cambiar el día: los contadores se reinician, pero sigue puesto hasta *Reanudar*, que la app ofrece. Mientras tanto lo automático hace una sola
+  lectura de su fila en cada revisión, para que una revocación no espere.
+- **Dos 401:** además de la base, se borran los archivos del equipo. Los 10 min se miden con `elapsedRealtime`, que no se mueve con la hora del equipo. **Límite que sigue abierto:** ese reloj vuelve a cero al
+  reiniciar y ahí solo queda la hora normal, así que adelantarla y reiniciar acorta la espera. Hace falta el equipo desbloqueado y un 401 real.
+- **Una descarga cortada** no se muestra como «vinculado»: sigue diciendo que baja, con el motivo y *Intentar otra vez*.
 - **Si la app se cierra a medio borrar**, termina al abrir: el aviso se guarda antes de empezar.
 - **Un rol que no es de Android** (una PC, o uno que esta versión no conoce): nada se baja ni se borra. Se corrige con *Quitar* en la PC y vinculando otra vez.
 
@@ -129,7 +141,9 @@ Con la app cerrada no corre nada: WorkManager es de K5.
 - **Base:** SQLCipher (`net.zetetic:sqlcipher-android` con `SupportOpenHelperFactory`), con una frase aleatoria de 32 bytes envuelta por el Keystore en
   `noBackupFilesDir`. `TpvcaDatabase.open` no tiene una versión sin fábrica, así que no se puede abrir sin decir con cuál. **No hay migración desde una base sin
   cifrar: nunca se publicó una versión que la tuviera.** Sin su llave, la base se borra y se baja todo otra vez.
-- **Credencial:** archivo envuelto en `noBackupFilesDir`, sin `EncryptedSharedPreferences`. Si ya no se puede abrir, se borra todo y pide vincular.
+- **Credencial:** archivo envuelto en `noBackupFilesDir`, sin `EncryptedSharedPreferences`.
+- **Solo se borra por una pérdida definitiva:** falta la llave, quedó invalidada (`KeyPermanentlyInvalidatedException`) o los bytes no corresponden (`AEADBadTagException`). Ahí se borra todo y pide vincular. Un error
+  pasajero del Keystore o del disco no borra nada: la pantalla lo dice y lo vuelve a intentar. Mientras no se sabe qué hay guardado, la app queda bloqueada, no se vincula y nada se puede borrar.
 - **Llaves:** AES-256-GCM del Android Keystore, no exportables, con StrongBox si existe, una por uso (`tpvca.base`, `tpvca.credencial`). Sin autenticación y con
   `unlockedDeviceRequired=false`, para que la sincronización siga con la pantalla bloqueada.
 - **Respaldos:** `allowBackup=false`, `fullBackupContent=false` y `data_extraction_rules.xml` excluye todo, en la nube y al cambiar de equipo.
@@ -146,6 +160,16 @@ Con la app cerrada no corre nada: WorkManager es de K5.
 - **Token y URL:** nunca en una bitácora (`NoLogsTest`: el código no escribe en ella) ni en un mensaje: los errores pasan por `Redactor` y la red no repite su texto, que nombra al host.
   `toString` de `LinkData` y `DeviceCredential` no los muestra, y ningún `LinkState` los lleva. El formulario guarda lo escrito en memoria, no en el estado que Android
   restaura; por eso girar la pantalla lo borra.
+
+## Pendientes que dejó K3
+
+**Para K5** (hoy `pendingChanges()` siempre es 0, así que no se pueden dar):
+
+- `Revoked(erased = false)` no se guarda: después de reiniciar sin red, un equipo quitado con cambios pendientes se muestra como vinculado hasta la siguiente lectura.
+- `takeNewIdentity` vacía los datos sincronizados sin revisar si hay algo pendiente.
+- `rechazado` con algo pendiente se conserva como `quitado` (`SyncEngine.checkRegistry`). Decidir si es lo correcto.
+
+**Para K4:** la miniatura de Recientes puede mostrar pantallas de pacientes. K4 debe decidir si esas pantallas llevan `FLAG_SECURE`.
 
 ## Cómo se prueba
 

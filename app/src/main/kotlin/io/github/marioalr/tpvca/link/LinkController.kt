@@ -75,12 +75,22 @@ class LinkController(
     fun link(url: String, token: String, clinicName: String, role: DeviceRole) {
         // La persona está aquí: vincular no termina en la pantalla de bloqueo
         appLock.unlock()
-        launch { flow.link(url, token, clinicName, role) }
+        launch {
+            restoreOnce()
+            flow.link(url, token, clinicName, role)
+        }
     }
 
-    fun replaceToken(token: String, url: String? = null) = launch { flow.replaceToken(token, url) }
+    fun replaceToken(token: String, url: String? = null, confirmedHost: String? = null) = launch { flow.replaceToken(token, url, confirmedHost) }
 
-    fun refreshNow() = launch { flow.refresh(Refresh.USER) }
+    fun requestToken() = launch { flow.requestToken() }
+
+    fun resumeBrake() = launch { flow.resumeBrake() }
+
+    fun refreshNow() = launch {
+        restoreOnce()
+        flow.refresh(Refresh.USER)
+    }
 
     fun forget() = launch { flow.forget() }
 
@@ -93,8 +103,8 @@ class LinkController(
     }
 
     /**
-     * Un error local (la base, el Keystore, el disco) no cierra la app ni se escribe en una bitácora: el texto de la excepción podría traer
-     * una ruta o un dato. Se avisa con un texto fijo y la cadencia lo vuelve a intentar.
+     * Un error local (la base, el Keystore, el disco) no cierra la app, no borra nada ni se escribe en una bitácora: el texto de la excepción podría
+     * traer una ruta o un dato. La cadencia lo vuelve a intentar.
      */
     private inline fun guarded(action: () -> Unit) {
         try {
@@ -102,12 +112,11 @@ class LinkController(
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            states.value = LinkState.CloudProblem(LOCAL_ERROR)
+            flow.reportLocalError()
         }
     }
 
     companion object {
         const val TICK_MILLIS = 5_000L
-        const val LOCAL_ERROR = "No se pudo abrir lo guardado en este equipo. Intente otra vez; si sigue igual, vuelva a vincularlo."
     }
 }

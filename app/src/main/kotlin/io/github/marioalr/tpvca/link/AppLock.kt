@@ -48,6 +48,12 @@ enum class Gate { Loading, NoSecureLock, Locked, Open }
  */
 fun gateFor(state: LinkState?, role: DeviceRole?, locked: Boolean, deviceSecure: Boolean): Gate = when {
     state == null -> Gate.Loading
+    // Sin saber qué hay guardado: cerrado. Sin haberlo leído no se puede saber si hay datos ni de qué rol
+    state is LinkState.LocalError && role == null -> when {
+        !deviceSecure -> Gate.NoSecureLock
+        locked -> Gate.Locked
+        else -> Gate.Open
+    }
     role == null -> Gate.Open
     !deviceSecure -> Gate.NoSecureLock
     role == DeviceRole.AndroidMobileAdmin && locked -> Gate.Locked

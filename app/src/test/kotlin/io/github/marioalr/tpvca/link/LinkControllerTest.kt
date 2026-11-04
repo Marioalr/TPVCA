@@ -129,9 +129,16 @@ class LinkControllerTest {
         failLoad = true
         controller.onForeground()
         scope.runCurrent()
-        val state = controller.state.value as LinkState.CloudProblem
-        assertEquals(LinkController.LOCAL_ERROR, state.message)
-        assertFalse(state.message.contains("ruta"))
+        assertEquals(LinkState.LocalError, controller.state.value)
+        // Sin saber qué hay guardado: cerrado aunque el rol no se conozca, y nada se puede borrar
+        assertEquals(Gate.Locked, gateFor(controller.state.value, controller.role, controller.locked.value, controller.deviceSecure.value))
+        controller.forget()
+        scope.runCurrent()
+        assertEquals(LinkState.LocalError, controller.state.value)
+        // Era pasajero: la cadencia lo vuelve a leer
+        failLoad = false
+        scope.advanceTimeBy(LinkController.TICK_MILLIS + 1)
+        assertEquals(LinkState.NotLinked(), controller.state.value)
         controller.onBackground()
     }
 

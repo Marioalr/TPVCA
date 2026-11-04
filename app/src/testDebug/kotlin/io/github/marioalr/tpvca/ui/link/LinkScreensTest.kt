@@ -48,13 +48,23 @@ class LinkScreensTest {
         val calls = ArrayList<String>()
         var linked: Triple<String, String, DeviceRole>? = null
         var replaced: Pair<String, String?>? = null
+        var confirmedHost: String? = null
 
         override fun link(url: String, token: String, clinicName: String, role: DeviceRole) {
             linked = Triple(url, token, role)
         }
 
-        override fun replaceToken(token: String, url: String?) {
+        override fun replaceToken(token: String, url: String?, confirmedHost: String?) {
             replaced = token to url
+            this.confirmedHost = confirmedHost
+        }
+
+        override fun requestToken() {
+            calls += "requestToken"
+        }
+
+        override fun resumeBrake() {
+            calls += "resume"
         }
 
         override fun refreshNow() {
@@ -148,7 +158,7 @@ class LinkScreensTest {
         var showForm by mutableStateOf(true)
         compose.setContent {
             TpvcTheme(TpvcThemes.claro) {
-                if (showForm) LinkFormScreen(null, true, DeviceRole.AndroidTablet, actions, {}, {}) else DownloadingScreen()
+                if (showForm) LinkFormScreen(null, true, DeviceRole.AndroidTablet, actions, {}, {}) else DownloadingScreen(LinkState.Downloading(DeviceRole.AndroidTablet, ""), actions)
             }
         }
         compose.waitForIdle()
@@ -165,7 +175,7 @@ class LinkScreensTest {
             TpvcTheme(TpvcThemes.claro) {
                 when (which) {
                     0 -> QrScanScreen(noCamera, {}, { null }, {})
-                    else -> TokenScreen(LinkState.NeedsToken(false, false, 0), true, actions, {})
+                    else -> TokenScreen(LinkState.NeedsToken(false, false, 0), true, actions, { _, _ -> }, {})
                 }
             }
         }
@@ -248,6 +258,8 @@ class LinkScreensTest {
         compose.onNodeWithText("Pide entrar como: Tablet").assertIsDisplayed()
         compose.onNodeWithTag(LinkTags.WAITING_REFRESH).performClick()
         compose.onNodeWithTag(LinkTags.WAITING_CANCEL).performScrollTo().performClick()
+        assertEquals("Todavía no: primero pregunta", listOf("refresh"), actions.calls)
+        compose.onNodeWithTag(LinkTags.FORGET_CONFIRM).performClick()
         assertEquals(listOf("refresh", "forget"), actions.calls)
     }
 
@@ -353,6 +365,117 @@ class LinkScreensTest {
     fun laNubeSinVerificarLoDiceYDejaIntentar() {
         root(LinkState.CloudProblem("Sincronice primero la PC: la nube todavía no tiene el esquema."))
         compose.onNodeWithText("Sincronice primero la PC", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Intentar otra vez").performClick()
+        assertEquals(listOf("refresh"), actions.calls)
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------- lo que se puede perder
+
+    @Test
+    fun desvincularPrimeroDiceQueSePierdeYSePuedeCancelar() {
+        root(LinkState.CloudProblem("Esta nube es de otro consultorio: no se bajó nada.", canReplace = true, canForget = true))
+        compose.onNodeWithText("Vincular con otra nube").performClick()
+        assertTrue("Un toque no borra", actions.calls.isEmpty())
+        compose.onNodeWithText("Se borran de este equipo la credencial, la base y los borradores", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("No borrar").performClick()
+        assertTrue(actions.calls.isEmpty())
+        compose.onNodeWithText("Vincular con otra nube").performClick()
+        compose.onNodeWithTag(LinkTags.FORGET_CONFIRM).performClick()
+        assertEquals(listOf("forget"), actions.calls)
+    }
+
+    @Test
+    fun loQueSeArreglaSoloNoOfreceDesvincular() {
+        root(LinkState.CloudProblem("Actualice la app."))
+        compose.onNodeWithText("Vincular con otra nube").assertDoesNotExist()
+        compose.onNodeWithTag(LinkTags.CLOUD_REPLACE).assertDoesNotExist()
+    }
+
+    @Test
+    fun laNubeSinVerificarDejaPegarOtraPeroNoDesvincular() {
+        root(LinkState.CloudProblem("La nube todavía no está lista.", canReplace = true))
+        compose.onNodeWithText("Vincular con otra nube").assertDoesNotExist()
+        compose.onNodeWithTag(LinkTags.CLOUD_REPLACE).performClick()
+        assertEquals(listOf("requestToken"), actions.calls)
+    }
+
+    @Test
+    fun unErrorLocalSoloDejaReintentar() {
+        root(LinkState.LocalError)
+        compose.onNodeWithText("No se borró nada", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Vincular con otra nube").assertDoesNotExist()
+        compose.onNodeWithText("Intentar otra vez").performClick()
+        assertEquals(listOf("refresh"), actions.calls)
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------- otro host
+
+    @Test
+    fun unQrDeOtroHostPideConfirmarMostrandoloYSoloEntoncesSeManda() {
+        val host = "consultorio-ejemplo.aws-us-east-2.turso.io"
+        val code = LinkCode.encode("libsql://$host", token, "")
+        var fire: ((String) -> Unit)? = null
+        var state by mutableStateOf<LinkState>(LinkState.NeedsToken(false, false, 0))
+        compose.setContent { AppRoot(state, Gate.Open, true, "0.1.0", 21, HomeLayout.Narrow, actions, { onText, _ -> fire = onText }) }
+        compose.onNodeWithText("Escanear el QR de la PC").performScrollTo().performClick()
+        compose.waitForIdle()
+        fire!!(code)
+        compose.waitForIdle()
+        assertEquals(token to "libsql://$host", actions.replaced)
+        assertEquals("Sin confirmar", null, actions.confirmedHost)
+        state = LinkState.NeedsToken(false, false, 0, LinkProblem.HostChange(host))
+        compose.waitForIdle()
+        compose.onNodeWithText(host, substring = true).assertIsDisplayed()
+        compose.onNodeWithTag(LinkTags.HOST_CONFIRM).performClick()
+        assertEquals(host, actions.confirmedHost)
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------- escáner sin salida
+
+    @Test
+    fun unQrRechazadoRegresaAlFormularioConElMotivo() {
+        val code = LinkCode.encode("https://evil.example", token, "")
+        var fire: ((String) -> Unit)? = null
+        var state by mutableStateOf<LinkState>(LinkState.NotLinked(LinkProblem.BadUrl("Esa dirección no es de Turso")))
+        compose.setContent { AppRoot(state, Gate.Open, true, "0.1.0", 21, HomeLayout.Narrow, actions, { onText, _ -> fire = onText }) }
+        compose.onNodeWithTag(LinkTags.SCAN).performScrollTo().performClick()
+        compose.waitForIdle()
+        fire!!(code)
+        compose.waitForIdle()
+        // El mismo problema otra vez: el estado no cambia y aun así no se queda en el escáner
+        state = LinkState.NotLinked(LinkProblem.BadUrl("Esa dirección no es de Turso"))
+        compose.waitForIdle()
+        compose.onNodeWithTag(LinkTags.SCAN_SCREEN).assertDoesNotExist()
+        compose.onNodeWithText("Esa dirección no es de Turso").assertIsDisplayed()
+    }
+
+    @Test
+    fun unQrRechazadoAlPedirElTokenTambienRegresa() {
+        val code = LinkCode.encode("https://evil.example", token, "")
+        var fire: ((String) -> Unit)? = null
+        root(LinkState.NeedsToken(false, false, 0, LinkProblem.BadUrl("Esa dirección no es de Turso")), reader = { onText, _ -> fire = onText })
+        compose.onNodeWithText("Escanear el QR de la PC").performScrollTo().performClick()
+        compose.waitForIdle()
+        fire!!(code)
+        compose.waitForIdle()
+        compose.onNodeWithTag(LinkTags.SCAN_SCREEN).assertDoesNotExist()
+        compose.onNodeWithText("Esa dirección no es de Turso").assertIsDisplayed()
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------- freno y descarga
+
+    @Test
+    fun conElFrenoElInicioOfreceReanudar() {
+        root(LinkState.Linked(DeviceRole.AndroidTablet, "T1", "", notice = "Sincronización pausada: consumo anormal.", braked = true))
+        compose.onNodeWithTag(HomeTags.RESUME).performClick()
+        assertEquals(listOf("resume"), actions.calls)
+    }
+
+    @Test
+    fun unaDescargaCortadaLoDiceYDejaReintentar() {
+        root(LinkState.Downloading(DeviceRole.AndroidTablet, "", notice = "Sin red."))
+        compose.onNodeWithText("Bajando los datos del consultorio").assertIsDisplayed()
+        compose.onNodeWithText("Sin red.").assertIsDisplayed()
         compose.onNodeWithText("Intentar otra vez").performClick()
         assertEquals(listOf("refresh"), actions.calls)
     }

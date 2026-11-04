@@ -72,7 +72,11 @@ class MainActivity : FragmentActivity() {
     private inner class Actions(private val controller: LinkController) : LinkActions {
         override fun link(url: String, token: String, clinicName: String, role: DeviceRole) = controller.link(url, token, clinicName, role)
 
-        override fun replaceToken(token: String, url: String?) = controller.replaceToken(token, url)
+        override fun replaceToken(token: String, url: String?, confirmedHost: String?) = controller.replaceToken(token, url, confirmedHost)
+
+        override fun requestToken() = controller.requestToken()
+
+        override fun resumeBrake() = controller.resumeBrake()
 
         override fun refreshNow() = controller.refreshNow()
 

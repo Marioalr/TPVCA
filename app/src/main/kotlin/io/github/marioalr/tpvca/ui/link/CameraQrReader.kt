@@ -38,6 +38,26 @@ import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
 
 /**
+ * Pedir la cámara tarda: si la persona ya salió de la pantalla cuando llega, no se enciende. Y al salir se apaga. Todo corre en el hilo principal.
+ */
+class CameraBinding {
+    private var left = false
+    private var unbind: (() -> Unit)? = null
+
+    fun bindWhenReady(unbind: () -> Unit, bind: () -> Unit) {
+        if (left) return
+        this.unbind = unbind
+        bind()
+    }
+
+    fun leave() {
+        left = true
+        unbind?.invoke()
+        unbind = null
+    }
+}
+
+/**
  * Lee el QR con CameraX y ML Kit, con el modelo incluido en la app (plan §7.2). Pide el permiso de la cámara al entrar. Sin él o si falla, se
  * pegan a mano. Lo leído no se guarda, no se registra y solo llega a [onText]. ML Kit se comprueba con `QrDecodingDeviceTest`; la cámara, solo en un equipo.
  */
@@ -66,31 +86,32 @@ private fun CameraPreview(onText: (String) -> Unit) {
         val executor = Executors.newSingleThreadExecutor()
         val scanner = BarcodeScanning.getClient(BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build())
         val future = ProcessCameraProvider.getInstance(context)
-        var provider: ProcessCameraProvider? = null
+        val binding = CameraBinding()
         future.addListener(
             {
                 val cameras = future.get()
-                provider = cameras
-                val preview = Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
-                val analysis = ImageAnalysis.Builder()
-                    // Un token de ~350 caracteres da un QR de ~100 módulos: a baja resolución no se distinguen
-                    .setResolutionSelector(
-                        ResolutionSelector.Builder()
-                            .setResolutionStrategy(
-                                ResolutionStrategy(Size(1280, 720), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
-                            )
-                            .build(),
-                    )
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build()
-                    .also { it.setAnalyzer(executor) { image -> analyze(image, scanner) { text -> currentOnText(text) } } }
-                cameras.unbindAll()
-                cameras.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                binding.bindWhenReady(unbind = cameras::unbindAll) {
+                    val preview = Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
+                    val analysis = ImageAnalysis.Builder()
+                        // Un token de ~350 caracteres da un QR de ~100 módulos: a baja resolución no se distinguen
+                        .setResolutionSelector(
+                            ResolutionSelector.Builder()
+                                .setResolutionStrategy(
+                                    ResolutionStrategy(Size(1280, 720), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
+                                )
+                                .build(),
+                        )
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .build()
+                        .also { it.setAnalyzer(executor) { image -> analyze(image, scanner) { text -> currentOnText(text) } } }
+                    cameras.unbindAll()
+                    cameras.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                }
             },
             ContextCompat.getMainExecutor(context),
         )
         onDispose {
-            provider?.unbindAll()
+            binding.leave()
             scanner.close()
             executor.shutdown()
         }

@@ -54,6 +54,7 @@ object HomeTags {
     const val NARROW = "home-narrow"
     const val LINK_BUTTON = "home-link-button"
     const val LINKED = "home-linked"
+    const val RESUME = "home-resume"
 }
 
 /**
@@ -62,7 +63,7 @@ object HomeTags {
 sealed interface HomeLink {
     data object NotLinked : HomeLink
 
-    data class Linked(val role: DeviceRole, val code: String?, val clinicName: String, val notice: String?) : HomeLink
+    data class Linked(val role: DeviceRole, val code: String?, val clinicName: String, val notice: String?, val braked: Boolean = false) : HomeLink
 }
 
 /**
@@ -76,6 +77,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     link: HomeLink = HomeLink.NotLinked,
     onLink: () -> Unit = {},
+    onResumeBrake: () -> Unit = {},
 ) {
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         val scroll = rememberScrollState()
@@ -89,7 +91,7 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(24.dp),
             ) {
                 HomeCard(Modifier.weight(1f)) { AppIdentity(versionName, contractRevision) }
-                HomeCard(Modifier.weight(1f)) { LinkStatus(link, onLink) }
+                HomeCard(Modifier.weight(1f)) { LinkStatus(link, onLink, onResumeBrake) }
             }
             HomeLayout.Narrow -> Column(
                 modifier = Modifier
@@ -101,7 +103,7 @@ fun HomeScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 HomeCard(Modifier.fillMaxWidth().widthIn(max = 560.dp)) { AppIdentity(versionName, contractRevision) }
-                HomeCard(Modifier.fillMaxWidth().widthIn(max = 560.dp)) { LinkStatus(link, onLink) }
+                HomeCard(Modifier.fillMaxWidth().widthIn(max = 560.dp)) { LinkStatus(link, onLink, onResumeBrake) }
             }
         }
     }
@@ -137,7 +139,7 @@ private fun AppIdentity(versionName: String, contractRevision: Int) {
 }
 
 @Composable
-private fun LinkStatus(link: HomeLink, onLink: () -> Unit) {
+private fun LinkStatus(link: HomeLink, onLink: () -> Unit, onResumeBrake: () -> Unit) {
     val colors = LocalTpvcColors.current
     when (link) {
         HomeLink.NotLinked -> {
@@ -173,6 +175,11 @@ private fun LinkStatus(link: HomeLink, onLink: () -> Unit) {
             if (link.clinicName.isNotEmpty()) Text(link.clinicName, style = MaterialTheme.typography.bodyMedium)
             link.notice?.let {
                 Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (link.braked) {
+                Button(onClick = onResumeBrake, modifier = Modifier.heightIn(min = 48.dp).testTag(HomeTags.RESUME)) {
+                    Text(stringResource(R.string.brake_resume))
+                }
             }
         }
     }

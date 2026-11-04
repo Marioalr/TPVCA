@@ -314,7 +314,7 @@ class SyncEngineTest {
         completed(engine().sync())
         assertEquals("La incremental sí", 1, store.rows("Categories").size)
         assertEquals("Todo en una petición", 1, cloud.requests.size)
-        assertEquals(1 + 1 + 15 + 1, cloud.requests.single().size)
+        assertEquals(1 + 1 + 1 + 15 + 1, cloud.requests.single().size)
         assertEquals(Statements.REGISTRY_OWN, cloud.requests.single().first())
     }
 

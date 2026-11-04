@@ -11,6 +11,8 @@ sealed class SyncOutcome(open val message: String?) {
         /** La nube y la app no tienen el mismo manifiesto: la app no escribe nada (§7.3). */
         val readOnly: ManifestDiff?,
         val clockWarning: String? = null,
+        /** Las filas que la nube sí cambió con la subida de esta sincronización. */
+        val pushed: Int = 0,
     ) : SyncOutcome(readOnly?.let { ManifestDiff.MESSAGE } ?: clockWarning)
 
     /** Falta `_tpvc_meta` o su huella: la PC todavía no crea el esquema. Esta app nunca corre DDL. */
@@ -40,7 +42,7 @@ sealed class SyncOutcome(open val message: String?) {
         SyncOutcome("La PC registró este equipo con otro rol${role?.takeIf { it.isNotEmpty() }?.let { " ($it)" }.orEmpty()}. Revíselo en Equipos vinculados.")
 
     /**
-     * Con `RevokedAtUtc`, o con código X. [wiped]: se borró la base. Sin borrar solo si hay cambios sin subir que no deben perderse (K5).
+     * Con `RevokedAtUtc`, o con código X. [wiped]: se borró la base. Sin borrar solo si hay cambios sin subir que no deben perderse.
      * [reason] es `quitado`, `perdido` o `rechazado`.
      */
     data class Revoked(val reason: String?, val wiped: Boolean) : SyncOutcome(

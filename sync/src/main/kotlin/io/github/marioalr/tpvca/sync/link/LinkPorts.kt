@@ -99,6 +99,9 @@ interface LocalDatabase {
     /** La base abierta; la crea si hace falta. */
     fun store(): SyncStore
 
+    /** Ya hay una base en el disco. No abre nada ni toca el Keystore. */
+    fun exists(): Boolean = false
+
     /** Cierra y borra la base, su llave y las imágenes del membrete. La siguiente [store] empieza con una base y una llave nuevas. */
     fun erase()
 }
@@ -114,6 +117,12 @@ interface LinkNotices {
 }
 
 data class Revocation(val reason: String?)
+
+/** Dónde queda el último número de cada serie con letra: fuera de la base. */
+interface FolioNumbers : io.github.marioalr.tpvca.sync.engine.FolioLedger {
+    /** Al quitar el equipo: el `DeviceId` nuevo trae otro código, así que no se puede repetir un folio. */
+    fun clear()
+}
 
 /** Si el equipo tiene bloqueo de pantalla seguro (`KeyguardManager.isDeviceSecure`). */
 fun interface DeviceLock {

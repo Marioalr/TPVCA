@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 21,
+  "contract": 22,
   "notes": [
     "La serie de signos de la ficha (Models/PatientRecord.GetVitalSignsEvolution con PatientConsultation.ParseAndSetVitalSigns, y los textos de arriba de la gráfica, Services/Rules/PatientChartRules.LatestTexts). Cada consulta: date, folio, vitalSigns (el texto de la nota, vitals.json 'format') y, si ya están en sus columnas, systolic, diastolic, heartRate, temperature, weight, height, bmi, glucose y oxygenSaturation (decimales en texto). Decimales de salida en texto invariante con su escala.",
     "Por consulta, de la fecha más vieja a la más nueva (iguales en el orden de la lista): si no tiene sistólica, peso, glucosa ni SpO2 en sus columnas, se leen del texto (sin distinguir mayúsculas): T/A con '(T/?A|TA|PA|Presi[oó]n):' y 'dd/dd' (2 o 3 dígitos cada uno), 'FC:' 2-3 dígitos, 'FR:' 1-2 dígitos, '(Temp|Temperatura):', '(Peso|Weight):', '(Talla|Height|Estatura):' (más de 3 se toma en cm y se divide entre 100), '(SpO2%?|SatO2|SPO2)' con ':' o '=' opcional (de 0 a 1 se multiplica por 100), 'IMC:' y 'Glucosa:', cada número con dígitos, punto o coma (la coma vale punto). Sin IMC escrito y con peso y talla, IMC = Math.Round(peso / talla², 2) (decimal, al par).",

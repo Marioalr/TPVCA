@@ -31,6 +31,8 @@ dependencies {
     testFixturesApi(libs.junit)
     testFixturesApi(libs.okhttp.mockwebserver)
     testFixturesApi(libs.kotlinx.serialization.json)
+    testFixturesImplementation(libs.sqlite.jdbc)
+    testFixturesImplementation(project(":domain"))
 }
 
 val contractsDir = rootProject.layout.projectDirectory.dir("contracts")
@@ -48,4 +50,9 @@ tasks.test {
     val sources = listOf("sync", "data", "domain", "app").map { rootProject.layout.projectDirectory.dir("$it/src/main") }
     sources.forEach { inputs.dir(it).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("main-${it.asFile.parentFile.parentFile.name}") }
     systemProperty("tpvca.root", rootProject.layout.projectDirectory.asFile.absolutePath)
+    // Las rutas de control de TPVC: con ellas, RealPcScenariosTest corre con el motor real de la PC
+    providers.gradleProperty("tpvc.control").orNull?.let {
+        systemProperty("tpvc.control", it)
+        outputs.upToDateWhen { false }
+    }
 }

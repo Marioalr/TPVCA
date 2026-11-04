@@ -75,6 +75,18 @@ class LinkScreensTest {
             calls += "forget"
         }
 
+        override fun exportPending() {
+            calls += "exportar"
+        }
+
+        override fun confirmExportDelivered() {
+            calls += "confirmar-entrega"
+        }
+
+        override fun eraseAfterExport() {
+            calls += "borrar-exportado"
+        }
+
         override fun acknowledgeRevocation() {
             calls += "acknowledge"
         }
@@ -105,6 +117,29 @@ class LinkScreensTest {
 
     private fun form(problem: LinkProblem? = null, secure: Boolean = true) = screen {
         LinkFormScreen(problem, secure, DeviceRole.AndroidMobileAdmin, actions, {}, {})
+    }
+
+    @Test
+    fun revocadoConPendientesExportaYSoloDespuesBorraConConfirmacion() {
+        var state by mutableStateOf(LinkState.Revoked("quitado", erased = false, pending = 2))
+        compose.setContent { AppRoot(state, Gate.Open, true, "0.1.0", 21, HomeLayout.Narrow, actions, noCamera) }
+        compose.onNodeWithTag(LinkTags.ERASE_AFTER_EXPORT).assertDoesNotExist()
+        compose.onNodeWithTag(LinkTags.EXPORT_DELIVERED).assertDoesNotExist()
+        compose.onNodeWithTag(LinkTags.EXPORT_PENDING).performClick()
+        assertEquals(listOf("exportar"), actions.calls)
+        // Generado no es entregado: cancelar «Compartir» se ve igual
+        state = LinkState.Revoked("quitado", erased = false, pending = 2, exportReady = true)
+        compose.waitForIdle()
+        compose.onNodeWithTag(LinkTags.ERASE_AFTER_EXPORT).assertDoesNotExist()
+        compose.onNodeWithTag(LinkTags.EXPORT_DELIVERED).performClick()
+        assertEquals(listOf("exportar", "confirmar-entrega"), actions.calls)
+        state = LinkState.Revoked("quitado", erased = false, pending = 2, exportReady = true, exported = true)
+        compose.waitForIdle()
+        compose.onNodeWithTag(LinkTags.ERASE_AFTER_EXPORT).performClick()
+        assertEquals("Todavía no borra", listOf("exportar", "confirmar-entrega"), actions.calls)
+        compose.onNodeWithText("Si no llegó, se pierden", substring = true).assertExists()
+        compose.onNodeWithTag(LinkTags.ERASE_CONFIRM).performClick()
+        assertEquals(listOf("exportar", "confirmar-entrega", "borrar-exportado"), actions.calls)
     }
 
     @Test

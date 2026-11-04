@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 21,
+  "contract": 22,
   "notes": [
     "Serie: EXP-yyyy (año del consultorio) con 3 dígitos; TKT-yyyyMMdd (día) con 4. Más dígitos si el número no cabe.",
     "Un folio cuenta para su serie solo si es la serie, un guion y dígitos (sin importar mayúsculas ni espacios en los extremos): uno con letra (EXP-2026-T1-004), con -R1 o con otro texto no cuenta.",

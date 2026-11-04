@@ -94,6 +94,7 @@ class FakeCloud {
                 if (noMetaTable) throw HranaException("SQLITE_ERROR", "SQLite error: no such table: _tpvc_meta")
                 ResultSet(meta.map { (key, value) -> rowOf("Key" to key, "Value" to value) })
             }
+            sql == Statements.META_SCHEMA -> ResultSet(listOfNotNull(meta["schema"]?.let { rowOf("Value" to it) }))
             sql == Statements.HANDSHAKE -> ResultSet(
                 listOf(
                     rowOf(

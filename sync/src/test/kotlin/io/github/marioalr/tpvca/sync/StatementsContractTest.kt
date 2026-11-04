@@ -24,21 +24,17 @@ class StatementsContractTest {
 
     /** Las que usan K2 y K3. Si `statements.json` trae una nueva, esta prueba falla hasta decidir de qué paso es. */
     private val usedByK2 = setOf(
-        "meta.all", "handshake", "generation", "profile", "registry.own", "asset.meta", "asset.chunk", "heartbeat.readNonce", "heartbeat.write",
+        "meta.all", "handshake", "generation", "profile", "registry.own", "asset.meta", "asset.chunk", "heartbeat.readNonce", "heartbeat.write", "heartbeat.writeAfterPush", "meta.schema", "folio.take", "folio.raise",
     )
     private val laterSteps = mapOf(
-        "meta.schema" to "sin uso: meta.all ya trae la huella",
-        "heartbeat.writeAfterPush" to "K5",
         "registry.primary" to "K9b: Equipos vinculados en la tablet; vincular no lo necesita",
         "asset.exists" to "K9b",
         "asset.writeChunk" to "K9b",
         "asset.writeMeta" to "K9b",
         "profile.write" to "K9b",
-        "folio.take" to "K5",
-        "folio.raise" to "K5",
         "check.incoming" to "K8",
         "check.outgoing" to "K8",
-        "check.peerPush" to "K5",
+        "check.peerPush" to "K8: la revisión; K5 sincroniza por cadencia",
         "check.peers.serverNow" to "K8",
         "check.peers.devices" to "K8",
         "check.peers.registry" to "K8",
@@ -48,6 +44,20 @@ class StatementsContractTest {
     fun cadaInstruccionDelContratoTienePaso() {
         val pages = schema.tables.map { "page.${it.table}" }.toSet() + "page.${schema.tombstones.table}"
         assertEquals(emptySet<String>(), statements.keys - pages - usedByK2 - laterSteps.keys)
+    }
+
+    @Test
+    fun laSubidaEsLaDeLaGrabacion() {
+        assertEquals(statements["folio.take"], Statements.FOLIO_TAKE)
+        assertEquals(statements["meta.schema"], Statements.META_SCHEMA)
+        assertEquals(statements["folio.raise"], Statements.FOLIO_RAISE)
+        assertEquals(statements["heartbeat.writeAfterPush"], Statements.HEARTBEAT_AFTER_PUSH)
+        // push.jsonl y tie-conflict.jsonl: el texto de cada instrucción de la subida, literal aunque el contrato no lo exija
+        val sqls = listOf("push", "tie-conflict", "tombstone-vs-edit").flatMap { Contracts.file("hrana/$it.jsonl").readLines() }.joinToString("\n")
+        for (table in schema.tables.filter { it.table in setOf("Patients", "Appointments") }) assertTrue(table.table, kotlinx.serialization.json.JsonPrimitive(Statements.upsertSql(table)).toString() in sqls)
+        assertTrue(kotlinx.serialization.json.JsonPrimitive(Statements.TOMBSTONE_UPSERT).toString() in sqls)
+        assertTrue(kotlinx.serialization.json.JsonPrimitive(Statements.deleteTombstonedSql("PatientConsultations")).toString() in sqls)
+        assertTrue(kotlinx.serialization.json.JsonPrimitive(Statements.rereadRowsSql("PatientConsultations", 1)).toString() in sqls || kotlinx.serialization.json.JsonPrimitive(Statements.rereadRowsSql("Patients", 1)).toString() in sqls)
     }
 
     @Test

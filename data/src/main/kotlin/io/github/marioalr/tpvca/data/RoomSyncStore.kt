@@ -7,6 +7,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import io.github.marioalr.tpvca.sync.SyncContract
 import io.github.marioalr.tpvca.sync.SyncSchema
 import io.github.marioalr.tpvca.sync.engine.LocalRow
+import io.github.marioalr.tpvca.sync.engine.OutboxEntry
+import io.github.marioalr.tpvca.sync.engine.SavedChange
 import io.github.marioalr.tpvca.sync.engine.ParkDirection
 import io.github.marioalr.tpvca.sync.engine.ParkedRow
 import io.github.marioalr.tpvca.sync.engine.StoreChanges
@@ -24,7 +26,20 @@ class RoomSyncStore(
     private val assetsDir: File,
     private val schema: SyncSchema = SyncContract.bundledSchema,
 ) : SyncStore {
-    private val db: SupportSQLiteDatabase get() = database.openHelper.writableDatabase
+    @Volatile
+    private var closed = false
+
+    /** Room vuelve a abrir, y a crear, una base cerrada. Quien se quedó con este objeto después de un borrado no debe poder hacerlo. */
+    private val db: SupportSQLiteDatabase
+        get() {
+            check(!closed) { "Esta base ya se borró." }
+            return database.openHelper.writableDatabase
+        }
+
+    /** La base se va a borrar: desde aquí este objeto ya no la toca. */
+    fun invalidate() {
+        closed = true
+    }
     private val syncedTables = schema.tables.map { it.table }
 
     override fun meta(key: String): String? =
@@ -35,10 +50,9 @@ class RoomSyncStore(
             buildMap { while (cursor.moveToNext()) put(cursor.getString(0), cursor.getString(1)) }
         }
 
-    override fun apply(changes: StoreChanges) {
+    override fun apply(changes: StoreChanges) = transaction {
         val db = db
-        db.beginTransaction()
-        try {
+        run {
             for (write in changes.writes) {
                 val values = contentValues(write.values)
                 if (write.isNew) {
@@ -78,11 +92,67 @@ class RoomSyncStore(
                 db.insert("DbMeta", SQLiteDatabase.CONFLICT_REPLACE, values)
             }
             for (key in changes.metaRemoved) db.delete("DbMeta", "Key = ?", arrayOf(key))
+            changes.outboxClearedUpTo?.let { db.delete("SyncOutbox", "Seq <= ?", arrayOf(it)) }
+            for (mark in changes.outbox) {
+                // Una entrada por registro: volver a anotarlo le da otro número, mayor que el de cualquier subida en curso
+                db.delete("SyncOutbox", "EntityType = ? AND SyncId = ?", arrayOf(mark.entityType, mark.syncId))
+                val values = ContentValues().apply {
+                    put("EntityType", mark.entityType)
+                    put("SyncId", mark.syncId)
+                    put("Protocol", SyncContract.CLIENT_PROTOCOL)
+                    put("Contract", SyncContract.REVISION)
+                    put("EnqueuedAtUtc", mark.enqueuedAtUtc)
+                }
+                db.insert("SyncOutbox", SQLiteDatabase.CONFLICT_ABORT, values)
+            }
+            for (change in changes.saved) {
+                val values = ContentValues().apply {
+                    put("Source", change.source)
+                    put("Generation", change.generation)
+                    put("EntityType", change.entityType)
+                    put("SyncId", change.syncId)
+                    put("Kind", change.kind)
+                    put("Payload", change.payload)
+                    put("Protocol", change.protocol)
+                    put("Contract", change.contract)
+                    put("SavedAtUtc", change.savedAtUtc)
+                }
+                db.insert("SyncSavedChanges", SQLiteDatabase.CONFLICT_REPLACE, values)
+            }
+            for (id in changes.savedRemoved) db.delete("SyncSavedChanges", "Id = ?", arrayOf(id))
+        }
+    }
+
+    /**
+     * Anidada es un `SAVEPOINT`, no otra `beginTransaction`: en Android una anidada que falla echa a perder la de afuera aunque esta atrape el error. El comentario delante de `ROLLBACK TO` es a propósito: esta capa
+     * de SQLite decide por los primeros caracteres y, si lee `ROL`, termina toda la transacción en lugar de dejarlo pasar. `OutboxDeviceTest` lo prueba con SQLCipher.
+     */
+    override fun <T> transaction(block: () -> T): T {
+        val db = db
+        if (db.inTransaction()) {
+            val name = "tpvc_sp_${savepoints.incrementAndGet()}"
+            db.execSQL("SAVEPOINT $name")
+            try {
+                val result = block()
+                db.execSQL("RELEASE $name")
+                return result
+            } catch (e: Throwable) {
+                db.execSQL("/* punto de guardado */ ROLLBACK TO $name")
+                db.execSQL("RELEASE $name")
+                throw e
+            }
+        }
+        db.beginTransaction()
+        try {
+            val result = block()
             db.setTransactionSuccessful()
+            return result
         } finally {
             db.endTransaction()
         }
     }
+
+    private val savepoints = java.util.concurrent.atomic.AtomicLong()
 
     private fun saveTombstone(db: SupportSQLiteDatabase, tombstone: TombstoneRow) {
         val existing = db.query(
@@ -160,9 +230,13 @@ class RoomSyncStore(
         }
     }
 
-    override fun repairFutureStamps(tables: List<String>, limit: String, stamp: String) {
+    override fun repairFutureStamps(tables: List<String>, limit: String, stamp: String): Int {
         val values = ContentValues().apply { put("UpdatedAtUtc", stamp) }
-        for (table in tables) db.update(quote(table), SQLiteDatabase.CONFLICT_NONE, values, "UpdatedAtUtc > ?", arrayOf(limit))
+        val tombstone = ContentValues().apply { put("DeletedAtUtc", stamp) }
+        return transaction {
+            tables.sumOf { db.update(quote(it), SQLiteDatabase.CONFLICT_NONE, values, "UpdatedAtUtc > ?", arrayOf(limit)) } +
+                db.update("SyncTombstones", SQLiteDatabase.CONFLICT_NONE, tombstone, "DeletedAtUtc > ?", arrayOf(limit))
+        }
     }
 
     override fun profileStamp(): String? =
@@ -183,20 +257,47 @@ class RoomSyncStore(
         check(temporary.renameTo(File(assetsDir, hash))) { "No se pudo guardar la imagen del membrete." }
     }
 
-    /** Sin cola de salida hasta K5. */
-    override fun pendingChanges(): Int = 0
+    override fun outbox(): List<OutboxEntry> =
+        db.query("SELECT Seq, EntityType, SyncId, Protocol, Contract, EnqueuedAtUtc FROM SyncOutbox ORDER BY Seq").use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) add(OutboxEntry(cursor.getLong(0), cursor.getString(1), cursor.getString(2), cursor.getInt(3), cursor.getInt(4), cursor.getString(5)))
+            }
+        }
 
-    override fun clearSyncedData(keepMetaPrefixes: List<String>) {
+    /** La cola y lo apartado al subir, sin contar dos veces un mismo registro. */
+    override fun pendingChanges(): Int = db.query(
+        "SELECT COUNT(*) FROM (SELECT EntityType, SyncId FROM SyncOutbox UNION SELECT EntityType, SyncId FROM SyncParkedRows WHERE Direction = 'PUSH')",
+    ).use {
+        it.moveToFirst()
+        it.getInt(0)
+    }
+
+    override fun oldestPendingUtc(): String? =
+        db.query("SELECT MIN(EnqueuedAtUtc) FROM SyncOutbox").use { if (it.moveToFirst() && !it.isNull(0)) it.getString(0) else null }
+
+    override fun savedChanges(): List<SavedChange> =
+        db.query("SELECT Id, Source, Generation, EntityType, SyncId, Kind, Payload, Protocol, Contract, SavedAtUtc FROM SyncSavedChanges ORDER BY Id").use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(
+                        SavedChange(
+                            cursor.getLong(0), cursor.getString(1), if (cursor.isNull(2)) null else cursor.getString(2), cursor.getString(3), cursor.getString(4),
+                            cursor.getString(5), cursor.getString(6), cursor.getInt(7), cursor.getInt(8), cursor.getString(9),
+                        ),
+                    )
+                }
+            }
+        }
+
+    override fun clearSyncedData(keepMetaPrefixes: List<String>) = transaction {
         val db = db
-        db.beginTransaction()
-        try {
+        run {
+            // Dentro de la transacción: nada se anota entre revisar y vaciar
+            check(outbox().isEmpty()) { "Hay cambios sin subir: primero se guardan." }
             for (table in syncedTables + listOf(schema.tombstones.table, "ClinicProfiles", "SyncParkedRows")) db.delete(quote(table), null, null)
             for (key in metaByPrefix("").keys) {
                 if (keepMetaPrefixes.none { key.startsWith(it) }) db.delete("DbMeta", "Key = ?", arrayOf(key))
             }
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
         }
     }
 

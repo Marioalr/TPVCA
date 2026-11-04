@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 21,
+  "contract": 22,
   "notes": [
     "Un archivo se parte en trozos de 'chunkSize' bytes (el último puede ser más chico); 'sha256' es el del archivo completo en hex con minúsculas y es su llave (LabResults.ContentSha256, LabBlobs.Sha256).",
     "Subir: 'state' y 'existingChunks' en una petición; si no hay fila, revisar el tope con 'usage' y escribir 'register'; subir cada trozo que falta con 'insertChunk', uno por petición, y el último en un batch con BEGIN/COMMIT junto con 'close'. Un archivo con EvictedAtUtc no se vuelve a subir.",

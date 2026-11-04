@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 21,
+  "contract": 22,
   "notes": [
     "Qué producto es un renglón y qué es medicamento (Services/Rules/CatalogMatchingRules.cs, antes CatalogStore; PatientSheetRows.FindProductByName; PrescriptionNaming). Los productos, como en rank-products.json.",
     "product-matches-name (el medicamento elegido sigue siendo ese renglón al guardar la receta y al cargarlo con «Se surte aquí»): con todo normalizado (text-search.json), el nombre, 'Nombre (Presentación)', el nombre seguido de un espacio y algo más, el genérico (si tiene) o, si tiene genérico, un renglón de la receta: el de hoy con el principio activo entre paréntesis (medicine-line), el de hoy sin él (showActiveIngredient false) o el de antes de v1.46 (el genérico con su concentración y forma, afuera, y la marca entre paréntesis si el nombre no es el genérico, esa marca con lo que el nombre traiga entre paréntesis, como entonces: los renglones guardados así no se reescriben y siguen encontrando su producto para cobrar y para la alerta de alergias).",

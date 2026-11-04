@@ -1,5 +1,8 @@
 package io.github.marioalr.tpvca.domain.patients
 
+import io.github.marioalr.tpvca.domain.patients.DuplicateCandidate
+import io.github.marioalr.tpvca.domain.patients.DuplicatePatientRules
+import kotlinx.serialization.json.boolean
 import io.github.marioalr.tpvca.domain.agenda.AgendaRules
 import io.github.marioalr.tpvca.domain.agenda.AgendaSlot
 import io.github.marioalr.tpvca.domain.agenda.AppointmentRules
@@ -33,6 +36,7 @@ import io.github.marioalr.tpvca.domain.text.NetDecimal
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Test
 import java.math.BigDecimal
@@ -42,6 +46,32 @@ import java.math.BigDecimal
  * latest-vitals, vitals-evolution, vitals, allergy-check, agenda y appointment-overlap, cada caso desde su `input`.
  */
 class PatientsGoldenTest {
+    // ================================================================== posibles duplicados
+
+    private fun duplicateCandidate(node: JsonObject) = DuplicateCandidate(
+        syncId = node.str("SyncId"),
+        fullName = node.s("FullName"),
+        birthDate = node.s("BirthDate"),
+        phone = node.s("Phone"),
+        isActive = (node["IsActive"] as JsonPrimitive).boolean,
+        mergedIntoSyncId = node.s("MergedIntoSyncId"),
+    )
+
+    @Test
+    fun duplicatePatients() = GoldenFile.load("duplicate-patients").run(setOf("name", "phone", "compare", "pairs")) { case ->
+        val input = case.input
+        when (input.s("check")) {
+            "name" -> json(DuplicatePatientRules.normalizedName(input.s("name")))
+            "phone" -> json(DuplicatePatientRules.normalizedPhone(input.s("phone")))
+            "compare" -> json(DuplicatePatientRules.compare(duplicateCandidate(input.getValue("a") as JsonObject), duplicateCandidate(input.getValue("b") as JsonObject)).name)
+            else -> JsonArray(
+                DuplicatePatientRules.pairs(input.items("patients").map { duplicateCandidate(it as JsonObject) }, input.strings("involving").filterNotNull().toSet()).map {
+                    JsonArray(listOf(JsonPrimitive(it.first), JsonPrimitive(it.second), JsonPrimitive(it.reason.name)))
+                },
+            )
+        }
+    }
+
     // ================================================================== resumen e identidad
 
     @Test

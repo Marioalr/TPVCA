@@ -16,7 +16,7 @@ import java.util.UUID
  *   de lectura para ese archivo: ningún dato en sus extras. **No se puede borrar al irse a la otra app**, que lo lee después; se borra a los 15 min, al volver a la app o al abrirla
  *   ([purgeOld]). Con la app cerrada no corre nada, así que el último compartido puede quedar en la caché hasta entonces. Al revocar se borra todo ([DeviceFiles]).
  */
-class SharedDocuments(context: Context, val gate: DataGate = DataGate(), private val now: () -> Long = System::currentTimeMillis) {
+class SharedDocuments(context: Context, val gate: DataGate = DataGate(), private val onShared: () -> Unit = {}, private val now: () -> Long = System::currentTimeMillis) {
     private val app = context.applicationContext
     val folder: File = File(app.cacheDir, FOLDER)
     val viewFolder: File = File(app.cacheDir, VIEW_FOLDER)
@@ -26,7 +26,21 @@ class SharedDocuments(context: Context, val gate: DataGate = DataGate(), private
 
     fun write(ticket: Long, fileName: String, write: (File) -> Unit): File {
         purgeOld()
-        return writeIn(folder, ticket, fileName, write)
+        val file = writeIn(folder, ticket, fileName, write)
+        // Se borra a su tiempo aunque la app ya no se vuelva a abrir
+        onShared()
+        return file
+    }
+
+    /**
+     * El archivo de lo que no se pudo subir: **no se purga a los 15 min**, porque puede ser la única copia y el médico todavía no confirma que llegó. Se va al generar otro o al borrar el equipo. Solo hay uno.
+     */
+    fun writeKept(ticket: Long, fileName: String, write: (File) -> Unit): File {
+        folder.listFiles()?.filter { it.name.startsWith(KEPT_PREFIX) }?.forEach { it.deleteRecursively() }
+        return gate.write(ticket) {
+            val parent = File(folder, KEPT_PREFIX + UUID.randomUUID()).also { it.mkdirs() }
+            File(parent, fileName).also(write)
+        }
     }
 
     fun writeView(ticket: Long, fileName: String, write: (File) -> Unit): File = writeIn(viewFolder, ticket, fileName, write)
@@ -65,11 +79,12 @@ class SharedDocuments(context: Context, val gate: DataGate = DataGate(), private
     }
 
     fun purgeOld(maxAgeMillis: Long = MAX_AGE_MILLIS) {
-        folder.listFiles()?.forEach { if (now() - it.lastModified() > maxAgeMillis) it.deleteRecursively() }
+        folder.listFiles()?.forEach { if (!it.name.startsWith(KEPT_PREFIX) && now() - it.lastModified() > maxAgeMillis) it.deleteRecursively() }
     }
 
     companion object {
         const val FOLDER = "compartidos"
+        private const val KEPT_PREFIX = "conservar-"
         const val VIEW_FOLDER = "vista"
         const val AUTHORITY_SUFFIX = ".documentos"
         const val MAX_AGE_MILLIS = 15 * 60 * 1000L

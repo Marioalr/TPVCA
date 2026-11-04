@@ -9,6 +9,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +20,7 @@ import java.time.Instant
 
 /**
  * Lo que la interfaz le pide a la vinculación, fuera del hilo principal, y la cadencia con la app al frente (§3.3). El trabajo en segundo
- * plano (WorkManager) es de K5: con la app cerrada no corre nada, tampoco la segunda revisión del 401.
+ * plano va en `BackgroundWork`: lo que corre con la app cerrada también pasa por aquí.
  */
 class LinkController(
     private val flow: LinkFlow,
@@ -126,6 +128,65 @@ class LinkController(
 
     fun acknowledgeRevocation() = launch { flow.acknowledgeRevocation() }
 
+    private var afterSave: Job? = null
+
+    /** Después de guardar: sube a los 4 s del último cambio (§3.3). Varios guardados seguidos son una sola sincronización. K4b, K6 y K7 lo llaman. */
+    fun noteLocalWrite() {
+        afterSave?.cancel()
+        afterSave = scope.launch(io) {
+            delay(AFTER_SAVE_MILLIS)
+            guarded {
+                flow.refresh(Refresh.BACKGROUND)
+                noteProgress()
+            }
+        }
+    }
+
+    /**
+     * Antes de cobrar, de agendar y de crear un expediente: 3 s como máximo (regla «Sincronización rápida»). `true` si terminó a tiempo. Si no, sigue en su propio trabajo y mientras tanto el folio no espera la red: sale
+     * con la letra del equipo.
+     */
+    suspend fun quickSync(waitMillis: Long = QUICK_SYNC_MILLIS): Boolean {
+        val running = scope.async(io) {
+            guarded { flow.refresh(Refresh.BACKGROUND) }
+            flow.quickSyncHanging = false
+        }
+        val finished = withTimeoutOrNull(waitMillis) { running.await() } != null
+        if (!finished) flow.quickSyncHanging = true
+        // Ya terminó entre el tiempo y la marca
+        if (running.isCompleted) flow.quickSyncHanging = false
+        return finished
+    }
+
+    fun confirmExportDelivered() = launch { flow.confirmExportDelivered() }
+
+    fun eraseAfterExport() = launch { flow.eraseAfterExport() }
+
+    /** Al irse: sube lo que haya mientras Android deja vivo el proceso. `true` si queda algo: de respaldo, el trabajo único. */
+    fun uploadOnLeaving(): Boolean = guardedResult(false) {
+        if (!restored) return@guardedResult false
+        if (flow.pendingCount() == 0) return@guardedResult false
+        flow.refresh(Refresh.BACKGROUND)
+        noteProgress()
+        flow.pendingCount() > 0
+    }
+
+    /** Una vuelta de WorkManager, en un proceso que pudo arrancar solo para esto. `false` si conviene reintentar. */
+    fun runBackground(): Boolean = guardedResult(false) {
+        restoreOnce()
+        val state = flow.refresh(Refresh.BACKGROUND)
+        noteProgress()
+        state !is LinkState.LocalError && !flow.lastFailed
+    }
+
+    private inline fun <T> guardedResult(fallback: T, action: () -> T): T = try {
+        action()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        fallback
+    }
+
     fun unlocked() = appLock.unlock()
 
     private fun launch(action: () -> Unit) {
@@ -147,6 +208,8 @@ class LinkController(
     }
 
     companion object {
+        const val AFTER_SAVE_MILLIS = 4_000L
+        const val QUICK_SYNC_MILLIS = 3_000L
         const val TICK_MILLIS = 5_000L
     }
 }

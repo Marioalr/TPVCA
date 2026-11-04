@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": "2026-10-12T05:30:00Z",
-  "contract": 21,
+  "contract": 22,
   "notes": [
     "Services/Rules/StockAlertRules.cs, Services/Rules/StockReviewRules.cs (revisión 20) y ProductBatch.StatusTextOn.",
     "Revisar inventario (revisión 20; decisión del médico del 2026-10-22: un inventario mal contado nunca impide cobrar, la política de negativos del paso 8.20 adelantada): la venta, «Se surte aquí», los insumos y el consumo en consulta pasan aunque no alcancen las existencias, que quedan en negativo. inventoryReview: los productos activos con CurrentStock < 0, con un lote abierto (closedAtUtc nulo) con Quantity < 0 aunque el total sea positivo, o con lotes abiertos que suman más que CurrentStock (la parte fuera de los lotes, CurrentStock − Σ lotes abiertos, en negativo: por ejemplo −3 sin lote y después una entrada de 5; revisión de la rama); del de menos existencias al de más y, con las mismas, por nombre ordinal. alertLine: '{nombre}: {existencias} · revisar inventario', con ' (lotes {Σ lotes abiertos})' después si esa suma pasa de las existencias y de 0, y con lotes abiertos en negativo, ' (lote {número} {cantidad}, …)' por número ordinal. Los negativos se escriben con el signo menos U+2212 ('−3'). stockBadge (Product.StockBadgeText, con sus lotes): si necesita revisión, '{existencias} · revisar inventario' y ' (lotes {Σ})' si los lotes abiertos suman más que las existencias y que 0; si no, la insignia de siempre ('Existencias: N', 'Stock bajo: N', 'Sin existencias' o con el paquete abierto '(+abiertas/piezas)'). La alerta se va sola cuando un conteo o una entrada dejan todo en 0 o más: nada se compensa solo.",

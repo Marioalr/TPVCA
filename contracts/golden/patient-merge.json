@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 21,
+  "contract": 22,
   "notes": [
     "Combinación por campo al bajar una fila de Patients que ya existe aquí (Services/Rules/PatientMerge, paso 8.22; regla «Pacientes por campo» de contracts/sync/schema.json). 'local' y 'remote': UpdatedAtUtc, el texto de FieldStampsJson y los valores de las columnas que se combinan ('columns': las de Patients que viajan, menos las derivadas y FieldStampsJson; aquí unas cuantas), cada uno como valor canónico (contracts/golden/canonical-json.json); en una hoja, el texto guardado.",
     "Cada versión se normaliza (field-stamps.json, 'state'): marcas nunca mayores que su fila, y su piso '#piso' (en una escritura sin marcas, la que tiene un UpdatedAtUtc mayor que su llave 'UpdatedAtUtc' o no la tiene, su UpdatedAtUtc: escribió la fila completa). Por campo gana la marca mayor, y la de un campo vale al menos el piso de su versión; sin piso ni marca, la mínima. Marcas iguales y valores distintos: gana el texto canónico mayor en orden ordinal (unidades UTF-16).",

@@ -109,4 +109,17 @@ class EncryptedLocalDatabaseTest {
     fun laLlaveVaEnLaCarpetaQueAndroidNoRespalda() {
         assertTrue(keyPath.path.startsWith(context.noBackupFilesDir.path))
     }
+
+    /** Quien se quedó con el objeto de antes no vuelve a abrir la base ni crea otra con una llave nueva. */
+    @Test
+    fun unaReferenciaDeAntesNoVuelveAAbrirLaBaseDespuesDeBorrar() {
+        val database = database()
+        val stale = database.store()
+        stale.apply(StoreChanges(meta = mapOf("a" to "b")))
+        assertTrue(database.exists())
+        database.erase()
+        assertFalse(database.exists())
+        assertThrows(IllegalStateException::class.java) { stale.meta("a") }
+        assertFalse("No se creó nada", database.exists())
+    }
 }

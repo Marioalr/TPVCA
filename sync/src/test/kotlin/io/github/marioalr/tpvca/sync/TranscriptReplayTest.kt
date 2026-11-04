@@ -51,6 +51,7 @@ class TranscriptReplayTest {
     private fun syncedStore(): InMemorySyncStore = InMemorySyncStore().apply {
         metaValues[SyncEngine.FIRST_DOWNLOAD_DONE] = "2026-11-02T18:00:00Z"
         metaValues[SyncEngine.MANIFEST_CONTRACT] = SyncContract.REVISION.toString()
+            metaValues[SyncEngine.CLOUD_SCHEMA_SEEN] = SyncContract.bundledSchema.fingerprint
         metaValues[SyncEngine.CLINIC_ID] = "<id:1>"
         metaValues[SyncEngine.GENERATION] = "<id:2>"
         metaValues[SyncEngine.SUMMARY_DAY] = "2026-11-03"
@@ -142,7 +143,7 @@ class TranscriptReplayTest {
             assertTrue("$outcome", outcome is SyncOutcome.Completed && !outcome.fullDownload)
             assertClean(replay)
             assertEquals("Una sola petición (8.6), con su fila de DeviceRegistry", 1, replay.httpRequests)
-            assertEquals(listOf(Statements.REGISTRY_OWN), replay.extrasServed)
+            assertEquals(listOf(Statements.REGISTRY_OWN, Statements.META_SCHEMA), replay.extrasServed)
 
             // Llegan el paciente con su teléfono nuevo y la lápida de la cita
             val patient = store.rows("Patients").getValue("10000000-0000-4000-8000-000000000003")

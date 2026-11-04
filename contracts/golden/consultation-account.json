@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 21,
+  "contract": 22,
   "notes": [
     "La cuenta de la consulta (Services/Rules/ConsultationAccountRules.cs, antes en ConsultationAccount y ConsultationService): el honorario, el total y cómo se suman y se quitan renglones. Importes como texto decimal invariante. Lo que cada hoja carga está en sheet-charges.json.",
     "fee: entre los servicios activos, el de Id feeOverrideId (la consulta recibida de otro equipo trae el honorario que usaba aquel, por su SyncId: handoff-payload.json), si no el de código SERV-001, si no el primero de categoría 'Consulta', si no el primero cuyo nombre contiene 'Consulta' (las tres sin distinguir mayúsculas; los acentos cuentan); name y amount son los suyos o 'Consulta Médica General' y 300.00. En la lista del catálogo, en su orden.",

@@ -59,8 +59,12 @@ class EncryptedLocalDatabase(
         }
     }
 
+    /** No abre nada: sin base, no hace falta tocar el Keystore. */
+    override fun exists(): Boolean = app.getDatabasePath(name).exists()
+
     @Synchronized
     override fun erase() {
+        store?.invalidate()
         database?.close()
         database = null
         store = null

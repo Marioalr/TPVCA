@@ -29,10 +29,11 @@ object Heartbeat {
      */
     const val HANDOFF_PROTOCOL = 0
 
-    fun statements(info: HeartbeatInfo): List<Statement> = listOf(
+    /** [afterPush]: el de al final de una subida, con `LastPushUtc`. */
+    fun statements(info: HeartbeatInfo, afterPush: Boolean = false): List<Statement> = listOf(
         Statement(Statements.HEARTBEAT_READ_NONCE, listOf(HranaValue.Text(info.deviceId))),
         Statement(
-            Statements.HEARTBEAT_WRITE,
+            if (afterPush) Statements.HEARTBEAT_AFTER_PUSH else Statements.HEARTBEAT_WRITE,
             listOf(
                 HranaValue.Text(info.deviceId),
                 HranaValue.Text(info.deviceName),

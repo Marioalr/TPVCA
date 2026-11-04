@@ -106,6 +106,25 @@ class OutboxDeviceTest {
         assertEquals(2, store.pendingChanges())
     }
 
+    /** Anidada es un punto de guardado: con SQLCipher de verdad, deshacer la de adentro no termina ni echa a perder la de afuera. */
+    @Test
+    fun unPuntoDeGuardadoSeDeshaceSoloConSQLCipher() {
+        val store = open.store()
+        store.transaction {
+            store.apply(StoreChanges(writes = listOf(category("afuera")), outbox = listOf(mark("afuera"))))
+            assertThrows(IllegalStateException::class.java) {
+                store.transaction {
+                    store.apply(StoreChanges(writes = listOf(category("adentro")), outbox = listOf(mark("adentro"))))
+                    error("Esta fila no se deja")
+                }
+            }
+            assertTrue(store.existing("Categories", listOf("adentro")).isEmpty())
+            store.apply(StoreChanges(writes = listOf(category("despues"))))
+        }
+        assertEquals(setOf("afuera", "despues"), store.existing("Categories", listOf("afuera", "adentro", "despues")))
+        assertEquals("afuera", store.outbox().single().syncId)
+    }
+
     /** La expresión del teléfono con lookbehind: K4 encontró una que solo compilaba en la JVM. */
     @Test
     fun lasReglasNuevasCompilanEnAndroid() {

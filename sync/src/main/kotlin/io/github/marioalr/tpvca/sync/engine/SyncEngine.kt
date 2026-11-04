@@ -107,6 +107,8 @@ class SyncEngine(
         } catch (e: HranaException) {
             outcomeOf(e)
         }.let { first -> if (uploadIfRevoked && first is SyncOutcome.Revoked && !first.wiped) drainRevoked(run, first) else first }
+        // Lo que ya quedó guardado se revisa aunque la sincronización se corte después (regla «Empalmes»)
+        if (run.checkArrivals && !(outcome is SyncOutcome.Revoked && outcome.wiped) && !(outcome is SyncOutcome.TokenRejected && outcome.wiped)) noteArrivals(run)
         if (run.rowsRead > 0 || run.rowsWritten > 0) brake.recordUsage(run.rowsRead, run.rowsWritten)
         store.apply(
             if (outcome is SyncOutcome.Completed) {
@@ -383,6 +385,7 @@ class SyncEngine(
         if (store.meta(MANIFEST_CONTRACT) != SyncContract.REVISION.toString()) checkManifestAndIdentity(run)
         else run.manifest = store.meta(READ_ONLY)?.let { ManifestDiff(listOf(it), emptyList()) }
 
+        run.checkArrivals = true
         val own = Statements.registryOwn(config.deviceId)
         // Con algo que subir: su fila antes que nada ("perdido" borra sin subir nada) y la hora y la generación antes de escribir
         if (hasPendingPush()) pushFirst(run, own)?.let { return it }
@@ -430,7 +433,6 @@ class SyncEngine(
             run.mergedForUpload = 0
             if (store.meta(READ_ONLY) == null) push(run)
         }
-        noteArrivals(run)
         return completed(run, fullDownload = false)
     }
 
@@ -457,7 +459,6 @@ class SyncEngine(
             run.mergedForUpload = 0
             if (store.meta(READ_ONLY) == null) push(run)
         }
-        noteArrivals(run)
         return completed(run, fullDownload = false)
     }
 
@@ -553,7 +554,7 @@ class SyncEngine(
         val idle = LinkedHashMap<String, String>()
         for (table in schema.tables) {
             pullTable(run, table.table, cursors.getValue(table.table), firstPages?.get(table.table), upTo, skipOwnRows, idle) { page, meta ->
-                applyRows(run, table, page, meta, dead = emptySet())
+                applyPullPage(run, table, page, meta)
             }
         }
         pullTable(run, tombstonesTable, cursors.getValue(tombstonesTable), firstPages?.get(tombstonesTable), upTo, skipOwnRows, idle) { page, meta ->
@@ -563,6 +564,31 @@ class SyncEngine(
         if (idle.isNotEmpty()) store.apply(StoreChanges(meta = idle))
         retryParked(run)
         retryWaitingReapply(run)
+    }
+
+    /**
+     * `ApplyPullPageAsync`: una fila que aquí no se deja escribir no detiene la bajada para siempre. La página se vuelve a aplicar fila por fila, la que falla se aparta con lo que llegó y se reintenta en cada sincronización, y el cursor avanza.
+     */
+    private fun applyPullPage(run: Run, table: SyncTable, page: List<Row>, meta: Map<String, String>) {
+        try {
+            applyRows(run, table, page, meta, dead = emptySet())
+            return
+        } catch (_: RuntimeException) {
+            // Abajo, de una en una
+        }
+        for (row in page) {
+            try {
+                applyRows(run, table, listOf(row), emptyMap(), dead = emptySet())
+            } catch (_: RuntimeException) {
+                parkUnwritable(table, row)
+            }
+        }
+        store.apply(StoreChanges(meta = meta))
+    }
+
+    private fun parkUnwritable(table: SyncTable, row: Row) {
+        val syncId = row.text("SyncId")?.lowercase(java.util.Locale.ROOT)?.takeIf { it.isNotEmpty() } ?: return
+        store.apply(StoreChanges(park = listOf(ParkedRow(ParkDirection.PULL, table.entityType, syncId, RowMapper.serialize(row), UNWRITABLE))))
     }
 
     /** `PullTableAsync`: el cursor guardado nunca pasa de la marca de agua; se sigue leyendo desde lo último que llegó. */
@@ -656,6 +682,11 @@ class SyncEngine(
         val unpark = ArrayList<Triple<ParkDirection, String, String>>()
         val marks = ArrayList<OutboxMark>()
         val mergePatients = table.table == PatientSummaryRecalculator.PATIENTS && !force
+        // Todo esto cuenta solo si la página de verdad queda guardada
+        val touched = ArrayList<Pair<String, Row>>()
+        val patientsArrived = ArrayList<String>()
+        val appointmentsArrived = ArrayList<String>()
+        val forced = ArrayList<String>()
         // Lo que aquí se borró, aunque no haya subido: una fila que no es más nueva que su lápida no revive
         val absent = ids.filter { it !in stamps }
         val deletedHere = if (force || absent.isEmpty()) emptyMap() else store.select(tombstonesTable, listOf("EntityType", "SyncId", "DeletedAtUtc"), "SyncId", absent)
@@ -670,14 +701,14 @@ class SyncEngine(
                 mergePatient(run, table, syncId, row)?.let { (write, mark) ->
                     writes += write
                     mark?.let { marks += it }
-                    run.touch(table.table, syncId, row)
-                    run.arrivedPatients += syncId
+                    touched += syncId to row
+                    patientsArrived += syncId
                 }
                 continue
             }
-            // `RemoteTombstoneDeletes`, la misma regla de siempre: con la misma marca gana el borrado; solo una estrictamente más nueva revive
+            // Con la misma marca gana el borrado; solo una estrictamente más nueva revive
             val deletedAt = deletedHere[syncId]
-            if (deletedAt != null && SyncRules.remoteTombstoneDeletes(remoteStamp, deletedAt)) {
+            if (deletedAt != null && SyncRules.localTombstoneBeatsRemoteRow(remoteStamp, deletedAt)) {
                 if (parkedHere) unpark += key
                 continue
             }
@@ -718,20 +749,27 @@ class SyncEngine(
                 park += ParkedRow(ParkDirection.PULL, table.entityType, syncId, RowMapper.serialize(row), parkReason)
                 continue
             }
-            // «Volver a aplicar» sin su obligatoria: tampoco se descarta, su copia sigue guardada
-            if (drop && force) continue
+            // «Volver a aplicar» sin su obligatoria: tampoco se descarta, su copia sigue guardada. Sin marca: ese principal ya no va a llegar
+            if (drop && force) {
+                run.reapplyDead += table.entityType to syncId
+                continue
+            }
             if (parkedHere) unpark += key
             if (drop) continue
 
             val isNew = local == null
             val values = if (isNew) RowMapper.newRow(table, row) else RowMapper.update(table, row)
             writes += RowWrite(table.table, syncId, values + nulled.associateWith { null } + ("UpdatedAtUtc" to remoteStamp), isNew)
-            run.touch(table.table, syncId, row)
-            if (force) run.forceApplied += syncId
-            if (!force && table.table == PatientSummaryRecalculator.PATIENTS) run.arrivedPatients += syncId
-            if (!force && table.table == PatientSummaryRecalculator.APPOINTMENTS) run.arrivedAppointments += syncId
+            touched += syncId to row
+            if (force) forced += syncId
+            if (!force && table.table == PatientSummaryRecalculator.PATIENTS) patientsArrived += syncId
+            if (!force && table.table == PatientSummaryRecalculator.APPOINTMENTS) appointmentsArrived += syncId
         }
         store.apply(StoreChanges(writes = writes, park = park, unpark = unpark, meta = meta, outbox = marks))
+        touched.forEach { (syncId, row) -> run.touch(table.table, syncId, row) }
+        run.arrivedPatients += patientsArrived
+        run.arrivedAppointments += appointmentsArrived
+        run.forceApplied += forced
         run.applied += writes.size
         run.mergedForUpload += marks.size
     }
@@ -799,16 +837,21 @@ class SyncEngine(
                 continue
             }
             run.touchDeleted(store, plan.deletes)
-            store.apply(
-                StoreChanges(
-                    deletes = plan.deletes,
-                    nullify = plan.nullify,
-                    unpark = if (tombstone.entityType to tombstone.syncId in parked) listOf(key) else emptyList(),
-                    // Su propia lápida va con el borrado, para no perderla si se corta aquí
-                    tombstones = listOf(tombstone),
-                ),
-            )
-            run.applied++
+            try {
+                store.apply(
+                    StoreChanges(
+                        deletes = plan.deletes,
+                        nullify = plan.nullify,
+                        unpark = if (tombstone.entityType to tombstone.syncId in parked) listOf(key) else emptyList(),
+                        // Su propia lápida va con el borrado, para no perderla si se corta aquí
+                        tombstones = listOf(tombstone),
+                    ),
+                )
+                run.applied++
+            } catch (_: RuntimeException) {
+                // Sola: las demás siguen, y esta se reintenta
+                park += ParkedRow(ParkDirection.TOMBSTONE, tombstone.entityType, tombstone.syncId, tombstone.deletedAtUtc, UNWRITABLE)
+            }
         }
         store.apply(StoreChanges(tombstones = records, park = park, unpark = unpark, meta = meta))
     }
@@ -838,7 +881,18 @@ class SyncEngine(
         // Filas en el orden de dependencias: un principal apartado se aplica antes que sus dependientes
         for (table in schema.tables) {
             val rows = rowsByType[table.entityType] ?: continue
-            applyRows(run, table, rows, emptyMap(), dead)
+            try {
+                applyRows(run, table, rows, emptyMap(), dead)
+            } catch (_: RuntimeException) {
+                // Una por una: la que no se deja sigue apartada y no detiene lo demás
+                for (row in rows) {
+                    try {
+                        applyRows(run, table, listOf(row), emptyMap(), dead)
+                    } catch (_: RuntimeException) {
+                        continue
+                    }
+                }
+            }
         }
         val tombstones = parked.filter { it.direction == ParkDirection.TOMBSTONE }
             .map { TombstoneRow(it.entityType, it.syncId, it.payload, "", null) }
@@ -998,40 +1052,66 @@ class SyncEngine(
         val plan = planPush(run.generation)
         val rejected = ArrayList<Pair<SyncTable, String>>()
         val leftParked = HashSet<Pair<String, String>>()
+        val budget = FailureBudget()
         val statements = try {
-            sendGroups(run, plan, rejected, leftParked)
-        } catch (e: PushGaveUp) {
-            // Sin red de verdad: lo que falló solo queda apartado y la cola no se vacía
+            sendGroups(run, plan, rejected, leftParked, budget)
+        } catch (e: HranaException) {
+            // Se detuvo a la mitad: lo que ya falló solo queda apartado y sale del paso en la siguiente; la cola no se vacía
             store.apply(StoreChanges(park = parkedRows(plan)))
-            throw e.cause
+            throw e
+        } catch (e: Stop) {
+            store.apply(StoreChanges(park = parkedRows(plan)))
+            throw e
         }
-        val reread = if (rejected.isEmpty()) null else readRejected(run, rejected)
+        val reread = if (rejected.isEmpty()) null else readRejected(run, rejected.distinct(), budget)
 
         val unpark = plan.parkedBefore.map { it.entityType to it.syncId }.filter { it !in plan.parkNow && it !in leftParked }.map { Triple(ParkDirection.PUSH, it.first, it.second) }
-        store.transaction {
-            reread?.let { applyRejected(run, it) }
-            store.apply(StoreChanges(outboxClearedUpTo = plan.toSeq, park = parkedRows(plan), unpark = unpark))
+        val arrivals = run.arrivalsSoFar()
+        try {
+            store.transaction {
+                reread?.let { applyRejected(run, it) }
+                store.apply(StoreChanges(outboxClearedUpTo = plan.toSeq, park = parkedRows(plan), unpark = unpark))
+            }
+        } catch (e: RuntimeException) {
+            // Lo que llegó cuenta solo si quedó guardado
+            run.restoreArrivals(arrivals)
+            throw e
         }
         if (statements > 0) writePushHeartbeat(run)
+    }
+
+    /** `MaxPushFailureTime`: lo más que una subida gasta en peticiones que fallan por tamaño o tiempo, con la relectura. El tiempo de lo que sí sube no cuenta. */
+    private inner class FailureBudget {
+        private var spent = 0L
+
+        val outOfTime: Boolean get() = spent >= MAX_PUSH_FAILURE_MILLIS
+
+        fun charge(startedAt: Long) {
+            spent += maxOf(0L, elapsedMillis() - startedAt)
+        }
+    }
+
+    /** Después de una falla por tamaño o tiempo: si la nube tampoco contesta algo mínimo, es la red y no el lote. Su error se lanza y no se aparta nada por esta falla. */
+    private fun ensureLinkAlive(run: Run) {
+        run.query(listOf(Statements.generation))
     }
 
     /** En `Payload`, cuándo se intentó: lo que lleva más sin intentarse va primero. */
     private fun parkedRows(plan: PushPlan) = plan.parkNow.map { (key, reason) -> ParkedRow(ParkDirection.PUSH, key.first, key.second, if (reason == TOO_BIG_TO_PUSH) writer.stamp(null) else "", reason) }
 
-    /** Tres filas seguidas que fallan solas ya no son filas: es la red. */
-    private class PushGaveUp(override val cause: HranaException) : Exception()
-
     /**
-     * `SendPushGroupsAsync`. Un lote que falla por `RESPONSE_TOO_LARGE`, `TIMEOUT` o HTTP 413 se reduce a la mitad, hasta una sola operación. Una operación que falla sola va fila por fila (una lápida con su `DELETE` nunca se separa) y la que falla y las que le
-     * siguen en la operación se apartan, sin detener lo demás. Después de apartar, el lote vuelve a crecer. **Tres operaciones seguidas que fallan solas detienen la subida:** lo que falló queda apartado y la cola no se vacía. Lo que ya se
-     * apartó así en otra sincronización va al final, de uno en uno y primero lo que lleva más sin intentarse, hasta el primero que vuelva a fallar: el resto espera a la siguiente, y lo nuevo de su operación se aparta con él. Los demás
-     * errores se lanzan como siempre. Regresa cuántas instrucciones entraron.
+     * `SendPushGroupsAsync`. Un lote que falla por `RESPONSE_TOO_LARGE`, `TIMEOUT` o HTTP 413 se reduce a la mitad, hasta una sola operación. Una operación que falla sola va fila por fila y la que falla y las que le siguen se apartan, sin detener lo demás; no se parte una lápida con su `DELETE`
+     * ni una operación con una venta o sus renglones (un ticket sin renglones se podría cancelar en otro equipo sin regresar nada): se manda entera y, si no entra, se aparta entera. Después de apartar, el lote vuelve a crecer. Tras cada falla, una lectura mínima (`ensureLinkAlive`).
+     * **Con 4 min gastados en peticiones que fallan, se detiene:** lo que falló queda apartado y la cola no se vacía. Lo que ya se apartó así en otra sincronización va al final, de uno en uno y primero lo que lleva más sin intentarse, hasta el primero que vuelva a fallar: el resto espera
+     * a la siguiente, y lo nuevo de su operación se aparta con él. Los demás errores se lanzan como siempre. Regresa cuántas instrucciones entraron.
      */
-    private fun sendGroups(run: Run, plan: PushPlan, rejected: MutableList<Pair<SyncTable, String>>, leftParked: MutableSet<Pair<String, String>>): Int {
+    private fun sendGroups(run: Run, plan: PushPlan, rejected: MutableList<Pair<SyncTable, String>>, leftParked: MutableSet<Pair<String, String>>, budget: FailureBudget): Int {
         var statements = 0
         var lastFailure: HranaException? = null
 
-        fun send(chunk: List<PushStatement>): Boolean = try {
+        fun send(chunk: List<PushStatement>): Boolean {
+            val startedAt = elapsedMillis()
+            try {
             val results = connection.snapshot(emptyList(), chunk.map { it.statement } + Statements.generation).statements
             run.rowsRead += 1
             if (normalizeGeneration(results.last().rows.firstOrNull()?.text("generation")) != run.generation) throw Stop(SyncOutcome.GenerationChanged)
@@ -1041,11 +1121,14 @@ class SyncEngine(
                 if (push.table != null && results[index].affectedRows == 0L) rejected += push.table to push.syncId
             }
             statements += chunk.size
-            true
-        } catch (e: HranaException) {
-            if (!e.isTooLargeOrSlow) throw e
-            lastFailure = e
-            false
+            return true
+            } catch (e: HranaException) {
+                if (!e.isTooLargeOrSlow) throw e
+                lastFailure = e
+                budget.charge(startedAt)
+                ensureLinkAlive(run)
+                return false
+            }
         }
 
         fun parkAll(rows: List<PushStatement>) {
@@ -1058,7 +1141,7 @@ class SyncEngine(
 
         fun sendAlone(group: List<PushStatement>): Boolean {
             if (send(group)) return true
-            if (group.size == 1 || group.any { it.table == null }) {
+            if (!splitsWhenAlone(group)) {
                 parkAll(group)
                 return false
             }
@@ -1078,7 +1161,6 @@ class SyncEngine(
 
         val startSize = maxOf(1, config.pushChunkSize)
         var size = startSize
-        var soloFailures = 0
         var recovering = false
         while (pending.isNotEmpty()) {
             var taken = 1
@@ -1087,20 +1169,19 @@ class SyncEngine(
             if (taken == 1) {
                 val group = pending.removeFirst()
                 if (sendAlone(group)) {
-                    soloFailures = 0
                     if (recovering) size = minOf(startSize, size * 2)
                 } else {
                     // El problema era ella, no el tamaño
                     recovering = true
-                    if (++soloFailures >= MAX_SOLO_FAILURES) throw PushGaveUp(lastFailure!!)
+                    if (budget.outOfTime) throw lastFailure!!
                 }
                 continue
             }
             if (send(pending.take(taken).flatten())) {
                 repeat(taken) { pending.removeFirst() }
-                soloFailures = 0
                 if (recovering) size = minOf(startSize, size * 2)
             } else {
+                if (budget.outOfTime) throw lastFailure!!
                 recovering = false
                 size = maxOf(1, minOf(size, count) / 2)
             }
@@ -1120,6 +1201,10 @@ class SyncEngine(
         return statements
     }
 
+    /** `SplitsWhenAlone`. */
+    private fun splitsWhenAlone(group: List<PushStatement>) =
+        group.size > 1 && group.all { it.table != null && it.table.table != "Sales" && it.table.table != "SaleItems" }
+
     /** Un latido perdido no detiene nada: `LastPushUtc` se vuelve a escribir en la siguiente subida. */
     private fun writePushHeartbeat(run: Run) {
         val heartbeat = pushHeartbeat ?: return
@@ -1133,31 +1218,76 @@ class SyncEngine(
 
     private class RejectedRead(val table: SyncTable, val ids: List<String>, val rows: List<Row>, val tombstones: List<Row>)
 
-    /** Lo que la nube no aceptó se relee, fila y lápida, en una sola petición. */
-    private fun readRejected(run: Run, rejected: List<Pair<SyncTable, String>>): List<RejectedRead> {
-        val batches = rejected.groupBy({ it.first }, { it.second }).flatMap { (table, ids) -> ids.distinct().chunked(REJECTED_PER_STATEMENT).map { table to it } }
-        val statements = batches.flatMap { (table, ids) ->
-            val args = ids.map<String, HranaValue>(HranaValue::Text)
-            listOf(Statement(Statements.rereadRowsSql(table.table, ids.size), args), Statement(Statements.rereadTombstonesSql(ids.size), listOf<HranaValue>(HranaValue.Text(table.entityType)) + args))
+    /** [unread]: lo que no se pudo leer. Se vuelve a anotar. */
+    private class RejectedReads(val reads: List<RejectedRead>, val unread: List<Pair<SyncTable, String>>)
+
+    /**
+     * Lo que la nube no aceptó se relee, fila y lápida, antes de tocar nada: en una petición si cabe. Si es demasiado grande o lenta se parte a la mitad, hasta un solo id. Lo que no se puede leer ni solo, o lo que queda sin tiempo, se vuelve a anotar y no detiene la cola: después de un corte a media
+     * subida casi todo regresa rechazado, y sin esto la bajada no volvería a correr. Si tras la falla tampoco contesta lo mínimo, es la red: la sincronización falla y la cola sigue igual.
+     */
+    private fun readRejected(run: Run, rejected: List<Pair<SyncTable, String>>, budget: FailureBudget): RejectedReads {
+        val reads = ArrayList<RejectedRead>()
+        val unread = ArrayList<Pair<SyncTable, String>>()
+        val pending = ArrayDeque<List<Pair<SyncTable, String>>>()
+        pending.addFirst(rejected)
+        while (pending.isNotEmpty()) {
+            val part = pending.removeFirst()
+            if (budget.outOfTime) {
+                unread += part
+                continue
+            }
+            val batches = part.groupBy({ it.first }, { it.second }).flatMap { (table, ids) -> ids.chunked(REJECTED_PER_STATEMENT).map { table to it } }
+            val statements = batches.flatMap { (table, ids) ->
+                val args = ids.map<String, HranaValue>(HranaValue::Text)
+                listOf(Statement(Statements.rereadRowsSql(table.table, ids.size), args), Statement(Statements.rereadTombstonesSql(ids.size), listOf<HranaValue>(HranaValue.Text(table.entityType)) + args))
+            }
+            val startedAt = elapsedMillis()
+            val results = try {
+                run.query(statements)
+            } catch (e: HranaException) {
+                if (!e.isTooLargeOrSlow) throw e
+                budget.charge(startedAt)
+                ensureLinkAlive(run)
+                if (part.size == 1) {
+                    unread += part
+                } else {
+                    pending.addFirst(part.drop(part.size / 2))
+                    pending.addFirst(part.take(part.size / 2))
+                }
+                continue
+            }
+            batches.forEachIndexed { index, (table, ids) -> reads += RejectedRead(table, ids, results[2 * index].rows, results[2 * index + 1].rows) }
         }
-        val results = run.query(statements)
-        return batches.mapIndexed { index, (table, ids) -> RejectedRead(table, ids, results[2 * index].rows, results[2 * index + 1].rows) }
+        return RejectedReads(reads, unread)
     }
 
     /**
-     * Desempate (`ApplyRejectedUpsertsAsync`, `golden/lww.json`): se aplica aquí aunque las marcas empaten; si ya no la tiene, su lápida. Si no tiene ninguna de las dos, **se vuelve a anotar**: esa fila no está en la
-     * nube y no se pierde.
+     * Desempate (`ApplyRejectedUpsertsAsync`, `golden/lww.json`), dentro de la transacción que vacía la cola: se aplica aquí aunque las marcas empaten; si ya no la tiene, su lápida. Si no tiene ninguna de las dos o no se pudo leer, **se vuelve a anotar**: esa fila no se pierde. Cada tabla va en su
+     * punto de guardado: si no se deja, se deshace solo ella y va fila por fila, cada una en el suyo; la que falla se aparta para la bajada, con lo que llegó. Una lápida que falla se aparta sola. Nada de esto detiene la cola.
      */
-    private fun applyRejected(run: Run, reads: List<RejectedRead>) {
-        for (read in reads) {
+    private fun applyRejected(run: Run, rejected: RejectedReads) {
+        for (read in rejected.reads) {
             val present = read.rows.mapNotNull { it.text("SyncId")?.lowercase(java.util.Locale.ROOT) }.toSet()
-            if (read.rows.isNotEmpty()) applyRows(run, read.table, read.rows, emptyMap(), emptySet(), afterReject = true)
+            if (read.rows.isNotEmpty()) {
+                try {
+                    store.transaction { applyRows(run, read.table, read.rows, emptyMap(), emptySet(), afterReject = true) }
+                } catch (_: RuntimeException) {
+                    for (row in read.rows) {
+                        try {
+                            store.transaction { applyRows(run, read.table, listOf(row), emptyMap(), emptySet(), afterReject = true) }
+                        } catch (_: RuntimeException) {
+                            parkUnwritable(read.table, row)
+                        }
+                    }
+                }
+            }
             val deleted = read.tombstones.map(::tombstoneOf).filter { it.syncId !in present }
             if (deleted.isNotEmpty()) applyTombstones(run, deleted, emptyMap())
             val known = present + deleted.map { it.syncId }
             val lost = read.ids.filter { it !in known }
             if (lost.isNotEmpty()) store.apply(StoreChanges(outbox = lost.map { writer.mark(read.table, it) }))
         }
+        if (rejected.unread.isNotEmpty()) store.apply(StoreChanges(outbox = rejected.unread.map { (table, id) -> writer.mark(table, id) }))
     }
 
     /**
@@ -1178,9 +1308,9 @@ class SyncEngine(
     /**
      * «Volver a aplicar N cambios» (`ReapplySavedChangesAsync`): cada fila otra vez con marca nueva, lista para subir; cada borrado, como un borrado de aquí. Con los mismos permisos que cualquier escritura, y nunca a media descarga.
      *
-     * **La copia guardada se borra solo en la transacción que deja la fila con marca nueva y anotada.** Una fila sin su principal sigue guardada, sin apartarla en la bajada, con una marca (`ParkDirection.REAPPLY`) con la que cada sincronización
-     * la vuelve a intentar al terminar de bajar. Si su principal opcional se sabe borrado, queda en nulo; sin la obligatoria, sigue guardada. Un borrado que impide una `restrict` sigue guardado con un aviso y se reintenta solo al volver a
-     * pedirlo; uno cuya fila ya no está cuenta como hecho; y si la fila de ese registro sigue esperando, su borrado también espera. Lo que este rol no puede escribir se queda guardado.
+     * **La copia guardada se borra solo en la transacción que deja la fila con marca nueva y anotada.** Una fila sin su principal sigue guardada, sin apartarla en la bajada, con una marca (`ParkDirection.REAPPLY`) con la que cada sincronización la vuelve a intentar al terminar de bajar. Si su
+     * principal opcional se sabe borrado, queda en nulo. Si es el obligatorio el que se borró, ya no va a llegar: sigue guardada **sin marca** y con su aviso. Un borrado que impide una `restrict` sigue guardado con un aviso y se reintenta solo al volver a pedirlo; uno cuya fila ya no está cuenta como hecho;
+     * y si la fila de ese registro sigue esperando, su borrado también espera. Lo que este rol no puede escribir se queda guardado. Los avisos de la vez anterior se vuelven a calcular.
      */
     fun reapplySaved(): Reapplied = store.transaction {
         val role = DeviceRole.fromName(store.meta(DEVICE_ROLE)) ?: throw WriteRefused(WriteRefused.Reason.NOT_APPROVED, "La PC todavía no aprueba este equipo.")
@@ -1189,7 +1319,8 @@ class SyncEngine(
         if (store.meta(FIRST_DOWNLOAD_DONE) == null) throw WriteRefused(WriteRefused.Reason.NEEDS_SYNC, "Todavía no termina de bajar la nube: lo guardado sigue guardado.")
         val saved = store.savedChanges()
         if (saved.isEmpty()) return@transaction Reapplied(0, 0, 0)
-        val (rows, held) = reapplyRows(Run(), role, saved)
+        val run = Run()
+        val (rows, held) = reapplyRows(run, role, saved)
 
         var deletes = 0
         val done = ArrayList<Long>()
@@ -1208,14 +1339,16 @@ class SyncEngine(
                 }
             }
         }
-        notices += held.map { (entityType, syncId) -> SyncNotice(SyncNotices.REAPPLY_NO_PRINCIPAL, entityType, syncId) }
-        val allNotices = SyncNotices.read(store.meta(NOTICES)) + notices
-        store.apply(StoreChanges(savedRemoved = done, meta = if (notices.isEmpty()) emptyMap() else mapOf(NOTICES to SyncNotices.write(allNotices))))
+        notices += run.reapplyDead.map { (entityType, syncId) -> SyncNotice(SyncNotices.REAPPLY_DEAD_PRINCIPAL, entityType, syncId) }
+        store.apply(StoreChanges(savedRemoved = done, meta = mapOf(NOTICES to SyncNotices.write(SyncNotices.read(store.meta(NOTICES)).filterNot { it.kind in SyncNotices.REAPPLY_KINDS }.toSet() + notices))))
         Reapplied(rows, deletes, store.savedChanges().size)
     }
 
+    /** Lo que el aviso de «Volver a aplicar» dice ahora. Se calcula cada vez, de lo que hay en la base: sobrevive a reiniciar y lo que ya no está guardado no se cuenta. `null` sin nada que decir. */
+    fun reapplyNotice(): SyncNotices.ReapplyNotice? = SyncNotices.reapplyNotice(store)
+
     /**
-     * Las filas guardadas que se le den, en orden de dependencias: la versión más reciente de cada registro con marca nueva y anotada, y en la misma transacción se van sus copias y su marca de espera. La que no se puede aplicar queda marcada. Regresa (aplicadas, las que esperan).
+     * Las filas guardadas que se le den, en orden de dependencias: la versión más reciente de cada registro con marca nueva y anotada, y en la misma transacción se van sus copias y su marca de espera. La que no se puede aplicar queda marcada, salvo que su principal obligatorio se haya borrado. Regresa (aplicadas, las que no se aplicaron).
      */
     private fun reapplyRows(run: Run, role: DeviceRole, saved: List<SavedChange>, deadInCloud: Set<Pair<String, String>> = emptySet()): Pair<Int, Set<Pair<String, String>>> = store.transaction {
         var applied = 0
@@ -1234,16 +1367,20 @@ class SyncEngine(
             val done = ArrayList<Long>()
             for ((id, versions) in byId) {
                 val syncId = id!!
+                val key = table.entityType to syncId
                 if (syncId in run.forceApplied) {
                     writer.restamp(table, syncId)
                     done += versions.map { it.first.id }
-                    if ((table.entityType to syncId) in marks) unpark += Triple(ParkDirection.REAPPLY, table.entityType, syncId)
+                    if (key in marks) unpark += Triple(ParkDirection.REAPPLY, table.entityType, syncId)
                     applied++
                 } else {
-                    held += table.entityType to syncId
-                    // Se queda la hora de la primera vez que se pidió: lo editado después gana a esta copia
-                    val since = marks[table.entityType to syncId]?.payload ?: pressedAt
-                    park += ParkedRow(ParkDirection.REAPPLY, table.entityType, syncId, since, "Espera a su principal.")
+                    held += key
+                    if (key in run.reapplyDead) {
+                        if (key in marks) unpark += Triple(ParkDirection.REAPPLY, table.entityType, syncId)
+                    } else {
+                        // Se queda la hora de la primera vez que se pidió: una versión posterior no se pisa sola
+                        park += ParkedRow(ParkDirection.REAPPLY, table.entityType, syncId, marks[key]?.payload ?: pressedAt, "Espera a su principal.")
+                    }
                 }
             }
             store.apply(StoreChanges(park = park, unpark = unpark, savedRemoved = done))
@@ -1262,7 +1399,8 @@ class SyncEngine(
     }
 
     /**
-     * Al final de cada bajada (`RetryWaitingReapplyAsync`): lo que se pidió volver a aplicar y esperaba a su principal. Lo escrito aquí después de pedirlo gana a la copia, que se va: es lo mismo que si se hubiera aplicado en ese momento. Lo que se aplica sube en esta misma sincronización.
+     * Al final de cada bajada (`RetryWaitingReapplyAsync`): lo que se pidió volver a aplicar y esperaba a su principal. Una fila que aquí ya tiene una marca posterior a cuando se pidió no se pisa sola, y su copia tampoco se borra (esa marca puede venir de un reloj adelantado): deja de esperar, sigue
+     * guardada y el aviso lo dice. Lo que se aplica sube en esta misma sincronización.
      */
     private fun retryWaitingReapply(run: Run) {
         val marks = store.parkedRows().filter { it.direction == ParkDirection.REAPPLY }
@@ -1271,7 +1409,7 @@ class SyncEngine(
         if (store.meta(REVOKED_REASON) != null || store.meta(READ_ONLY) != null) return
         val saved = store.savedChanges().filter { it.kind == SavedChange.KIND_ROW }
         val stale = ArrayList<Triple<ParkDirection, String, String>>()
-        val obsolete = ArrayList<Long>()
+        val notices = LinkedHashSet<SyncNotice>()
         val due = ArrayList<SavedChange>()
         for (mark in marks) {
             val copies = saved.filter { it.entityType == mark.entityType && it.syncId == mark.syncId }
@@ -1284,15 +1422,17 @@ class SyncEngine(
             val stamp = store.stamps(table.table, listOf(mark.syncId))[mark.syncId]
             if (stamp != null && stamp > mark.payload) {
                 stale += key
-                obsolete += copies.map { it.id }
+                notices += SyncNotice(SyncNotices.REAPPLY_SUPERSEDED, mark.entityType, mark.syncId)
             } else {
                 due += copies
             }
         }
-        if (stale.isNotEmpty()) store.apply(StoreChanges(unpark = stale, savedRemoved = obsolete))
+        fun withNotices(extra: Set<SyncNotice>) = if (extra.isEmpty()) emptyMap() else mapOf(NOTICES to SyncNotices.write(SyncNotices.read(store.meta(NOTICES)) + extra))
+        if (stale.isNotEmpty()) store.apply(StoreChanges(unpark = stale, meta = withNotices(notices)))
         if (due.isEmpty()) return
         val (applied, _) = reapplyRows(run, role, due, deadInCloud(run, due))
         run.mergedForUpload += applied
+        store.apply(StoreChanges(meta = withNotices(run.reapplyDead.map { (entityType, syncId) -> SyncNotice(SyncNotices.REAPPLY_DEAD_PRINCIPAL, entityType, syncId) }.toSet())))
     }
 
     /** Los principales de estas filas que aquí faltan: ¿los borraron en la nube? Con su lápida allá, una opcional queda en nulo. */
@@ -1401,6 +1541,17 @@ class SyncEngine(
         val arrivedPatients = LinkedHashSet<String>()
         val arrivedAppointments = LinkedHashSet<String>()
         val forceApplied = HashSet<String>()
+
+        /** Filas de «Volver a aplicar» cuyo principal obligatorio se borró. */
+        val reapplyDead = HashSet<Pair<String, String>>()
+        var checkArrivals = false
+
+        fun arrivalsSoFar() = arrivedPatients.toSet() to arrivedAppointments.toSet()
+
+        fun restoreArrivals(saved: Pair<Set<String>, Set<String>>) {
+            arrivedPatients.retainAll(saved.first)
+            arrivedAppointments.retainAll(saved.second)
+        }
         var applied = 0
         var generation: String? = null
         var manifest: ManifestDiff? = null
@@ -1471,7 +1622,10 @@ class SyncEngine(
         const val MIN_PAGE_SIZE = 10
         private const val REJECTED_PER_STATEMENT = 200
 
-        private const val MAX_SOLO_FAILURES = 3
+        const val MAX_PUSH_FAILURE_MILLIS = 4 * 60 * 1000L
+
+        /** El motivo de una fila de la nube que aquí no se deja escribir. Se reintenta en cada sincronización. */
+        const val UNWRITABLE = "Su versión de la nube no se pudo escribir aquí."
 
         /** El motivo de una fila apartada porque no pasa ni sola. */
         const val TOO_BIG_TO_PUSH = "No se pudo subir: es demasiado grande o tarda demasiado. Se vuelve a intentar en cada subida."

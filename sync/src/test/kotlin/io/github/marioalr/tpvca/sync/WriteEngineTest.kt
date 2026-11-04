@@ -505,7 +505,7 @@ class WriteEngineTest {
         assertEquals("No se aplicó ni se anotó", 0, store.pendingChanges())
         assertEquals("Solo la marca, no en la bajada", listOf(ParkDirection.REAPPLY), store.parkedRows().map { it.direction })
         assertTrue(store.rows("Appointments").isEmpty())
-        assertTrue(store.meta(SyncEngine.NOTICES).orEmpty().contains(io.github.marioalr.tpvca.sync.engine.SyncNotices.REAPPLY_NO_PRINCIPAL))
+        assertEquals(io.github.marioalr.tpvca.sync.engine.SyncNotices.ReapplyNotice(1, 0, 0, 0), engine().reapplyNotice())
         // Sigue sin llegar: se reintenta y sigue igual, sin aplicarse con su marca vieja
         assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Completed)
         assertEquals(1, store.savedChanges().size)
@@ -515,11 +515,12 @@ class WriteEngineTest {
         assertTrue(store.savedChanges().isEmpty())
         assertTrue(store.parkedRows().isEmpty())
         assertEquals(0, store.pendingChanges())
+        assertNull(engine().reapplyNotice())
         assertEquals("X", cloud.admin("SELECT Reason FROM Appointments WHERE SyncId = ?", id).single()["Reason"]?.text)
     }
 
     @Test
-    fun loEditadoDespuesDePedirloGanaALaCopia() {
+    fun unaVersionPosteriorQuitaLaMarcaYLaCopiaSigueGuardadaConSuAviso() {
         cloudPatient()
         linked()
         val id = "10000000-0000-4000-8000-000000000009"
@@ -527,16 +528,17 @@ class WriteEngineTest {
         store.apply(StoreChanges(saved = listOf(saved("PatientAppointment", id, "row", savedRow("Appointments", id, "PatientRecordSyncId" to patient, "Reason" to "Copia")))))
         engine().reapplySaved()
         assertEquals(1, store.savedChanges().size)
-        // Otro equipo escribió esa cita, con una marca posterior, y ya llegó aquí
-        store.apply(StoreChanges(writes = listOf(RowWrite("Appointments", id, mapOf("SyncId" to id, "UpdatedAtUtc" to "2099-01-01 00:00:00.0000000", "PatientRecordSyncId" to patient, "Reason" to "Nueva"), isNew = true))))
+        // Otro equipo escribió esa cita, con una marca posterior, y ya llegó aquí: puede venir de un reloj adelantado
+        store.apply(StoreChanges(writes = listOf(RowWrite("Appointments", id, mapOf("SyncId" to id, "UpdatedAtUtc" to ProtocolDate.format(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).plusSeconds(60)), "PatientRecordSyncId" to patient, "Reason" to "Nueva"), isNew = true))))
         assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Completed)
-        assertTrue("La copia vieja se va", store.savedChanges().isEmpty())
-        assertTrue(store.parkedRows().none { it.direction == ParkDirection.REAPPLY })
-        assertEquals("Nueva", store.rows("Appointments").getValue(id)["Reason"])
+        assertEquals("La copia sigue", 1, store.savedChanges().size)
+        assertTrue("Deja de esperar", store.parkedRows().none { it.direction == ParkDirection.REAPPLY })
+        assertEquals("No se pisa", "Nueva", store.rows("Appointments").getValue(id)["Reason"])
+        assertEquals(io.github.marioalr.tpvca.sync.engine.SyncNotices.ReapplyNotice(0, 0, 1, 0), engine().reapplyNotice())
     }
 
     @Test
-    fun unPrincipalOpcionalBorradoQuedaEnNuloYUnoObligatorioSigueGuardado() {
+    fun unPrincipalOpcionalBorradoQuedaEnNuloYSinElObligatorioNoHayMarca() {
         cloudPatient()
         linked()
         val consultation = "10000000-0000-4000-8000-0000000000a1"
@@ -555,6 +557,11 @@ class WriteEngineTest {
         assertNull(store.rows("LabResults").getValue(result)["PatientConsultationSyncId"])
         assertEquals("PatientAppointment", store.savedChanges().single().entityType)
         assertEquals("LabResult", store.outbox().single().entityType)
+        assertTrue("Ese principal no va a llegar: sin marca", store.parkedRows().none { it.direction == ParkDirection.REAPPLY })
+        assertEquals(io.github.marioalr.tpvca.sync.engine.SyncNotices.ReapplyNotice(0, 1, 0, 0), engine().reapplyNotice())
+        // El aviso sobrevive a reiniciar: es de la base. Y sin nada guardado no dice nada
+        store.apply(StoreChanges(savedRemoved = store.savedChanges().map { it.id }))
+        assertNull(engine().reapplyNotice())
     }
 
     @Test
@@ -579,7 +586,7 @@ class WriteEngineTest {
         assertEquals(SyncEngine.Reapplied(0, 0, 1), engine().reapplySaved())
         assertEquals(1, store.savedChanges().size)
         assertEquals(setOf(category), store.existing("Categories", listOf(category)))
-        assertTrue(store.meta(SyncEngine.NOTICES).orEmpty().contains(io.github.marioalr.tpvca.sync.engine.SyncNotices.REAPPLY_DELETE_BLOCKED))
+        assertEquals(io.github.marioalr.tpvca.sync.engine.SyncNotices.ReapplyNotice(0, 0, 0, 1), engine().reapplyNotice())
         // Quitado lo que lo impedía, se hace
         store.apply(StoreChanges(deletes = mapOf("Products" to setOf(product))))
         assertEquals("Solo al volver a pedirlo", SyncEngine.Reapplied(0, 1, 0), engine().reapplySaved())
@@ -722,17 +729,174 @@ class WriteEngineTest {
     }
 
     @Test
-    fun tresFilasSeguidasQueFallanSolasDetienenLaSubidaSinVaciarLaCola() {
+    fun conCuatroMinutosEnPeticionesQueFallanSeDetieneSinVaciarLaCola() {
         cloudPatient()
         linked()
         (1..5).forEach { _ -> writes.create("Appointments", appointment()) }
-        // Nada entra: es la red
-        cloud.tooLarge = { list -> list.any { it.sql.startsWith("INSERT INTO \"Appointments\"") } }
-        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Failed)
-        assertEquals("Lo que falló, apartado", 3, store.parkedRows().count { it.direction == ParkDirection.PUSH && it.reason == SyncEngine.TOO_BIG_TO_PUSH })
+        var now = 0L
+        // Cada intento que falla tarda 90 s; todo lo demás, nada
+        cloud.tooLarge = { list ->
+            val upload = list.any { it.sql.startsWith("INSERT INTO \"Appointments\"") }
+            if (upload) now += 90_000
+            upload
+        }
+        val outcome = SyncEngine(cloud.connection, store, SyncEngineConfig("device-b"), elapsedMillis = { now }).sync(SyncTrigger.USER)
+        assertTrue("$outcome", outcome is SyncOutcome.Failed)
         assertEquals("La cola no se vació", 5, store.outbox().size)
-        assertEquals(5, store.pendingChanges())
         assertEquals(0, cloud.admin("SELECT SyncId FROM Appointments").size)
+    }
+
+    @Test
+    fun loQueTardaLoQueSiSubeNoCuenta() {
+        cloudPatient()
+        linked()
+        (1..5).forEach { _ -> writes.create("Appointments", appointment()) }
+        var now = 0L
+        cloud.failWith = { list ->
+            if (list.any { it.sql.startsWith("INSERT INTO \"Appointments\"") }) now += 10 * 60_000L
+            null
+        }
+        val outcome = SyncEngine(cloud.connection, store, SyncEngineConfig("device-b", pushChunkSize = 1), elapsedMillis = { now }).sync(SyncTrigger.USER)
+        assertTrue("$outcome", outcome is SyncOutcome.Completed)
+        assertEquals(0, store.pendingChanges())
+    }
+
+    @Test
+    fun siTrasLaFallaTampocoContestaLoMinimoEsLaRedYNoSeApartaNada() {
+        cloudPatient()
+        linked()
+        writes.create("Appointments", appointment())
+        var failing = false
+        cloud.tooLarge = { list -> list.any { it.sql.startsWith("INSERT INTO \"Appointments\"") }.also { if (it) failing = true } }
+        cloud.failWith = { list -> if (failing && list.size == 1 && list.single().sql == Statements.GENERATION) HranaException(HranaException.NETWORK_ERROR, "red") else null }
+        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Failed)
+        assertTrue("Nada apartado", store.parkedRows().isEmpty())
+        assertEquals("La cola sigue", 1, store.outbox().size)
+    }
+
+    @Test
+    fun laRelecturaSeParteALaMitadYLoQueNoSeLeeSeVuelveAAnotar() {
+        cloudPatient()
+        linked()
+        val ids = (1..4).map { rejectedRow() }
+        val unreadable = ids[2]
+        val rereads = { list: List<Statement> -> list.filter { it.sql.startsWith("SELECT * FROM \"Appointments\" WHERE \"SyncId\" IN") } }
+        // Con más de una no cabe; y esa, ni sola
+        cloud.tooLarge = { list ->
+            val read = rereads(list)
+            read.isNotEmpty() && (read.single().args.size > 1 || read.single().args.single().text == unreadable)
+        }
+        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Completed)
+        for (id in ids - unreadable) assertEquals("De la nube", store.rows("Appointments").getValue(id)["Reason"])
+        assertEquals("La que no se leyó se vuelve a anotar", listOf(unreadable), store.outbox().map { it.syncId })
+    }
+
+    @Test
+    fun sinTiempoLoQueFaltaDeReleerSeVuelveAAnotar() {
+        cloudPatient()
+        linked()
+        val ids = (1..3).map { rejectedRow() }
+        var now = 0L
+        cloud.tooLarge = { list ->
+            val read = list.any { it.sql.startsWith("SELECT * FROM \"Appointments\" WHERE \"SyncId\" IN") }
+            if (read) now += SyncEngine.MAX_PUSH_FAILURE_MILLIS
+            read
+        }
+        val outcome = SyncEngine(cloud.connection, store, SyncEngineConfig("device-b"), elapsedMillis = { now }).sync(SyncTrigger.USER)
+        assertTrue("$outcome", outcome is SyncOutcome.Completed)
+        assertEquals(ids.toSet(), store.outbox().map { it.syncId }.toSet())
+    }
+
+    @Test
+    fun siLaRelecturaFallaYLaRedTambienLaColaSigueIgual() {
+        cloudPatient()
+        linked()
+        rejectedRow()
+        var failing = false
+        cloud.tooLarge = { list -> list.any { it.sql.startsWith("SELECT * FROM \"Appointments\" WHERE \"SyncId\" IN") }.also { if (it) failing = true } }
+        cloud.failWith = { list -> if (failing && list.size == 1 && list.single().sql == Statements.GENERATION) HranaException(HranaException.NETWORK_ERROR, "red") else null }
+        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Failed)
+        assertEquals(1, store.outbox().size)
+    }
+
+    @Test
+    fun unaFilaDeLaBajadaQueNoSeDejaSeApartaYElCursorAvanza() {
+        cloudPatient()
+        linked()
+        val now = cloud.nowText()
+        val good = "10000000-0000-4000-8000-0000000000e1"
+        val bad = "10000000-0000-4000-8000-0000000000e2"
+        for (id in listOf(good, bad)) cloud.admin("INSERT INTO Categories (SyncId, UpdatedAtUtc, SyncedAtUtc, Name) VALUES (?, '2026-01-01 00:00:00.0000000', ?, 'N')", id, now)
+        store.refuseWrite = { it.syncId == bad }
+        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Completed)
+        assertTrue(good in store.rows("Categories"))
+        val parked = store.parkedRows().single { it.syncId == bad }
+        assertEquals(ParkDirection.PULL, parked.direction)
+        assertTrue("Con lo que llegó", parked.payload.contains(bad))
+        // Ya se deja: se aplica al reintentar
+        store.refuseWrite = { false }
+        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Completed)
+        assertTrue(bad in store.rows("Categories"))
+        assertTrue(store.parkedRows().none { it.syncId == bad })
+    }
+
+    @Test
+    fun enElDesempateUnaFilaQueNoSeDejaSeApartaYLaColaSeVacia() {
+        cloudPatient()
+        linked()
+        val good = rejectedRow()
+        val bad = rejectedRow()
+        store.refuseWrite = { it.table == "Appointments" && it.syncId == bad }
+        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Completed)
+        assertEquals("De la nube", store.rows("Appointments").getValue(good)["Reason"])
+        assertEquals(ParkDirection.PULL, store.parkedRows().single { it.syncId == bad }.direction)
+        assertEquals(0, store.outbox().size)
+    }
+
+    @Test
+    fun unaLapidaQueNoSeDejaSeApartaYLasDemasSiguen() {
+        cloudPatient()
+        linked()
+        val keep = "10000000-0000-4000-8000-0000000000e1"
+        val goes = "10000000-0000-4000-8000-0000000000e2"
+        for (id in listOf(keep, goes)) cloud.admin("INSERT INTO Appointments (SyncId, UpdatedAtUtc, SyncedAtUtc, PatientRecordSyncId) VALUES (?, '2026-01-01 00:00:00.0000000', ?, ?)", id, cloud.nowText(), patient)
+        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Completed)
+        for (id in listOf(keep, goes)) cloud.admin("INSERT INTO SyncTombstones (EntityType, SyncId, DeletedAtUtc, SyncedAtUtc, OriginDeviceId) VALUES ('PatientAppointment', ?, '2026-01-02 00:00:00.0000000', ?, 'pc')", id, cloud.nowText())
+        store.refuseWrite = { it.syncId == keep }
+        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Completed)
+        assertFalse(goes in store.rows("Appointments"))
+        assertTrue(keep in store.rows("Appointments"))
+        assertEquals(ParkDirection.TOMBSTONE, store.parkedRows().single { it.syncId == keep }.direction)
+    }
+
+    @Test
+    fun loQueSeDeshizoNoCuentaComoLlegado() {
+        cloudPatient()
+        linked()
+        val now = cloud.nowText()
+        val id = "10000000-0000-4000-8000-0000000000d1"
+        cloud.admin("INSERT INTO Patients (SyncId, UpdatedAtUtc, SyncedAtUtc, OriginDeviceId, FullName, Phone, IsActive) VALUES (?, '2026-01-01 00:00:00.0000000', ?, 'pc', 'Ana', '5512345678', 1)", id, now)
+        cloud.admin("INSERT INTO Patients (SyncId, UpdatedAtUtc, SyncedAtUtc, OriginDeviceId, FullName, Phone, IsActive) VALUES ('10000000-0000-4000-8000-0000000000d2', '2026-01-01 00:00:00.0000000', ?, 'pc', 'Ana', '5512345678', 1)", now)
+        store.refuseWrite = { it.syncId == id }
+        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Completed)
+        assertNull("Una sola llegó: no hay par", store.meta(SyncEngine.NOTICES))
+        store.refuseWrite = { false }
+        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Completed)
+        assertTrue(store.meta(SyncEngine.NOTICES).orEmpty().contains(id))
+    }
+
+    @Test
+    fun loYaGuardadoSeRevisaAunqueLaSincronizacionSeCorte() {
+        cloudPatient()
+        linked()
+        val now = cloud.nowText()
+        for (id in listOf("d1", "d2")) cloud.admin("INSERT INTO Patients (SyncId, UpdatedAtUtc, SyncedAtUtc, OriginDeviceId, FullName, Phone, IsActive) VALUES (?, '2026-01-01 00:00:00.0000000', ?, 'pc', 'Ana', '5512345678', 1)", "10000000-0000-4000-8000-0000000000$id", now)
+        // Se llena la página de pacientes y la segunda no llega
+        var reads = 0
+        cloud.failWith = { list -> if (list.any { it.sql.startsWith("SELECT * FROM \"Patients\"") && list.size == 2 } && ++reads == 1) HranaException(HranaException.NETWORK_ERROR, "red") else null }
+        val outcome = SyncEngine(cloud.connection, store, SyncEngineConfig("device-b", pageSizeOverride = 3)).sync(SyncTrigger.USER)
+        assertTrue("$outcome", outcome is SyncOutcome.Failed)
+        assertTrue(store.meta(SyncEngine.NOTICES).orEmpty().contains("10000000-0000-4000-8000-0000000000d1"))
     }
 
     @Test
@@ -748,14 +912,14 @@ class WriteEngineTest {
             if (isBig(list) && list.count { it.sql.startsWith("INSERT INTO \"Appointments\"") } == 1) tried += list.first { it.sql.startsWith("INSERT") }.args.first().text!!
             failing && isBig(list)
         }
-        // La primera vez los tres no pasan: al tercero seguido se detiene
-        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Failed)
+        // La primera vez los tres se apartan y lo demás sube
+        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Completed)
         assertEquals(3, store.parkedRows().count { it.reason == SyncEngine.TOO_BIG_TO_PUSH })
-        // La segunda: lo nuevo primero; de lo apartado, uno, y hasta ahí
+        assertEquals(1, cloud.admin("SELECT SyncId FROM Appointments WHERE SyncId = ?", fresh).size)
+        // La segunda, de lo apartado, uno, y hasta ahí
         tried.clear()
         val parkedOrder = store.parkedRows().filter { it.reason == SyncEngine.TOO_BIG_TO_PUSH }.sortedBy { it.payload }
         assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Completed)
-        assertEquals(1, cloud.admin("SELECT SyncId FROM Appointments WHERE SyncId = ?", fresh).size)
         assertEquals("Lo que lleva más sin intentarse", listOf(parkedOrder.first().syncId), tried)
         assertEquals(3, store.pendingChanges())
         // Cuando ya pasan, suben todos
@@ -792,11 +956,51 @@ class WriteEngineTest {
     fun unaOperacionQueNoCabeJuntaSeMandaFilaPorFila() {
         cloudPatient()
         linked()
-        val sale = writes.registerSale(listOf(SaleLine(productSyncId = product, quantity = 1, unitPrice = BigDecimal.TEN)))!!
+        // Un expediente con su cita van juntos; que no cabe uno con otro
+        val (id, _) = writes.newPatient("Nuevo")
+        writes.create("Appointments", appointment() + ("PatientRecordSyncId" to id))
         cloud.tooLarge = { list -> list.count { it.sql.contains("ON CONFLICT(\"SyncId\") DO UPDATE") } > 1 }
         assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Completed)
         assertEquals(0, store.pendingChanges())
-        assertEquals(1, cloud.admin("SELECT SyncId FROM Sales WHERE SyncId = ?", sale.syncId).size)
+        assertEquals(1, cloud.admin("SELECT SyncId FROM Patients WHERE SyncId = ?", id).size)
+    }
+
+    @Test
+    fun unaVentaNuncaSePartePorFalta() {
+        cloudPatient()
+        linked()
+        val sale = writes.registerSale(listOf(SaleLine(productSyncId = product, quantity = 1, unitPrice = BigDecimal.TEN), SaleLine(productSyncId = product, quantity = 2, unitPrice = BigDecimal.TEN)))!!
+        val sent = ArrayList<Int>()
+        cloud.tooLarge = { list ->
+            val sales = list.count { it.sql.startsWith("INSERT INTO \"Sales\"") || it.sql.startsWith("INSERT INTO \"SaleItems\"") }
+            if (sales > 0) sent += sales
+            sales > 0
+        }
+        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Completed)
+        assertEquals("Lo demás subió", "1", cloud.admin("SELECT count(*) AS n FROM Products").single()["n"]?.text)
+        assertEquals("Nunca sin sus renglones", 0, cloud.admin("SELECT SyncId FROM Sales").size)
+        assertEquals(0, cloud.admin("SELECT SyncId FROM SaleItems").size)
+        assertTrue("$sent", sent.all { it == 3 })
+        assertEquals(3, store.parkedRows().count { it.reason == SyncEngine.TOO_BIG_TO_PUSH })
+        // Aquí la venta sigue
+        assertTrue(sale.syncId in store.rows("Sales"))
+        cloud.tooLarge = { false }
+        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Completed)
+        assertEquals(0, store.pendingChanges())
+        assertEquals(2, cloud.admin("SELECT SyncId FROM SaleItems").size)
+    }
+
+    @Test
+    fun unTicketConImporteYSinRenglonesPideSincronizar() {
+        cloudPatient()
+        linked()
+        val sale = "10000000-0000-4000-8000-0000000000b0"
+        localWriter.create("Sales", sale, mapOf("Folio" to "T-1", "LedgerVersion" to "1", "Total" to "50"))
+        refused(WriteRefused.Reason.NEEDS_SYNC) { writes.cancelSale(sale) }
+        assertEquals(0L, store.rows("Sales").getValue(sale)["IsCancelled"])
+        val empty = "10000000-0000-4000-8000-0000000000b9"
+        localWriter.create("Sales", empty, mapOf("Folio" to "T-2", "LedgerVersion" to "1", "Total" to "0"))
+        assertTrue("Sin importe sí", writes.cancelSale(empty))
     }
 
     @Test
@@ -864,29 +1068,39 @@ class WriteEngineTest {
     }
 
     @Test
-    fun unRenglonSinMarcaCuentaComoPaquetesSiLasSalidasSumanTodoLoVendido() {
+    fun unRenglonSinMarcaSiempreSonPaquetesConLedgerCero() {
         cloudPatient()
         linked()
-        // Cobrado a menos del precio de hoy, y la regla vieja diría piezas; pero salieron los 3 paquetes
-        stockProduct(stock = 5, units = 10, opened = 8)
-        val item = "10000000-0000-4000-8000-0000000000b1"
-        val sale = legacySale(Triple(item, 3L, null))
-        localWriter.create("InventoryMovements", "10000000-0000-4000-8000-0000000000b3", mapOf("ProductSyncId" to product, "MovementType" to "6", "Quantity" to "3", "Date" to "2020-01-01 10:00:00.0000000", "Reason" to "Venta POS TKT-20200101-0001 - X"))
-        writes.cancelSale(sale)
-        assertEquals(8L, store.rows("Products").getValue(product)["CurrentStock"])
-        assertEquals("El paquete abierto no se toca", 8L, store.rows("Products").getValue(product)["OpenedUnitsRemaining"])
-        assertEquals(io.github.marioalr.tpvca.sync.rules.SyncIds.derived("return:", sale, product), movements().single { it["MovementType"] == 7L }["SyncId"])
-    }
-
-    @Test
-    fun unRenglonSinMarcaYSinSalidasSigueLaReglaDelPrecio() {
-        cloudPatient()
-        linked()
+        // Cobrado a menos del precio de hoy y sin salidas: sin regla del precio, regresan los paquetes, sin lote
         stockProduct(stock = 5, units = 10, opened = 8)
         val sale = legacySale(Triple("10000000-0000-4000-8000-0000000000b1", 3L, null))
         writes.cancelSale(sale)
-        assertEquals("Como piezas", 6L, store.rows("Products").getValue(product)["CurrentStock"])
-        assertEquals(1L, store.rows("Products").getValue(product)["OpenedUnitsRemaining"])
+        assertEquals(8L, store.rows("Products").getValue(product)["CurrentStock"])
+        assertEquals("El paquete abierto no se toca", 8L, store.rows("Products").getValue(product)["OpenedUnitsRemaining"])
+        val back = movements().single { it["MovementType"] == 7L }
+        assertEquals(io.github.marioalr.tpvca.sync.rules.SyncIds.derived("return:", sale, product), back["SyncId"])
+        assertNull(back["BatchSyncId"])
+    }
+
+    @Test
+    fun unRenglonSinMarcaConLedgerUnoYSalidasQueNoDanPideSincronizar() {
+        cloudPatient()
+        linked()
+        stockProduct(stock = 5, units = 10, opened = 8)
+        val sale = "10000000-0000-4000-8000-0000000000b0"
+        localWriter.create("Sales", sale, mapOf("Folio" to "T-1", "LedgerVersion" to "1", "Total" to "30"))
+        localWriter.create("SaleItems", "10000000-0000-4000-8000-0000000000b1", mapOf("SaleSyncId" to sale, "ProductSyncId" to product, "Quantity" to "3", "UnitPrice" to "10"))
+        refused(WriteRefused.Reason.NEEDS_SYNC) { writes.cancelSale(sale) }
+    }
+
+    @Test
+    fun laMarcaDePiezasEnUnProductoDeUnaPiezaCuentaComoPaquete() {
+        cloudPatient()
+        linked()
+        stockProduct(stock = 5, units = 1, opened = 0)
+        val sale = legacySale(Triple("10000000-0000-4000-8000-0000000000b1", 3L, 1L))
+        writes.cancelSale(sale)
+        assertEquals(8L, store.rows("Products").getValue(product)["CurrentStock"])
     }
 
     @Test

@@ -66,12 +66,13 @@ class InMemorySyncStore(private val schema: SyncSchema = SyncContract.bundledSch
 
     override fun <T> transaction(block: () -> T): T {
         lock.lock()
-        val saved = if (depth == 0) snapshot() else null
+        // Anidada es un punto de guardado, como en Room
+        val saved = snapshot()
         depth++
         try {
             return block()
         } catch (e: Throwable) {
-            if (saved != null) restore(saved)
+            restore(saved)
             throw e
         } finally {
             depth--
@@ -81,7 +82,18 @@ class InMemorySyncStore(private val schema: SyncSchema = SyncContract.bundledSch
 
     override fun apply(changes: StoreChanges) = transaction { applyNow(changes) }
 
+    /** Una fila que esta base no se deja escribir: para probar lo que pasa cuando una escritura falla. */
+    var refuseWrite: (RowWriteProbe) -> Boolean = { false }
+
+    data class RowWriteProbe(val table: String, val syncId: String)
+
     private fun applyNow(changes: StoreChanges) {
+        for (write in changes.writes) {
+            if (refuseWrite(RowWriteProbe(write.table, write.syncId))) throw IllegalArgumentException("Esta fila no se deja escribir")
+        }
+        for ((table, ids) in changes.deletes) {
+            for (id in ids) if (refuseWrite(RowWriteProbe(table, id))) throw IllegalArgumentException("Este borrado no se deja")
+        }
         for (write in changes.writes) {
             val rows = rows(write.table)
             rows[write.syncId] = if (write.isNew) write.values else rows.getValue(write.syncId) + write.values

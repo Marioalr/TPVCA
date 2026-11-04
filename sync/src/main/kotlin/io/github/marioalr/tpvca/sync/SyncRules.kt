@@ -16,6 +16,9 @@ object SyncRules {
     fun remoteTombstoneDeletes(localUpdatedAtUtc: String?, deletedAtUtc: String): Boolean =
         localUpdatedAtUtc != null && localUpdatedAtUtc <= deletedAtUtc
 
+    /** Una fila que baja y aquí no existe, contra la lápida de aquí: si no es estrictamente más nueva que el borrado, no revive y la lápida sigue en la cola. Un empate lo gana el borrado. */
+    fun localTombstoneBeatsRemoteRow(remoteUpdatedAtUtc: String, deletedAtUtc: String): Boolean = remoteUpdatedAtUtc <= deletedAtUtc
+
     /** La marca de un cambio local: `max(hora + desfase, guardada + 1 ms)`. La usa el motor de escritura (K5). */
     fun nextLocalStamp(nowUtc: String, storedUtc: String?, clockOffsetMs: Long): String {
         val candidate = ProtocolDate.parse(nowUtc)!!.plusNanos(clockOffsetMs * 1_000_000)

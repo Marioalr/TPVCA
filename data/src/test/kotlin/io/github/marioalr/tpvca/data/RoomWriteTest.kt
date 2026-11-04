@@ -65,6 +65,21 @@ class RoomWriteTest {
     }
 
     @Test
+    fun anidadaEsUnPuntoDeGuardado() {
+        store.transaction {
+            store.apply(StoreChanges(writes = listOf(category("afuera"))))
+            assertThrows(IllegalStateException::class.java) {
+                store.transaction {
+                    store.apply(StoreChanges(writes = listOf(category("adentro"))))
+                    error("Esta no se deja")
+                }
+            }
+            assertTrue(store.existing("Categories", listOf("adentro")).isEmpty())
+        }
+        assertEquals(setOf("afuera"), store.existing("Categories", listOf("afuera", "adentro")))
+    }
+
+    @Test
     fun cadaAnotacionTomaUnNumeroMayorYLoEditadoDuranteLaSubidaSeQueda() {
         store.apply(StoreChanges(outbox = listOf(mark("a"), mark("b"))))
         val first = store.outbox()

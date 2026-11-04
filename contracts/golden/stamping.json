@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 21,
+  "contract": 22,
   "notes": [
     "Marca de un cambio local (alta, edición o borrado): max(nowUtc + clockOffsetMs, storedUpdatedAtUtc + 1 ms). Un borrado usa la marca guardada de la fila que se borra.",
     "clockOffsetMs es el desfase con la hora de la nube (paso 8.7); hasta entonces la PC usa 0.",

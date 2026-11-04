@@ -1,5 +1,5 @@
 {
-  "contract": 21,
+  "contract": 22,
   "protocol": 3,
   "generatedBy": "tests/TPVC.Tests/TursoSyncEndToEndTests.HranaStatements.cs (TPVC_WRITE_GOLDEN=1 lo regenera)",
   "notes": [

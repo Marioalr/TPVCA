@@ -398,15 +398,19 @@ class WriteEngine(
         if (sale["IsCancelled"] == 1L) throw WriteRefused(WriteRefused.Reason.CONFLICT, "El ticket ${sale["Folio"]} ya se encuentra cancelado.")
         val saleFolio = sale["Folio"] as String
         val itemTable = writer.table("SaleItems")
-        val items = store.select(itemTable.table, itemTable.columns.map { it.name }, "SaleSyncId", listOf(saleId))
-            .filter { it["IsService"] != 1L && it["ProductSyncId"] != null && (it["Quantity"] as Long) > 0 }
+        val allItems = store.select(itemTable.table, itemTable.columns.map { it.name }, "SaleSyncId", listOf(saleId))
+        // Un ticket con importe y sin renglones es uno a medio llegar: cancelarlo no regresaría nada
+        if (allItems.isEmpty() && ((sale["Total"] as String?)?.toBigDecimalOrNull()?.signum() ?: 0) > 0) {
+            throw WriteRefused(WriteRefused.Reason.NEEDS_SYNC, "Este equipo todavía no tiene los renglones del ticket $saleFolio. Sincronice primero y vuelva a intentarlo.")
+        }
+        val items = allItems.filter { it["IsService"] != 1L && it["ProductSyncId"] != null && (it["Quantity"] as Long) > 0 }
 
         val state = StockState()
-        val (planned, wholePackageItems, legacyReturnIds) = planReturns(sale, items, state)
+        val (planned, legacyReturnIds) = planReturns(sale, items, state)
         // Los renglones de piezas sueltas se devuelven por piezas, una sola vez: nunca también por los paquetes que abrieron
         val pieceItems = items.filter { item ->
             val product = state.productOrNull(item["ProductSyncId"] as String)
-            (item["SyncId"] as String) !in wholePackageItems && product != null && product.int("UnitsPerPackage") > 1 && soldIndividualUnits(item, product)
+            product != null && product.int("UnitsPerPackage") > 1 && soldIndividualUnits(item)
         }
         val pieceIds = pieceItems.map { it["SyncId"] as String }.toSet()
         val pieceReturns = pieceIds.associateWith { SyncIds.derived("return:pieces:", it) }
@@ -482,12 +486,11 @@ class WriteEngine(
     private class PlannedReturn(val syncId: String, val productId: String, val batchId: String?, val itemId: String?, val quantity: Int)
 
     /**
-     * Con `LedgerVersion` 1, una por salida. Con 0, una por producto con lo que suman sus renglones **de paquetes**, con el mismo `SyncId` de siempre, al lote de la primera salida que nombre el folio; los de piezas se devuelven aparte, una vez. Un
-     * renglón sin la marca de piezas que la regla vieja del precio tomaría por piezas cuenta como paquetes si las salidas del ticket para ese producto suman todo lo vendido. Un producto que ya no existe se salta. Regresa además esos renglones y
-     * el `SyncId` de la devolución por producto, que un equipo con la versión de antes pudo haber escrito.
+     * Con `LedgerVersion` 1, una por salida; un renglón de paquetes (también sin marca) cuyas salidas no dan su cantidad pide sincronizar. Con 0, una por producto con lo que suman sus renglones **de paquetes**, con el mismo `SyncId` de siempre, al lote de la primera salida que nombre el folio o sin
+     * lote si no hay; los que llevan la marca de piezas se devuelven aparte, una vez. Un producto que ya no existe se salta. Regresa además el `SyncId` de la devolución por producto, que un equipo con la versión de antes pudo haber escrito.
      */
-    private fun planReturns(sale: LocalRow, items: List<LocalRow>, state: StockState): Triple<List<PlannedReturn>, Set<String>, Map<String, String>> {
-        if (items.isEmpty()) return Triple(emptyList(), emptySet(), emptyMap())
+    private fun planReturns(sale: LocalRow, items: List<LocalRow>, state: StockState): Pair<List<PlannedReturn>, Map<String, String>> {
+        if (items.isEmpty()) return emptyList<PlannedReturn>() to emptyMap()
         val folio = sale["Folio"] as String
         val saleId = sale["SyncId"] as String
         val exitNumber = movementNumber("SalidaVenta").toLong()
@@ -499,7 +502,7 @@ class WriteEngine(
                 val exited = exits.filter { it["SaleItemSyncId"] == itemId }.sumOf { kotlin.math.abs((it["Delta"] as Long).toInt()) }
                 val product = state.productOrNull(item["ProductSyncId"] as String)
                 val u = maxOf(1, product?.int("UnitsPerPackage") ?: 1)
-                val partial = product != null && u > 1 && soldIndividualUnits(item, product)
+                val partial = product != null && u > 1 && soldIndividualUnits(item)
                 val quantity = (item["Quantity"] as Long).toInt()
                 if ((!partial && exited != quantity) || (partial && exited > (quantity + u - 1) / u)) {
                     throw WriteRefused(WriteRefused.Reason.NEEDS_SYNC, "Este equipo todavía no tiene todos los movimientos del ticket $folio. Sincronice primero y vuelva a intentarlo.")
@@ -508,41 +511,26 @@ class WriteEngine(
             val perExit = exits.sortedWith(compareBy({ it["Date"] as String }, { it["SaleItemSyncId"] as String }, { it["SyncId"] as String })).map {
                 PlannedReturn(SyncIds.derived("return:", it["SyncId"] as String), it["ProductSyncId"] as String, it["BatchSyncId"] as String?, it["SaleItemSyncId"] as String?, kotlin.math.abs((it["Delta"] as Long).toInt()))
             }
-            return Triple(perExit, emptySet(), emptyMap())
+            return perExit to emptyMap()
         }
         val prefixes = listOfNotNull(folio, sale["OriginalFolio"] as String?).filter { it.isNotBlank() }.map { "Venta POS $it - " }
         val planned = ArrayList<PlannedReturn>()
-        val wholePackages = HashSet<String>()
         val returnIds = HashMap<String, String>()
         for ((productId, group) in items.groupBy { it["ProductSyncId"] as String }) {
             val product = state.productOrNull(productId) ?: continue
             val returnId = SyncIds.derived("return:", saleId, productId)
             returnIds[productId] = returnId
-            val exits = store.select("InventoryMovements", listOf("SyncId", "BatchSyncId", "Quantity", "Reason", "Date", "MovementType"), "ProductSyncId", listOf(productId))
+            val first = store.select("InventoryMovements", listOf("SyncId", "BatchSyncId", "Reason", "Date", "MovementType"), "ProductSyncId", listOf(productId))
                 .filter { row -> row["MovementType"] == exitNumber && prefixes.any { (row["Reason"] as String?)?.startsWith(it) == true } }
-            val first = exits.minWithOrNull(compareBy({ it["Date"] as String }, { it["SyncId"] as String }))
-            val tookWholePackages = exits.sumOf { kotlin.math.abs((it["Quantity"] as Long? ?: 0L).toInt()) } >= group.sumOf { (it["Quantity"] as Long).toInt() }
-            var packages = 0
-            for (item in group) {
-                var pieces = product.int("UnitsPerPackage") > 1 && soldIndividualUnits(item, product)
-                if (pieces && item["IsIndividualUnits"] == null && tookWholePackages) {
-                    pieces = false
-                    wholePackages += item["SyncId"] as String
-                }
-                if (!pieces) packages += (item["Quantity"] as Long).toInt()
-            }
+                .minWithOrNull(compareBy({ it["Date"] as String }, { it["SyncId"] as String }))
+            val packages = group.filter { product.int("UnitsPerPackage") <= 1 || !soldIndividualUnits(it) }.sumOf { (it["Quantity"] as Long).toInt() }
             if (packages > 0) planned += PlannedReturn(returnId, productId, first?.get("BatchSyncId") as String?, null, packages)
         }
-        return Triple(planned, wholePackages, returnIds)
+        return planned to returnIds
     }
 
-    /** Lo que se guardó al vender; un renglón de antes (`null`) usa la regla vieja: se cobró a menos del precio del paquete. */
-    private fun soldIndividualUnits(item: LocalRow, product: MutableMap<String, Any?>): Boolean {
-        (item["IsIndividualUnits"] as Long?)?.let { return it == 1L }
-        val unit = (item["UnitPrice"] as String?)?.toBigDecimalOrNull() ?: BigDecimal.ZERO
-        val price = (product["Price"] as String?)?.toBigDecimalOrNull() ?: BigDecimal.ZERO
-        return unit < price
-    }
+    /** Solo lo dice su marca: las piezas sueltas y la marca llegaron juntas en v1.47.0, así que un renglón sin ella vendió paquetes completos, cueste lo que cueste hoy el paquete. */
+    private fun soldIndividualUnits(item: LocalRow): Boolean = item["IsIndividualUnits"] == 1L
 
     /**
      * Cerrar un lote (`DeleteBatchAsync`): `Delta = −libro` con su lote y `SyncId` determinista, y lo que falte para que el libro del producto baje lo mismo, sin lote. Le resta al producto lo que el lote

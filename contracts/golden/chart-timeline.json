@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 21,
+  "contract": 22,
   "notes": [
     "El historial de la ficha (Services/Rules/PatientChartRules.BuildTimeline y FilterTimeline, antes en PatientChartViewModel). Fechas en hora local del consultorio (yyyy-MM-dd HH:mm). Una consulta: date, folio, diagnosis, chiefComplaint, vitalSigns, treatmentPlan, notes, systemsReview, physicalExamination, prescriptions (medicineName, presentation, dosage) y labStudies/labIndications (LabOrderJson). Una cita: date, time, reason y status (todas las del paciente, también las canceladas).",
     "Consulta: title = el diagnóstico sin espacios a los lados, si no el motivo, si no 'Consulta'; side = el folio; lines (en este orden y solo las que tienen texto): 'Motivo' (solo si hay diagnóstico), 'Signos' (con ' | ' cambiado por ' · '), 'Receta' (los nombres sin espacios a los lados, sin vacíos, unidos por ' · '), 'Laboratorio' (los estudios unidos por ' · ') y 'Plan'. El valor de cada línea es su primer renglón no vacío sin espacios a los lados (\\r\\n cuenta como \\n); con más de 160 caracteres, los primeros 157 sin espacios al final y '…'. detail (lo que revisa la búsqueda) une con \\n los que tienen texto de: motivo, interrogatorio, exploración, signos, plan, notas, la receta (un renglón por medicamento: 'nombre presentación indicación'), los estudios (uno por renglón) y las indicaciones del laboratorio.",

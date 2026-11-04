@@ -98,8 +98,8 @@ interface SyncStore {
     fun apply(changes: StoreChanges)
 
     /**
-     * Corre [block] en una transacción de escritura: leer y luego escribir no se cruza con otra escritura. Una excepción deshace todo. Se puede anidar. Es lo que evita que una bajada
-     * pise una edición que se guardó entre leer las marcas y aplicar la página.
+     * Corre [block] en una transacción de escritura: leer y luego escribir no se cruza con otra escritura. Una excepción deshace todo. Es lo que evita que una bajada pise una edición que se guardó entre leer las marcas y
+     * aplicar la página. **Anidada es un punto de guardado:** si lanza, se deshace solo lo de adentro, y quien la llamó puede atrapar el error y seguir.
      */
     fun <T> transaction(block: () -> T): T
 

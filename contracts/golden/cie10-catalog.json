@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 21,
+  "contract": 22,
   "notes": [
     "Models/Cie10Diagnosis.cs: los diagnósticos que sugiere la consulta, en el orden en que se buscan. Kotlin copia esta lista tal cual (código, nombre y categoría). El texto que se escribe en el diagnóstico al elegir uno es 'Código - Nombre' (DisplayText)."
   ],

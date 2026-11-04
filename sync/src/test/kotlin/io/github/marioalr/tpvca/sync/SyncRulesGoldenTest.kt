@@ -36,7 +36,7 @@ class SyncRulesGoldenTest {
 
     @Test
     fun loQueDecideElEquipoEsLoDeLaPc() {
-        val ported = setOf("pull-row", "pull-tombstone", "rejected-upsert", "rejected-upsert-row")
+        val ported = setOf("pull-row", "pull-tombstone", "pull-row-local-tombstone", "rejected-upsert", "rejected-upsert-row")
         val deferred = setOf("server-upsert", "server-tombstone") // abajo
         val cases = cases("lww")
         val checks = cases.map { it.getValue("input").jsonObject.text("check")!! }.toSet()
@@ -49,6 +49,7 @@ class SyncRulesGoldenTest {
             when (input.text("check")) {
                 "pull-row" -> assertEquals(name, expected.getValue("apply").jsonPrimitive.boolean, SyncRules.remoteRowWins(input.text("localUpdatedAtUtc"), input.text("remoteUpdatedAtUtc")!!))
                 "pull-tombstone" -> assertEquals(name, expected.getValue("delete").jsonPrimitive.boolean, SyncRules.remoteTombstoneDeletes(input.text("localUpdatedAtUtc"), input.text("deletedAtUtc")!!))
+                "pull-row-local-tombstone" -> assertEquals(name, expected.getValue("apply").jsonPrimitive.boolean, !SyncRules.localTombstoneBeatsRemoteRow(input.text("remoteUpdatedAtUtc")!!, input.text("deletedAtUtc")!!))
                 "rejected-upsert" -> assertEquals(
                     name,
                     expected.text("resolution"),
@@ -59,7 +60,7 @@ class SyncRulesGoldenTest {
             }
             run++
         }
-        assertEquals("Los casos que corren aquí", 17, run)
+        assertEquals("Los casos que corren aquí", cases.size - cases.count { it.getValue("input").jsonObject.text("check")!!.startsWith("server-") }, run)
     }
 
     /** `server-upsert` y `server-tombstone`: el SQL de `Statements` en una nube de verdad, con la cerca de generación. */
@@ -102,7 +103,7 @@ class SyncRulesGoldenTest {
             }
             run++
         }
-        assertEquals("Los casos que corren en la nube", 33 - 17, run)
+        assertEquals("Los casos que corren en la nube", 16, run)
     }
 
     @Test

@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 21,
+  "contract": 22,
   "notes": [
     "El valor del inventario (Models/Product.InventoryValue y Services/Rules/InventoryValueRules.cs, el panel y el celular C7). Los productos llevan además unitCost (decimal en texto) y costExcludesVat. Importes como texto decimal invariante con su escala.",
     "product: effectiveUnitCost = el costo capturado, o si no incluye IVA Math.Round(costo × 1.16, 2, AwayFromZero); inventoryValue = existencias × effectiveUnitCost si hay existencias (> 0), si no 0; hasCost = costo > 0.",

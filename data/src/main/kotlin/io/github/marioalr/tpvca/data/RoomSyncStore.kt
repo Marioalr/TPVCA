@@ -50,10 +50,9 @@ class RoomSyncStore(
             buildMap { while (cursor.moveToNext()) put(cursor.getString(0), cursor.getString(1)) }
         }
 
-    override fun apply(changes: StoreChanges) {
+    override fun apply(changes: StoreChanges) = transaction {
         val db = db
-        db.beginTransaction()
-        try {
+        run {
             for (write in changes.writes) {
                 val values = contentValues(write.values)
                 if (write.isNew) {
@@ -121,14 +120,28 @@ class RoomSyncStore(
                 db.insert("SyncSavedChanges", SQLiteDatabase.CONFLICT_REPLACE, values)
             }
             for (id in changes.savedRemoved) db.delete("SyncSavedChanges", "Id = ?", arrayOf(id))
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
         }
     }
 
+    /**
+     * Anidada es un `SAVEPOINT`, no otra `beginTransaction`: en Android una anidada que falla echa a perder la de afuera aunque esta atrape el error. El comentario delante de `ROLLBACK TO` es a propósito: esta capa
+     * de SQLite decide por los primeros caracteres y, si lee `ROL`, termina toda la transacción en lugar de dejarlo pasar. `OutboxDeviceTest` lo prueba con SQLCipher.
+     */
     override fun <T> transaction(block: () -> T): T {
         val db = db
+        if (db.inTransaction()) {
+            val name = "tpvc_sp_${savepoints.incrementAndGet()}"
+            db.execSQL("SAVEPOINT $name")
+            try {
+                val result = block()
+                db.execSQL("RELEASE $name")
+                return result
+            } catch (e: Throwable) {
+                db.execSQL("/* punto de guardado */ ROLLBACK TO $name")
+                db.execSQL("RELEASE $name")
+                throw e
+            }
+        }
         db.beginTransaction()
         try {
             val result = block()
@@ -138,6 +151,8 @@ class RoomSyncStore(
             db.endTransaction()
         }
     }
+
+    private val savepoints = java.util.concurrent.atomic.AtomicLong()
 
     private fun saveTombstone(db: SupportSQLiteDatabase, tombstone: TombstoneRow) {
         val existing = db.query(
@@ -274,19 +289,15 @@ class RoomSyncStore(
             }
         }
 
-    override fun clearSyncedData(keepMetaPrefixes: List<String>) {
+    override fun clearSyncedData(keepMetaPrefixes: List<String>) = transaction {
         val db = db
-        db.beginTransaction()
-        try {
+        run {
             // Dentro de la transacción: nada se anota entre revisar y vaciar
             check(outbox().isEmpty()) { "Hay cambios sin subir: primero se guardan." }
             for (table in syncedTables + listOf(schema.tombstones.table, "ClinicProfiles", "SyncParkedRows")) db.delete(quote(table), null, null)
             for (key in metaByPrefix("").keys) {
                 if (keepMetaPrefixes.none { key.startsWith(it) }) db.delete("DbMeta", "Key = ?", arrayOf(key))
             }
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
         }
     }
 

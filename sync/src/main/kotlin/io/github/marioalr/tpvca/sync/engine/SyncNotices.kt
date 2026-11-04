@@ -19,11 +19,28 @@ data class SyncNotice(val kind: String, val first: String, val second: String)
 object SyncNotices {
     const val OVERLAP = "empalme"
 
-    /** Una fila de «Volver a aplicar» sin su principal: [SyncNotice.first] es su `EntityType` y sigue guardada. */
-    const val REAPPLY_NO_PRINCIPAL = "reaplicar-sin-principal"
+    /** Una fila de «Volver a aplicar» cuyo principal obligatorio se borró: sigue guardada, sin marca, y no se aplicará sola. [SyncNotice.first] es su `EntityType`. */
+    const val REAPPLY_DEAD_PRINCIPAL = "reaplicar-principal-borrado"
+
+    /** Una fila que esperaba y ya tiene una versión con hora posterior: no se pisa sola y su copia sigue guardada. */
+    const val REAPPLY_SUPERSEDED = "reaplicar-version-posterior"
 
     /** Un borrado de «Volver a aplicar» que impide una `restrict`: sigue guardado. */
     const val REAPPLY_DELETE_BLOCKED = "reaplicar-borrado-bloqueado"
+
+    val REAPPLY_KINDS: Set<String> = setOf(REAPPLY_DEAD_PRINCIPAL, REAPPLY_SUPERSEDED, REAPPLY_DELETE_BLOCKED)
+
+    /** El aviso de «Volver a aplicar»: lo que espera, de sus marcas; lo demás, de los avisos cuya copia sigue guardada. */
+    data class ReapplyNotice(val waiting: Int, val deadPrincipal: Int, val superseded: Int, val blockedDeletes: Int)
+
+    fun reapplyNotice(store: SyncStore): ReapplyNotice? {
+        val saved = store.savedChanges().map { it.entityType to it.syncId }.toSet()
+        if (saved.isEmpty()) return null
+        val notices = read(store.meta(SyncEngine.NOTICES)).filter { (it.first to it.second) in saved }
+        fun count(kind: String) = notices.count { it.kind == kind }
+        val notice = ReapplyNotice(store.parkedRows().count { it.direction == ParkDirection.REAPPLY }, count(REAPPLY_DEAD_PRINCIPAL), count(REAPPLY_SUPERSEDED), count(REAPPLY_DELETE_BLOCKED))
+        return notice.takeIf { it != ReapplyNotice(0, 0, 0, 0) }
+    }
 
     fun read(text: String?): Set<SyncNotice> {
         if (text.isNullOrEmpty()) return emptySet()

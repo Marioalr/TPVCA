@@ -3,10 +3,11 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 21,
+  "contract": 22,
   "notes": [
     "Marcas en UTC con el formato del protocolo (yyyy-MM-dd HH:mm:ss.fffffff); null = no existe.",
     "pull-row y pull-tombstone: lo que decide el equipo al bajar (SyncRules.RemoteRowWins y RemoteTombstoneDeletes).",
+    "pull-row-local-tombstone (revisión 22): una fila que baja y aquí no existe, contra la lápida de aquí (SyncRules.LocalTombstoneBeatsRemoteRow). 'apply' falso: no revive y la lápida sigue en la cola.",
     "server-upsert y server-tombstone: lo que hace la nube con el SQL que manda el equipo (TableMap.UpsertSql, SyncSchema.TombstoneUpsertSql y DeleteTombstonedRowSql), ejecutado de verdad sobre SQLite. 'affectedRows' es lo que Turso regresa en affected_row_count.",
     "Cerca de generación (paso 8.9): el último argumento de las tres instrucciones es la generación del equipo ('deviceGeneration'; null si la nube todavía no tenía). Sin 'cloudGeneration' la nube no tiene la clave. Si no coincide con _tpvc_meta.generation, la nube no escribe nada (0 filas) y el equipo, al leer la generación al final de la petición, se detiene.",
     "rejected-upsert: si un upsert afecta 0 filas, el equipo vuelve a leer la fila y la lápida de la nube (SyncRules.AfterRejectedUpsert). La PC lo hace desde el paso 8.6; la app de Kotlin desde su primera versión que escribe.",
@@ -63,6 +64,50 @@
         "check": "pull-row",
         "localUpdatedAtUtc": "2026-10-10 15:00:00.0000000",
         "remoteUpdatedAtUtc": "2026-10-10 15:00:00.0000001"
+      },
+      "expected": {
+        "apply": true
+      }
+    },
+    {
+      "name": "bajar fila con lápida local · el borrado es más nuevo: no revive",
+      "input": {
+        "check": "pull-row-local-tombstone",
+        "remoteUpdatedAtUtc": "2026-10-10 15:00:00.0000000",
+        "deletedAtUtc": "2026-10-10 15:00:01.0000000"
+      },
+      "expected": {
+        "apply": false
+      }
+    },
+    {
+      "name": "bajar fila con lápida local · empate: gana el borrado",
+      "input": {
+        "check": "pull-row-local-tombstone",
+        "remoteUpdatedAtUtc": "2026-10-10 15:00:00.0000000",
+        "deletedAtUtc": "2026-10-10 15:00:00.0000000"
+      },
+      "expected": {
+        "apply": false
+      }
+    },
+    {
+      "name": "bajar fila con lápida local · la fila es más nueva: se aplica",
+      "input": {
+        "check": "pull-row-local-tombstone",
+        "remoteUpdatedAtUtc": "2026-10-10 15:00:01.0000000",
+        "deletedAtUtc": "2026-10-10 15:00:00.0000000"
+      },
+      "expected": {
+        "apply": true
+      }
+    },
+    {
+      "name": "bajar fila con lápida local · la fila gana por un tick (100 ns)",
+      "input": {
+        "check": "pull-row-local-tombstone",
+        "remoteUpdatedAtUtc": "2026-10-10 15:00:00.0000001",
+        "deletedAtUtc": "2026-10-10 15:00:00.0000000"
       },
       "expected": {
         "apply": true

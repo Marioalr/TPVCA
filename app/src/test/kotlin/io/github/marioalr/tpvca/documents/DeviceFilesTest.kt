@@ -56,6 +56,17 @@ class DeviceFilesTest {
         assertTrue("La credencial la borra LinkFlow, no esto", keep.resolve("credencial.bin").exists())
     }
 
+    /** WorkManager tiene su base abierta y no lleva datos: si se borra debajo, la biblioteca truena. */
+    @Test
+    fun borrarNoTocaLaBaseDeWorkManager() {
+        val work = context.getDatabasePath("androidx.work.workdb").also { it.parentFile!!.mkdirs(); it.writeText("x") }
+        val other = context.getDatabasePath("datatransport.db").also { it.writeText("x") }
+        DeviceFiles(context, LabFileCache(File(context.noBackupFilesDir, "lab-prueba"), NoWrap)).erase()
+        assertTrue(work.exists())
+        assertFalse(other.exists())
+        work.delete()
+    }
+
     @Test
     fun loCompartidoSeBorraPorAntiguedad() {
         var now = 1_000_000_000_000L

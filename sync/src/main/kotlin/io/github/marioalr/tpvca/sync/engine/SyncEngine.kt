@@ -9,12 +9,16 @@ import io.github.marioalr.tpvca.sync.SyncRules
 import io.github.marioalr.tpvca.sync.SyncSchema
 import io.github.marioalr.tpvca.sync.SyncTable
 import io.github.marioalr.tpvca.sync.hrana.HranaConnection
+import io.github.marioalr.tpvca.sync.hrana.HranaValue
 import io.github.marioalr.tpvca.sync.hrana.HranaException
 import io.github.marioalr.tpvca.sync.hrana.ResultSet
 import io.github.marioalr.tpvca.sync.hrana.Row
 import io.github.marioalr.tpvca.sync.hrana.Statement
 import io.github.marioalr.tpvca.sync.hrana.ValueCodec
 import io.github.marioalr.tpvca.sync.hrana.text
+import io.github.marioalr.tpvca.sync.rules.CanonicalJson
+import io.github.marioalr.tpvca.sync.rules.PatientFieldStamps
+import io.github.marioalr.tpvca.sync.rules.PatientMerge
 import java.security.MessageDigest
 import java.time.Clock
 import java.time.Duration
@@ -29,12 +33,39 @@ data class SyncEngineConfig(
     val expectedClinicId: String? = null,
     /** Para las pruebas: un mismo tamaño de página en todas las tablas. */
     val pageSizeOverride: Int? = null,
+    /** Cuántas instrucciones van en cada transacción de la subida (`PushChunkSize` de la PC). */
+    val pushChunkSize: Int = 80,
+    /** Los roles con los que este equipo trabaja. Una PC de prueba en los escenarios lleva el suyo. */
+    val allowedRoles: Set<DeviceRole> = setOf(DeviceRole.AndroidTablet, DeviceRole.AndroidMobileAdmin),
 )
 
+/** El latido al final de una subida, con `LastPushUtc`: la marca de cambios que leen los demás (regla «Latido»). Lo arma quien tiene el nonce. */
+interface PushHeartbeat {
+    fun statements(): List<Statement>
+
+    /** [before] es lo que leyó de su fila antes de escribirla. */
+    fun onWritten(before: ResultSet)
+}
+
+/** Lo que tiene que pasar antes de borrar: desde [closing], nada nuevo entra a la cola. [reopen] si al final no se borró. */
+interface EraseGuard {
+    fun closing()
+
+    fun reopen()
+
+    companion object {
+        val NONE = object : EraseGuard {
+            override fun closing() = Unit
+
+            override fun reopen() = Unit
+        }
+    }
+}
+
 /**
- * El motor de lectura (plan §7.3, pasos 8.6, 8.7, 8.9): primer arranque, descarga completa, bajada incremental, LWW, lápidas, filas
- * apartadas, generación, freno, revocación y 401. **Solo lee de Turso**: ninguna instrucción escribe y ninguna es DDL
- * (`Statements`). Es la misma lógica que `TursoSyncService` de la PC, sin Android: corre en la JVM con un [SyncStore] de prueba.
+ * El motor (plan §7.3 y §7.5): primer arranque, descarga completa, bajada incremental, LWW, lápidas, filas apartadas, generación, freno, revocación y 401 y, desde K5, la subida: la cola de salida,
+ * el desempate, la cerca de generación, la combinación de expedientes y «Volver a aplicar». **Ninguna instrucción es DDL.** Es la misma lógica que `TursoSyncService` de la PC, sin Android: corre en
+ * la JVM con un [SyncStore] de prueba. Lo que escriben los casos de uso entra por [WriteEngine].
  */
 class SyncEngine(
     private val connection: HranaConnection,
@@ -44,7 +75,10 @@ class SyncEngine(
     private val clock: Clock = Clock.systemUTC(),
     /** Un reloj que no cambia con la hora del equipo (`SystemClock.elapsedRealtime`), para los 10 min del 401. Vuelve a cero al reiniciar. */
     private val elapsedMillis: () -> Long = { clock.millis() },
+    private val pushHeartbeat: PushHeartbeat? = null,
+    private val eraseGuard: EraseGuard = EraseGuard.NONE,
 ) {
+    private val writer = LocalWriter(store, { config.deviceId }, schema, clock)
     private val brake = ConsumptionBrake(store, clock)
     private val tombstonesTable = schema.tombstones.table
     private val allPages = schema.tables.map { it.table } + tombstonesTable
@@ -61,13 +95,17 @@ class SyncEngine(
         pausedOutcome(trigger)?.let { return it }
         val run = Run()
         val outcome = try {
-            if (store.meta(FIRST_DOWNLOAD_DONE) == null) firstStart(run) else incremental(run)
+            when {
+                store.meta(REVOKED_REASON) != null -> revokedCheck(run)
+                store.meta(FIRST_DOWNLOAD_DONE) == null -> firstStart(run)
+                else -> incremental(run)
+            }
         } catch (stop: Stop) {
             stop.outcome
         } catch (e: HranaException) {
             outcomeOf(e)
-        }
-        if (run.rowsRead > 0) brake.recordUsage(run.rowsRead)
+        }.let { first -> if (first is SyncOutcome.Revoked && !first.wiped) drainRevoked(run, first) else first }
+        if (run.rowsRead > 0 || run.rowsWritten > 0) brake.recordUsage(run.rowsRead, run.rowsWritten)
         store.apply(
             if (outcome is SyncOutcome.Completed) {
                 StoreChanges(
@@ -90,7 +128,7 @@ class SyncEngine(
         if (store.meta(AUTH_MALFORMED) != null) return SyncOutcome.TokenMalformed
         if (store.meta(AUTH_FIRST_401) == null) return null
         // Con algo pendiente no se vuelve a intentar hasta tener token; sin nada, una vez más a los 10 min, para confirmar y borrarse
-        val confirming = store.pendingChanges() == 0 && first401IsOldEnough()
+        val confirming = store.unsyncedChanges() == 0 && first401IsOldEnough()
         return if (confirming) null else SyncOutcome.TokenRejected(wiped = false)
     }
 
@@ -143,11 +181,21 @@ class SyncEngine(
             store.apply(StoreChanges(meta = mapOf(AUTH_FIRST_401 to clock.instant().toString(), AUTH_FIRST_401_ELAPSED to elapsedMillis().toString())))
             return SyncOutcome.TokenRejected(wiped = false)
         }
-        if (store.pendingChanges() == 0 && first401IsOldEnough()) {
-            store.wipeEverything()
-            return SyncOutcome.TokenRejected(wiped = true)
-        }
+        if (first401IsOldEnough() && wipeIfNothingPending()) return SyncOutcome.TokenRejected(wiped = true)
         return SyncOutcome.TokenRejected(wiped = false)
+    }
+
+    /**
+     * Borrar solo con nada sin subir, revisado **con la escritura ya cerrada**: lo que se anotó justo antes cuenta, y después de esto nadie anota nada. Si apareció algo, se abre otra vez y se conserva todo.
+     */
+    private fun wipeIfNothingPending(): Boolean {
+        eraseGuard.closing()
+        if (store.unsyncedChanges() > 0) {
+            eraseGuard.reopen()
+            return false
+        }
+        store.wipeEverything()
+        return true
     }
 
     // ---------------------------------------------------------------------------------------------------------------------------
@@ -208,19 +256,62 @@ class SyncEngine(
         val rejected = code?.startsWith(REJECTED_CODE_PREFIX) == true
         if (!row.text("RevokedAtUtc").isNullOrEmpty() || rejected) {
             val reason = row.text("RevokedReason") ?: if (rejected) SyncOutcome.Revoked.REASON_REJECTED else null
-            // "Quitado" sube antes lo pendiente (K5); "perdido" borra sin subir nada
-            val mustKeep = store.pendingChanges() > 0 && reason != SyncOutcome.Revoked.REASON_LOST
-            if (!mustKeep) store.wipeEverything()
-            throw Stop(SyncOutcome.Revoked(reason, wiped = !mustKeep))
+            // "Perdido" borra sin subir nada. Lo demás, solo sin nada pendiente: si no, se guarda que está revocado (sobrevive a reiniciar sin red) y `drainRevoked` lo intenta subir
+            if (reason == SyncOutcome.Revoked.REASON_LOST) {
+                eraseGuard.closing()
+                store.wipeEverything()
+                throw Stop(SyncOutcome.Revoked(reason, wiped = true))
+            }
+            if (wipeIfNothingPending()) throw Stop(SyncOutcome.Revoked(reason, wiped = true))
+            store.apply(StoreChanges(meta = mapOf(REVOKED_REASON to (reason ?: SyncOutcome.Revoked.REASON_REMOVED))))
+            throw Stop(SyncOutcome.Revoked(reason, wiped = false))
         }
+        if (store.meta(REVOKED_REASON) != null) store.apply(StoreChanges(metaRemoved = setOf(REVOKED_REASON)))
         // §7.3: el rol sale de su fila, como el nombre del enum de la PC. Es la autoridad: la PC puede aprobar con el rol que no se pidió
         val roleName = row.text("Role")
         val role = DeviceRole.fromName(roleName)
-        if (role !in ANDROID_ROLES) throw Stop(SyncOutcome.WrongRole(roleName))
+        if (role !in config.allowedRoles) throw Stop(SyncOutcome.WrongRole(roleName))
         store.apply(StoreChanges(meta = buildMap {
             put(DEVICE_ROLE, role!!.name)
             if (code != null) put(DEVICE_CODE, code)
         }))
+    }
+
+    /** Revocado y con algo pendiente: solo su fila, nada de bajar. Si cambió a perdido, `checkRegistry` borra. */
+    private fun revokedCheck(run: Run): SyncOutcome {
+        checkRegistry(run.query(listOf(Statements.registryOwn(config.deviceId))).single())
+        // Ya no está revocado (no debería pasar: la PC no regresa una fila revocada): sigue como siempre
+        return if (store.meta(FIRST_DOWNLOAD_DONE) == null) firstStart(run) else incremental(run)
+    }
+
+    /**
+     * Quitado con algo pendiente (§4.7): sube lo que pueda y, si ya no queda nada, se borra. Rechazado no sube: un equipo sin aprobar no pudo anotar nada, y si algo hay, se conserva para exportarlo. Si no se
+     * puede subir, sigue como está y el médico puede exportarlo a un archivo. Nunca se borra aquí con algo pendiente.
+     */
+    private fun drainRevoked(run: Run, revoked: SyncOutcome.Revoked): SyncOutcome {
+        if (revoked.reason != null && revoked.reason != SyncOutcome.Revoked.REASON_REMOVED) return revoked
+        if (store.pendingChanges() == 0) return if (store.unsyncedChanges() == 0 && wipeIfNothingPending()) revoked.copy(wiped = true) else revoked
+        return try {
+            val before = clock.instant()
+            val handshake = Handshake.parse(run.query(listOf(Statements.handshake)).single())
+            checkCloud(run, handshake, before)
+            when (generationState(handshake)) {
+                // Otra generación: lo pendiente ya no le toca a esa nube; se guarda y se puede exportar
+                GenerationState.Same -> Unit
+                else -> {
+                    stashPending(store.meta(GENERATION) ?: normalizeGeneration(handshake.generationPrevious))
+                    return revoked
+                }
+            }
+            run.generation = normalizeGeneration(handshake.generation)
+            if (store.meta(READ_ONLY) != null) return revoked
+            push(run)
+            if (wipeIfNothingPending()) revoked.copy(wiped = true) else revoked
+        } catch (_: Stop) {
+            revoked
+        } catch (_: HranaException) {
+            revoked
+        }
     }
 
     /**
@@ -236,9 +327,13 @@ class SyncEngine(
         checkCloud(run, handshake, before)
         when (generationState(handshake)) {
             GenerationState.Same -> Unit
-            GenerationState.Pending -> throw Stop(SyncOutcome.GenerationPending)
+            GenerationState.Pending -> {
+                stashPending(store.meta(GENERATION) ?: normalizeGeneration(handshake.generationPrevious))
+                throw Stop(SyncOutcome.GenerationPending)
+            }
             GenerationState.Replaced -> {
                 // Lo que había bajado era de la nube anterior. Otra generación no se mezcla con esto
+                stashPending(store.meta(GENERATION) ?: normalizeGeneration(handshake.generationPrevious))
                 store.clearSyncedData(KEPT_META_ON_CLEAR)
                 run.allPatients = true
             }
@@ -268,9 +363,12 @@ class SyncEngine(
         if (store.meta(MANIFEST_CONTRACT) != SyncContract.REVISION.toString()) checkManifestAndIdentity(run)
         else run.manifest = store.meta(READ_ONLY)?.let { ManifestDiff(listOf(it), emptyList()) }
 
+        val own = Statements.registryOwn(config.deviceId)
+        // Con algo que subir: su fila antes que nada ("perdido" borra sin subir nada) y la hora y la generación antes de escribir
+        if (hasPendingPush()) pushFirst(run, own)?.let { return it }
+
         val cursors = loadCursors()
         val pages = allPages.map { pageStatement(it, cursors.getValue(it), skipOwnRows = true, pageSize(run, it)) }
-        val own = Statements.registryOwn(config.deviceId)
         val before = clock.instant()
 
         var firstPages: Map<String, List<Row>>? = null
@@ -295,12 +393,21 @@ class SyncEngine(
         checkCloud(run, handshake, before)
         when (generationState(handshake)) {
             GenerationState.Same -> Unit
-            GenerationState.Pending -> throw Stop(SyncOutcome.GenerationPending)
+            GenerationState.Pending -> {
+                stashPending(store.meta(GENERATION) ?: normalizeGeneration(handshake.generationPrevious))
+                throw Stop(SyncOutcome.GenerationPending)
+            }
             GenerationState.Replaced -> return reloadGeneration(run, handshake)
         }
         adoptGeneration(run, handshake)
         pullEverything(run, handshake.watermark, firstPages, skipOwnRows = true)
         finish(run, profile)
+        // Lo que una combinación dejó distinto de la nube sube en esta misma sincronización, una sola vez
+        if (run.mergedForUpload > 0) {
+            run.mergedForUpload = 0
+            if (store.meta(READ_ONLY) == null) push(run)
+        }
+        noteArrivals(run)
         return completed(run, fullDownload = false)
     }
 
@@ -313,20 +420,29 @@ class SyncEngine(
         checkCloud(run, handshake, before)
         when (generationState(handshake)) {
             GenerationState.Same -> Unit
-            GenerationState.Pending -> throw Stop(SyncOutcome.GenerationPending)
+            GenerationState.Pending -> {
+                stashPending(store.meta(GENERATION) ?: normalizeGeneration(handshake.generationPrevious))
+                throw Stop(SyncOutcome.GenerationPending)
+            }
             GenerationState.Replaced -> return reloadGeneration(run, handshake)
         }
         adoptGeneration(run, handshake)
         pullEverything(run, handshake.watermark, firstPages = null, skipOwnRows = true)
         finish(run, results[2].rows.firstOrNull())
+        // Lo que una combinación dejó distinto de la nube sube en esta misma sincronización, una sola vez
+        if (run.mergedForUpload > 0) {
+            run.mergedForUpload = 0
+            if (store.meta(READ_ONLY) == null) push(run)
+        }
+        noteArrivals(run)
         return completed(run, fullDownload = false)
     }
 
     /**
-     * Otra PC reemplazó la nube y ya terminó (8.9): se vacía y baja todo una sola vez, en esta misma sincronización. Lo que no se había
-     * subido se guardaría antes para «Volver a aplicar» (K5); aquí no hay nada pendiente.
+     * Otra PC reemplazó la nube y ya terminó (8.9): lo que no se había subido se guarda para «Volver a aplicar», se vacía y baja todo una sola vez, en esta misma sincronización.
      */
     private fun reloadGeneration(run: Run, handshake: Handshake): SyncOutcome {
+        stashPending(store.meta(GENERATION) ?: normalizeGeneration(handshake.generationPrevious))
         if (!brake.allowFullPull()) throw Stop(SyncOutcome.BrakePaused)
         store.clearSyncedData(KEPT_META_ON_CLEAR)
         adoptGeneration(run, handshake)
@@ -362,7 +478,20 @@ class SyncEngine(
         }
         // Una marca en el futuro impediría aplicar las ediciones de los demás; se repara con la hora del servidor, sin subir nada
         val limit = ProtocolDate.format(server.plus(CLOCK_WARNING))
-        store.repairFutureStamps(schema.tables.map { it.table }, limit, ProtocolDate.format(server))
+        val repaired = store.repairFutureStamps(schema.tables.map { it.table }, limit, ProtocolDate.format(server))
+        if (repaired > 0) repairFieldStamps(limit, ProtocolDate.format(server))
+    }
+
+    /** Una marca por campo nunca vale más que su fila, pero una que se queda en el futuro subiría con cada edición posterior de otro campo. */
+    private fun repairFieldStamps(limit: String, now: String) {
+        val writes = store.select(PatientSummaryRecalculator.PATIENTS, listOf("SyncId", "FieldStampsJson")).mapNotNull { row ->
+            val stamps = PatientFieldStamps.parse(row["FieldStampsJson"] as String?)
+            val future = stamps.all.filter { (_, value) -> value > limit && PatientFieldStamps.parseStamp(value) != null }.keys
+            if (future.isEmpty()) return@mapNotNull null
+            future.forEach { stamps[it] = now }
+            RowWrite(PatientSummaryRecalculator.PATIENTS, row["SyncId"] as String, mapOf("FieldStampsJson" to stamps.toJson()), isNew = false)
+        }
+        if (writes.isNotEmpty()) store.apply(StoreChanges(writes = writes))
     }
 
     private enum class GenerationState { Same, Pending, Replaced }
@@ -474,9 +603,18 @@ class SyncEngine(
     /**
      * `ApplyPageGenericAsync`: LWW por fila, y una fila cuyo principal todavía no existe aquí se aparta en la misma transacción. Las
      * referencias sin principal con lápida ([dead]): una opcional queda en nulo y sin la obligatoria la fila se descarta.
-     * Los expedientes también siguen el LWW por fila: este equipo no los edita, y la combinación por campo llega con K5.
+     * Un expediente que ya existe aquí no sigue el LWW por fila: se combina por campo, y lo que queda distinto de la nube se anota para subir en la misma transacción.
+     * [afterReject]: desempate, se aplica también con la misma marca. [force]: «Volver a aplicar», sin importar la marca.
      */
-    private fun applyRows(run: Run, table: SyncTable, rows: List<Row>, meta: Map<String, String>, dead: Set<Pair<String, String>>) {
+    private fun applyRows(
+        run: Run,
+        table: SyncTable,
+        rows: List<Row>,
+        meta: Map<String, String>,
+        dead: Set<Pair<String, String>>,
+        afterReject: Boolean = false,
+        force: Boolean = false,
+    ) = store.transaction {
         val incoming = rows.mapNotNull { row -> row.text("SyncId")?.lowercase(java.util.Locale.ROOT)?.takeIf { it.isNotEmpty() }?.let { it to row } }
         val ids = incoming.map { it.first }
         val stamps = store.stamps(table.table, ids)
@@ -492,13 +630,25 @@ class SyncEngine(
         val writes = ArrayList<RowWrite>()
         val park = ArrayList<ParkedRow>()
         val unpark = ArrayList<Triple<ParkDirection, String, String>>()
+        val marks = ArrayList<OutboxMark>()
+        val mergePatients = table.table == PatientSummaryRecalculator.PATIENTS && !force
         for ((syncId, row) in incoming) {
             val remoteStamp = ProtocolDate.canonical(row.text("UpdatedAtUtc"))
             val local = stamps[syncId]
             val parkedHere = syncId in parked
-            // Una versión apartada con la misma marca es la misma versión: se aplica al reintentar
-            val wins = SyncRules.remoteRowWins(local, remoteStamp) || (parkedHere && local == remoteStamp)
             val key = Triple(ParkDirection.PULL, table.entityType, syncId)
+            if (mergePatients && local != null) {
+                if (parkedHere) unpark += key
+                mergePatient(run, table, syncId, row)?.let { (write, mark) ->
+                    writes += write
+                    mark?.let { marks += it }
+                    run.touch(table.table, syncId, row)
+                    run.arrivedPatients += syncId
+                }
+                continue
+            }
+            // Una versión apartada con la misma marca es la misma versión: se aplica al reintentar
+            val wins = force || (if (afterReject) SyncRules.serverRowAppliesAfterReject(local, remoteStamp) else SyncRules.remoteRowWins(local, remoteStamp)) || (parkedHere && local == remoteStamp)
             if (!wins) {
                 if (parkedHere) unpark += key
                 continue
@@ -539,9 +689,38 @@ class SyncEngine(
             val values = if (isNew) RowMapper.newRow(table, row) else RowMapper.update(table, row)
             writes += RowWrite(table.table, syncId, values + nulled.associateWith { null } + ("UpdatedAtUtc" to remoteStamp), isNew)
             run.touch(table.table, syncId, row)
+            if (!force && table.table == PatientSummaryRecalculator.PATIENTS) run.arrivedPatients += syncId
+            if (!force && table.table == PatientSummaryRecalculator.APPOINTMENTS) run.arrivedAppointments += syncId
         }
-        store.apply(StoreChanges(writes = writes, park = park, unpark = unpark, meta = meta))
+        store.apply(StoreChanges(writes = writes, park = park, unpark = unpark, meta = meta, outbox = marks))
         run.applied += writes.size
+        run.mergedForUpload += marks.size
+    }
+
+    /** `PatientFieldMerge`: la fila de aquí contra la de la nube. `null` si no cambia nada. Sin marcas nuevas para lo que ya tenía la nube. */
+    private fun mergePatient(run: Run, table: SyncTable, syncId: String, row: Row): Pair<RowWrite, OutboxMark?>? {
+        val localRow = writer.find(table, syncId) ?: return null
+        val columns = LocalWriter.patientColumns(table)
+        val remoteLocal = columns.filter { it.name in row }.associate { it.name to RowMapper.localValue(it, row[it.name]) } +
+            ("UpdatedAtUtc" to ProtocolDate.canonical(row.text("UpdatedAtUtc"))) + ("FieldStampsJson" to row.text("FieldStampsJson")) +
+            ("BirthDate" to (if ("BirthDate" in row) RowMapper.localValue(table.column("BirthDate")!!, row["BirthDate"]) else localRow["BirthDate"]))
+        val merged = PatientMerge.merge(LocalWriter.patientVersion(table, localRow, syncId, clock), LocalWriter.patientVersion(table, remoteLocal, syncId, clock).let { remote ->
+            // Una columna que la nube no tiene cuenta como la de aquí
+            PatientMerge.Version(syncId, remote.updatedAtUtc, remote.fieldStampsJson, remote.values.filterKeys { it in row })
+        }, columns.map { it.name })
+        if (!merged.differsFromLocal && merged.updatedAtUtc == localRow["UpdatedAtUtc"] && merged.fieldStampsJson == localRow["FieldStampsJson"]) return null
+        val values = LinkedHashMap<String, Any?>()
+        for (column in columns) {
+            when (merged.sources[column.name]) {
+                PatientMerge.Source.REMOTE -> if (column.name in row) values[column.name] = RowMapper.localValue(column, row[column.name])
+                PatientMerge.Source.MERGED -> values[column.name] = CanonicalJson.asString(merged.values[column.name]).orEmpty()
+                else -> Unit
+            }
+        }
+        values["FieldStampsJson"] = merged.fieldStampsJson
+        values["UpdatedAtUtc"] = merged.updatedAtUtc
+        run.applied++
+        return RowWrite(table.table, syncId, values, isNew = false) to (if (merged.differsFromRemote) writer.mark(table, syncId) else null)
     }
 
     private fun referenceId(row: Row, column: String): String? =
@@ -559,7 +738,7 @@ class SyncEngine(
      * `ApplyTombstonesAsync`: se borra salvo que la local sea estrictamente más nueva, con lo que haría cada llave foránea de la PC
      * (cascada, a nulo). Una `restrict` con dependientes aparta la lápida hasta que se vayan.
      */
-    private fun applyTombstones(run: Run, tombstones: List<TombstoneRow>, meta: Map<String, String>) {
+    private fun applyTombstones(run: Run, tombstones: List<TombstoneRow>, meta: Map<String, String>) = store.transaction {
         val parked = store.parkedRows().filter { it.direction == ParkDirection.TOMBSTONE }.map { it.entityType to it.syncId }.toSet()
         val records = ArrayList<TombstoneRow>()
         val unpark = ArrayList<Triple<ParkDirection, String, String>>()
@@ -574,7 +753,7 @@ class SyncEngine(
                 continue
             }
             val plan = DeletePlan()
-            if (!planDelete(table, setOf(tombstone.syncId), plan)) {
+            if (!writer.planDelete(table, setOf(tombstone.syncId), plan)) {
                 park += ParkedRow(ParkDirection.TOMBSTONE, tombstone.entityType, tombstone.syncId, tombstone.deletedAtUtc, "Todavía tiene registros que dependen de él.")
                 continue
             }
@@ -591,31 +770,6 @@ class SyncEngine(
             run.applied++
         }
         store.apply(StoreChanges(tombstones = records, park = park, unpark = unpark, meta = meta))
-    }
-
-    private class DeletePlan {
-        val deletes = HashMap<String, Set<String>>()
-        val nullify = ArrayList<Nullify>()
-    }
-
-    /** `false` si una `restrict` lo impide. Recorre las referencias de `schema.json`: la base local no tiene llaves foráneas. */
-    private fun planDelete(table: SyncTable, ids: Set<String>, plan: DeletePlan): Boolean {
-        val known = plan.deletes[table.table].orEmpty()
-        val fresh = ids - known
-        if (fresh.isEmpty()) return true
-        plan.deletes[table.table] = known + fresh
-        for (dependent in schema.tables) {
-            for (reference in dependent.references.filter { it.principal == table.entityType }) {
-                val rows = store.referencing(dependent.table, reference.column, fresh)
-                if (rows.isEmpty()) continue
-                when (reference.onDelete) {
-                    "restrict" -> return false
-                    "cascade" -> if (!planDelete(dependent, rows, plan)) return false
-                    "setNull" -> plan.nullify += Nullify(dependent.table, reference.column, rows)
-                }
-            }
-        }
-        return true
     }
 
     /**
@@ -665,6 +819,260 @@ class SyncEngine(
             store.apply(StoreChanges(unpark = keys))
         }
         return kept
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------------------
+    // Subir (K5)
+    // ---------------------------------------------------------------------------------------------------------------------------
+
+    private fun hasPendingPush(): Boolean = store.pendingChanges() > 0
+
+    /**
+     * Antes de subir, en una petición: su fila y la hora con las claves. Regresa un resultado si hay que detenerse aquí (otra generación ya lista: esa recarga termina la sincronización).
+     * En solo lectura (el manifiesto no es el de la app) la cola se conserva y no sube nada.
+     */
+    private fun pushFirst(run: Run, own: Statement): SyncOutcome? {
+        val before = clock.instant()
+        val results = run.query(listOf(own, Statements.handshake))
+        val handshake = Handshake.parse(results[1])
+        checkClinic(handshake.clinicId)
+        checkRegistry(results[0])
+        checkCloud(run, handshake, before)
+        when (generationState(handshake)) {
+            GenerationState.Same -> Unit
+            GenerationState.Pending -> {
+                stashPending(store.meta(GENERATION) ?: normalizeGeneration(handshake.generationPrevious))
+                throw Stop(SyncOutcome.GenerationPending)
+            }
+            GenerationState.Replaced -> return reloadGeneration(run, handshake)
+        }
+        adoptGeneration(run, handshake)
+        if (store.meta(READ_ONLY) == null) push(run)
+        return null
+    }
+
+    private class PushStatement(val statement: Statement, val table: SyncTable?, val syncId: String)
+
+    /** Lo que sube en esta vuelta. [toSeq]: lo que sale de la cola si todo sube. */
+    private class PushPlan(
+        val toSeq: Long,
+        val groups: List<List<PushStatement>>,
+        val parkNow: Map<Pair<String, String>, String>,
+        val included: Set<Pair<String, String>>,
+        val parkedBefore: List<ParkedRow>,
+    )
+
+    /**
+     * Una sola foto de la cola, sus filas y sus lápidas: tabla por tabla en el orden del contrato, cada fila que todavía existe aquí completa y la que ya no, como su lápida más reciente. Una fila con
+     * referencia obligatoria y borrado en cascada a otra que también sube va en su grupo (la venta con sus renglones): un corte no parte una operación.
+     */
+    private fun planPush(generation: String?): PushPlan = store.transaction {
+        val queue = store.outbox()
+        val parkedBefore = store.parkedRows().filter { it.direction == ParkDirection.PUSH }
+        val keys = queue.map { it.entityType to it.syncId }.toMutableSet()
+        parkedBefore.forEach { keys += it.entityType to it.syncId }
+        val generationValue = generation?.let<String, HranaValue>(HranaValue::Text) ?: HranaValue.Null
+        val groups = ArrayList<MutableList<PushStatement>>()
+        val groupOf = HashMap<Pair<String, String>, MutableList<PushStatement>>()
+        val parkNow = LinkedHashMap<Pair<String, String>, String>()
+        val included = LinkedHashSet<Pair<String, String>>()
+        val found = HashSet<Pair<String, String>>()
+        val device = HranaValue.Text(config.deviceId)
+
+        for (table in schema.tables) {
+            val ids = keys.filter { it.first == table.entityType }.map { it.second }
+            if (ids.isEmpty()) continue
+            val rows = store.select(table.table, table.columns.map { it.name }, "SyncId", ids)
+            val sql = Statements.upsertSql(table)
+            val columns = Statements.dataColumns(table)
+            val existing = table.references.associateWith { reference ->
+                val principal = schema.tableOf(reference.principal)
+                val wanted = rows.mapNotNull { it[reference.column] as String? }.toSet()
+                if (principal == null || wanted.isEmpty()) emptySet() else store.existing(principal.table, wanted)
+            }
+            for (row in rows) {
+                val syncId = row["SyncId"] as String
+                val key = table.entityType to syncId
+                found += key
+                var missing: String? = null
+                var owner: MutableList<PushStatement>? = null
+                for (reference in table.references) {
+                    val principalId = row[reference.column] as String?
+                    if (reference.required && (principalId == null || principalId !in existing.getValue(reference))) {
+                        missing = "le falta ${reference.principal}"
+                        break
+                    }
+                    if (owner == null && principalId != null && reference.required && reference.onDelete == "cascade") owner = groupOf[reference.principal to principalId]
+                }
+                if (missing != null) {
+                    parkNow[key] = "No se pudo subir: $missing."
+                    continue
+                }
+                included += key
+                val stamp = HranaValue.Text(row["UpdatedAtUtc"] as String)
+                val id = HranaValue.Text(syncId)
+                val args = buildList {
+                    add(id)
+                    add(stamp)
+                    add(device)
+                    columns.forEach { add(RowMapper.remoteValue(row[it.name])) }
+                    add(HranaValue.Text(table.entityType))
+                    add(id)
+                    add(stamp)
+                    add(generationValue)
+                }
+                val group = owner ?: ArrayList<PushStatement>().also { groups += it }
+                group += PushStatement(Statement(sql, args), table, syncId)
+                groupOf[key] = group
+            }
+        }
+
+        // Lo anotado que ya no existe aquí sube como su lápida más reciente
+        val gone = (keys - found).groupBy({ it.first }, { it.second })
+        for ((entityType, ids) in gone) {
+            val table = schema.tableOf(entityType)
+            val tombstones = store.select(tombstonesTable, listOf("EntityType", "SyncId", "DeletedAtUtc"), "SyncId", ids).filter { it["EntityType"] == entityType }
+            for (tombstone in tombstones) {
+                val syncId = tombstone["SyncId"] as String
+                val deletedAt = HranaValue.Text(tombstone["DeletedAtUtc"] as String)
+                val id = HranaValue.Text(syncId)
+                val group = arrayListOf(PushStatement(Statement(Statements.TOMBSTONE_UPSERT, listOf(HranaValue.Text(entityType), id, deletedAt, device, generationValue)), null, syncId))
+                if (table != null) group += PushStatement(Statement(Statements.deleteTombstonedSql(table.table), listOf(id, deletedAt, generationValue)), null, syncId)
+                groups += group
+            }
+        }
+        PushPlan(queue.maxOfOrNull { it.seq } ?: 0L, groups, parkNow, included, parkedBefore)
+    }
+
+    /**
+     * Cada lote en una transacción de la nube, terminando con la generación: si otra PC reemplazó la nube, la cerca no dejó escribir nada y se detiene **sin tocar la cola**. La cola se vacía solo si todo
+     * subió, en una transacción local. Lo que se editó mientras tanto tiene un número mayor y se queda para la siguiente.
+     */
+    private fun push(run: Run) {
+        val plan = planPush(run.generation)
+        val rejected = ArrayList<Pair<SyncTable, String>>()
+        var statements = 0
+        for (chunk in chunks(plan.groups)) {
+            val results = connection.snapshot(emptyList(), chunk.map { it.statement } + Statements.generation).statements
+            run.rowsRead += 1
+            if (normalizeGeneration(results.last().rows.firstOrNull()?.text("generation")) != run.generation) throw Stop(SyncOutcome.GenerationChanged)
+            chunk.forEachIndexed { index, push ->
+                run.rowsWritten += results[index].affectedRows
+                run.pushed += results[index].affectedRows.toInt()
+                if (push.table != null && results[index].affectedRows == 0L) rejected += push.table to push.syncId
+            }
+            statements += chunk.size
+        }
+
+        val keepParked = plan.parkNow.map { (key, reason) -> ParkedRow(ParkDirection.PUSH, key.first, key.second, "", reason) }
+        val unpark = plan.parkedBefore.filter { (it.entityType to it.syncId) !in plan.parkNow }.map { Triple(ParkDirection.PUSH, it.entityType, it.syncId) }
+        store.apply(StoreChanges(outboxClearedUpTo = plan.toSeq, park = keepParked, unpark = unpark))
+
+        if (statements > 0) writePushHeartbeat(run)
+        if (rejected.isNotEmpty()) applyRejected(run, rejected)
+    }
+
+    /** Lotes sin partir un grupo (uno más grande que el lote va solo). */
+    private fun chunks(groups: List<List<PushStatement>>): List<List<PushStatement>> {
+        val chunks = ArrayList<List<PushStatement>>()
+        var chunk = ArrayList<PushStatement>()
+        for (group in groups) {
+            if (chunk.isNotEmpty() && chunk.size + group.size > config.pushChunkSize) {
+                chunks += chunk
+                chunk = ArrayList()
+            }
+            chunk.addAll(group)
+        }
+        if (chunk.isNotEmpty()) chunks += chunk
+        return chunks
+    }
+
+    /** Un latido perdido no detiene nada: `LastPushUtc` se vuelve a escribir en la siguiente subida. */
+    private fun writePushHeartbeat(run: Run) {
+        val heartbeat = pushHeartbeat ?: return
+        try {
+            val results = run.query(heartbeat.statements())
+            heartbeat.onWritten(results.first())
+        } catch (e: HranaException) {
+            if (e.code == HranaException.UNAUTHORIZED || e.code == HranaException.BLOCKED) throw e
+        }
+    }
+
+    /**
+     * Desempate (`ApplyRejectedUpsertsAsync`, `golden/lww.json`): lo que la nube no aceptó se relee en una petición y se aplica aquí aunque las marcas empaten; si ya no la tiene, su lápida. Si no tiene ninguna
+     * de las dos, **se vuelve a anotar**: esa fila no está en la nube y no se pierde.
+     */
+    private fun applyRejected(run: Run, rejected: List<Pair<SyncTable, String>>) {
+        val batches = rejected.groupBy({ it.first }, { it.second }).flatMap { (table, ids) -> ids.distinct().chunked(REJECTED_PER_STATEMENT).map { table to it } }
+        val statements = batches.flatMap { (table, ids) ->
+            val args = ids.map<String, HranaValue>(HranaValue::Text)
+            listOf(Statement(Statements.rereadRowsSql(table.table, ids.size), args), Statement(Statements.rereadTombstonesSql(ids.size), listOf<HranaValue>(HranaValue.Text(table.entityType)) + args))
+        }
+        val results = run.query(statements)
+        batches.forEachIndexed { index, (table, ids) ->
+            val rows = results[2 * index].rows
+            val tombstones = results[2 * index + 1].rows
+            val present = rows.mapNotNull { it.text("SyncId")?.lowercase(java.util.Locale.ROOT) }.toSet()
+            if (rows.isNotEmpty()) applyRows(run, table, rows, emptyMap(), emptySet(), afterReject = true)
+            val deleted = tombstones.map(::tombstoneOf).filter { it.syncId !in present }
+            if (deleted.isNotEmpty()) applyTombstones(run, deleted, emptyMap())
+            val known = present + deleted.map { it.syncId }
+            val lost = ids.filter { it !in known }
+            if (lost.isNotEmpty()) store.apply(StoreChanges(outbox = lost.map { writer.mark(table, it) }))
+        }
+    }
+
+    /**
+     * Otra generación (8.9): lo que no subió se guarda (`SyncSavedChanges` de la PC), cada fila con su protocolo y su revisión, en la misma transacción que la saca de la cola. Se puede llamar varias veces.
+     * Lo guardado no se borra al vaciar: «Volver a aplicar» lo escribe otra vez con marca nueva.
+     */
+    private fun stashPending(generation: String?) = store.transaction {
+        val parked = store.parkedRows().filter { it.direction == ParkDirection.PUSH }
+        val saved = PendingChanges.asSaved(store, schema, clock, generation)
+        if (saved.isEmpty()) return@transaction
+        store.apply(StoreChanges(saved = saved, outboxClearedUpTo = Long.MAX_VALUE, unpark = parked.map { Triple(ParkDirection.PUSH, it.entityType, it.syncId) }))
+    }
+
+    /** Guarda lo que hay en la cola antes de vaciar: la identidad nueva (regla «Latido») lo usa. Regresa cuántos hay guardados. */
+    fun stashBeforeClearing(): Int {
+        stashPending(store.meta(GENERATION))
+        return store.savedChanges().size
+    }
+
+    /** «Volver a aplicar N cambios» (`ReapplySavedChangesAsync`): cada fila otra vez con marca nueva, lista para subir; cada borrado, como un borrado de aquí. Regresa (filas, borrados). */
+    fun reapplySaved(): Pair<Int, Int> = store.transaction {
+        val saved = store.savedChanges()
+        if (saved.isEmpty()) return@transaction 0 to 0
+        val run = Run()
+        var rows = 0
+        var deletes = 0
+        for (table in schema.tables) {
+            val group = saved.filter { it.entityType == table.entityType && it.kind == SavedChange.KIND_ROW }
+                .map { RowMapper.deserialize(it.payload) }
+                .groupBy { it.text("SyncId")?.lowercase(java.util.Locale.ROOT) }
+                .mapNotNull { (id, versions) -> if (id == null) null else versions.maxByOrNull { ProtocolDate.canonical(it.text("UpdatedAtUtc")) } }
+            if (group.isEmpty()) continue
+            applyRows(run, table, group, emptyMap(), emptySet(), force = true)
+            for (row in group) {
+                writer.restamp(table, row.text("SyncId")!!.lowercase(java.util.Locale.ROOT))
+                rows++
+            }
+        }
+        for (table in schema.tables.asReversed()) {
+            for (change in saved.filter { it.entityType == table.entityType && it.kind == SavedChange.KIND_TOMBSTONE }.distinctBy { it.syncId }) {
+                if (writer.delete(table.table, change.syncId)) deletes++
+            }
+        }
+        store.apply(StoreChanges(savedRemoved = saved.map { it.id }))
+        rows to deletes
+    }
+
+    /** Los empalmes y posibles duplicados de lo que acaba de llegar: un aviso de este equipo que no viaja y se queda hasta descartarlo (regla «Empalmes» y «Duplicados»). */
+    private fun noteArrivals(run: Run) {
+        if (run.arrivedPatients.isEmpty() && run.arrivedAppointments.isEmpty()) return
+        val notices = SyncNotices.read(store.meta(NOTICES))
+        val next = notices + SyncNotices.check(store, run.arrivedPatients, run.arrivedAppointments)
+        if (next != notices) store.apply(StoreChanges(meta = mapOf(NOTICES to SyncNotices.write(next))))
     }
 
     // ---------------------------------------------------------------------------------------------------------------------------
@@ -733,7 +1141,7 @@ class SyncEngine(
     }
 
     private fun completed(run: Run, fullDownload: Boolean) =
-        SyncOutcome.Completed(fullDownload, run.applied, run.rowsRead, run.manifest?.takeUnless { it.isEmpty }, run.clockWarning)
+        SyncOutcome.Completed(fullDownload, run.applied, run.rowsRead, run.manifest?.takeUnless { it.isEmpty }, run.clockWarning, run.pushed)
 
     // ---------------------------------------------------------------------------------------------------------------------------
 
@@ -741,6 +1149,11 @@ class SyncEngine(
     private inner class Run {
         val pageSizes = HashMap<String, Int>()
         var rowsRead = 0L
+        var rowsWritten = 0L
+        var pushed = 0
+        var mergedForUpload = 0
+        val arrivedPatients = LinkedHashSet<String>()
+        val arrivedAppointments = LinkedHashSet<String>()
         var applied = 0
         var generation: String? = null
         var manifest: ManifestDiff? = null
@@ -809,6 +1222,7 @@ class SyncEngine(
 
     companion object {
         const val MIN_PAGE_SIZE = 10
+        private const val REJECTED_PER_STATEMENT = 200
         private const val CLOCK_OFFSET_TOLERANCE_MS = 250L
         const val ASSET_CHUNKS_PER_REQUEST = 4
         val CLOCK_WARNING: Duration = Duration.ofMinutes(2)
@@ -825,6 +1239,12 @@ class SyncEngine(
         const val DEVICE_ROLE = "Cloud:DeviceRole"
         const val MANIFEST_CONTRACT = "Cloud:ManifestContract"
         const val READ_ONLY = "Cloud:ReadOnly"
+
+        /** Revocado sin borrar: hay algo pendiente. Sobrevive a reiniciar sin red: al abrir, `LinkFlow` lo dice sin preguntarle a la nube. */
+        const val REVOKED_REASON = "Cloud:RevokedReason"
+
+        /** Los avisos de empalmes y duplicados de este equipo. No viajan. */
+        const val NOTICES = "Status:Notices"
         const val CLOCK_OFFSET_MS = "Cloud:ClockOffsetMs"
         const val QUOTA_RETRY_AT = "Pause:QuotaRetryAtUtc"
         const val AUTH_FIRST_401 = "Pause:First401Utc"
@@ -836,7 +1256,6 @@ class SyncEngine(
         const val FULL_IN_PROGRESS = "Sync:FullPullInProgress"
         const val SUMMARY_DAY = "Sync:SummaryDay"
 
-        private val ANDROID_ROLES = setOf(DeviceRole.AndroidTablet, DeviceRole.AndroidMobileAdmin)
         private const val NO_GENERATION = "none"
         private const val REJECTED_CODE_PREFIX = "X"
 

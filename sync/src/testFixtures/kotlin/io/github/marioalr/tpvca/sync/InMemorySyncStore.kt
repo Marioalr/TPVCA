@@ -1,6 +1,8 @@
 package io.github.marioalr.tpvca.sync
 
 import io.github.marioalr.tpvca.sync.engine.LocalRow
+import io.github.marioalr.tpvca.sync.engine.OutboxEntry
+import io.github.marioalr.tpvca.sync.engine.SavedChange
 import io.github.marioalr.tpvca.sync.engine.ParkDirection
 import io.github.marioalr.tpvca.sync.engine.ParkedRow
 import io.github.marioalr.tpvca.sync.engine.StoreChanges
@@ -15,7 +17,15 @@ class InMemorySyncStore(private val schema: SyncSchema = SyncContract.bundledSch
     val parked = LinkedHashMap<Triple<ParkDirection, String, String>, ParkedRow>()
     var profile: LocalRow? = null
     val assets = LinkedHashMap<String, ByteArray>()
+
+    /** Para simular algo pendiente sin pasar por la cola. */
     var pending = 0
+    val outboxRows = LinkedHashMap<Pair<String, String>, OutboxEntry>()
+    val savedRows = LinkedHashMap<Triple<String, String, String>, SavedChange>()
+    private var nextSeq = 1L
+    private var nextSavedId = 1L
+    private var depth = 0
+    private val lock = java.util.concurrent.locks.ReentrantLock()
 
     /** Para sembrar una base que ya bajó algo. */
     fun put(table: String, syncId: String, vararg values: Pair<String, Any?>) {
@@ -30,7 +40,48 @@ class InMemorySyncStore(private val schema: SyncSchema = SyncContract.bundledSch
 
     override fun metaByPrefix(prefix: String) = metaValues.filterKeys { it.startsWith(prefix) }
 
-    override fun apply(changes: StoreChanges) {
+    /** Una foto para poder deshacer: copia superficial de cada fila, que son inmutables. */
+    private fun snapshot(): List<Any?> = listOf(
+        LinkedHashMap(metaValues), tables.mapValuesTo(LinkedHashMap()) { LinkedHashMap(it.value) }, LinkedHashMap(tombstones), LinkedHashMap(parked), profile, LinkedHashMap(assets),
+        LinkedHashMap(outboxRows), LinkedHashMap(savedRows), pending,
+    )
+
+    @Suppress("UNCHECKED_CAST")
+    private fun restore(saved: List<Any?>) {
+        metaValues.clear(); metaValues.putAll(saved[0] as Map<String, String>)
+        tables.clear(); tables.putAll(saved[1] as Map<String, LinkedHashMap<String, LocalRow>>)
+        tombstones.clear(); tombstones.putAll(saved[2] as Map<Pair<String, String>, TombstoneRow>)
+        parked.clear(); parked.putAll(saved[3] as Map<Triple<ParkDirection, String, String>, ParkedRow>)
+        profile = saved[4] as LocalRow?
+        assets.clear(); assets.putAll(saved[5] as Map<String, ByteArray>)
+        outboxRows.clear(); outboxRows.putAll(saved[6] as Map<Pair<String, String>, OutboxEntry>)
+        savedRows.clear(); savedRows.putAll(saved[7] as Map<Triple<String, String, String>, SavedChange>)
+        pending = saved[8] as Int
+    }
+
+    /** Una copia completa, para la PC simulada de los escenarios: su respaldo. */
+    fun backup(): List<Any?> = snapshot()
+
+    fun restoreBackup(saved: List<Any?>) = restore(saved)
+
+    override fun <T> transaction(block: () -> T): T {
+        lock.lock()
+        val saved = if (depth == 0) snapshot() else null
+        depth++
+        try {
+            return block()
+        } catch (e: Throwable) {
+            if (saved != null) restore(saved)
+            throw e
+        } finally {
+            depth--
+            lock.unlock()
+        }
+    }
+
+    override fun apply(changes: StoreChanges) = transaction { applyNow(changes) }
+
+    private fun applyNow(changes: StoreChanges) {
         for (write in changes.writes) {
             val rows = rows(write.table)
             rows[write.syncId] = if (write.isNew) write.values else rows.getValue(write.syncId) + write.values
@@ -49,6 +100,13 @@ class InMemorySyncStore(private val schema: SyncSchema = SyncContract.bundledSch
         changes.park.forEach { parked[Triple(it.direction, it.entityType, it.syncId)] = it }
         metaValues.putAll(changes.meta)
         changes.metaRemoved.forEach { metaValues.remove(it) }
+        changes.outboxClearedUpTo?.let { limit -> outboxRows.values.removeAll { it.seq <= limit } }
+        for (mark in changes.outbox) {
+            outboxRows.remove(mark.entityType to mark.syncId)
+            outboxRows[mark.entityType to mark.syncId] = OutboxEntry(nextSeq++, mark.entityType, mark.syncId, SyncContract.CLIENT_PROTOCOL, SyncContract.REVISION, mark.enqueuedAtUtc)
+        }
+        for (change in changes.saved) savedRows[Triple(change.source, change.entityType, change.syncId)] = change.copy(id = nextSavedId++)
+        changes.savedRemoved.toSet().let { ids -> savedRows.values.removeAll { it.id in ids } }
     }
 
     override fun stamps(table: String, syncIds: Collection<String>): Map<String, String> =
@@ -75,11 +133,24 @@ class InMemorySyncStore(private val schema: SyncSchema = SyncContract.bundledSch
     override fun tombstoned(entityType: String, syncIds: Collection<String>) =
         syncIds.filter { (entityType to it) in tombstones }.toSet()
 
-    override fun repairFutureStamps(tables: List<String>, limit: String, stamp: String) {
+    override fun repairFutureStamps(tables: List<String>, limit: String, stamp: String): Int {
+        var repaired = 0
         for (table in tables) {
             val rows = rows(table)
-            for ((id, row) in rows.toMap()) if ((row["UpdatedAtUtc"] as String) > limit) rows[id] = row + ("UpdatedAtUtc" to stamp)
+            for ((id, row) in rows.toMap()) {
+                if ((row["UpdatedAtUtc"] as String) > limit) {
+                    rows[id] = row + ("UpdatedAtUtc" to stamp)
+                    repaired++
+                }
+            }
         }
+        for ((key, tombstone) in tombstones.toMap()) {
+            if (tombstone.deletedAtUtc > limit) {
+                tombstones[key] = tombstone.copy(deletedAtUtc = stamp)
+                repaired++
+            }
+        }
+        return repaired
     }
 
     override fun profileStamp() = profile?.get("UpdatedAtUtc") as String?
@@ -94,9 +165,19 @@ class InMemorySyncStore(private val schema: SyncSchema = SyncContract.bundledSch
         assets[hash] = bytes
     }
 
-    override fun pendingChanges() = pending
+    override fun outbox() = outboxRows.values.sortedBy { it.seq }
+
+    override fun pendingChanges(): Int {
+        val keys = outboxRows.keys + parked.values.filter { it.direction == ParkDirection.PUSH }.map { it.entityType to it.syncId }
+        return pending + keys.size
+    }
+
+    override fun oldestPendingUtc() = outboxRows.values.minOfOrNull { it.enqueuedAtUtc }
+
+    override fun savedChanges() = savedRows.values.sortedBy { it.id }
 
     override fun clearSyncedData(keepMetaPrefixes: List<String>) {
+        check(outboxRows.isEmpty()) { "Hay cambios sin subir: primero se guardan." }
         tables.clear()
         tombstones.clear()
         parked.clear()
@@ -105,6 +186,8 @@ class InMemorySyncStore(private val schema: SyncSchema = SyncContract.bundledSch
     }
 
     override fun wipeEverything() {
+        outboxRows.clear()
+        savedRows.clear()
         tables.clear()
         tombstones.clear()
         parked.clear()

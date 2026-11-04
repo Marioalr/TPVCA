@@ -69,6 +69,10 @@ class PhoneDemoActivity : FragmentActivity() {
         override fun refreshNow() = Unit
         override fun forget() = Unit
         override fun acknowledgeRevocation() = Unit
+
+        override fun exportPending() = Unit
+
+        override fun eraseAfterExport() = Unit
         override fun unlock() = Unit
         override fun openSecuritySettings() = Unit
     }

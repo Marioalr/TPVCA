@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
 import io.github.marioalr.tpvca.data.clinic.ClinicDao
 import io.github.marioalr.tpvca.data.entity.CategoryEntity
@@ -22,7 +24,9 @@ import io.github.marioalr.tpvca.data.entity.ProductEntity
 import io.github.marioalr.tpvca.data.entity.SaleEntity
 import io.github.marioalr.tpvca.data.entity.SaleItemEntity
 import io.github.marioalr.tpvca.data.entity.ServiceDefaultProductEntity
+import io.github.marioalr.tpvca.data.entity.SyncOutboxEntity
 import io.github.marioalr.tpvca.data.entity.SyncParkedRowEntity
+import io.github.marioalr.tpvca.data.entity.SyncSavedChangeEntity
 import io.github.marioalr.tpvca.data.entity.SyncTombstoneEntity
 
 /**
@@ -37,10 +41,10 @@ import io.github.marioalr.tpvca.data.entity.SyncTombstoneEntity
         CategoryEntity::class, ClinicalServiceEntity::class, PatientRecordEntity::class, PatientAppointmentEntity::class,
         PatientConsultationEntity::class, LabResultEntity::class, PediatricDoseRuleEntity::class, PrescriptionTemplateEntity::class,
         ProductEntity::class, ProductBatchEntity::class, SaleEntity::class, SaleItemEntity::class, InventoryMovementEntity::class,
-        ServiceDefaultProductEntity::class, SyncTombstoneEntity::class, ClinicProfileEntity::class, DbMetaEntity::class, SyncParkedRowEntity::class,
+        ServiceDefaultProductEntity::class, SyncTombstoneEntity::class, ClinicProfileEntity::class, DbMetaEntity::class, SyncParkedRowEntity::class, SyncOutboxEntity::class, SyncSavedChangeEntity::class,
     ],
-    version = 1,
-    // Hasta que exista una versión publicada no hay migraciones que comparar
+    version = 2,
+    // Las migraciones van escritas a mano y las prueba `DatabaseMigrationTest` con una base de la versión anterior
     exportSchema = false,
 )
 abstract class TpvcaDatabase : RoomDatabase() {
@@ -49,6 +53,22 @@ abstract class TpvcaDatabase : RoomDatabase() {
 
     companion object {
         fun open(context: Context, name: String, helperFactory: SupportSQLiteOpenHelper.Factory): TpvcaDatabase =
-            Room.databaseBuilder(context.applicationContext, TpvcaDatabase::class.java, name).openHelperFactory(helperFactory).build()
+            Room.databaseBuilder(context.applicationContext, TpvcaDatabase::class.java, name).openHelperFactory(helperFactory).addMigrations(MIGRATION_1_2).build()
+
+        /** K5: la cola de salida y lo guardado para «Volver a aplicar». Solo agrega: los datos que ya bajaron no se tocan ni se bajan otra vez. */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `SyncOutbox` (`Seq` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `EntityType` TEXT NOT NULL, `SyncId` TEXT NOT NULL, " +
+                        "`Protocol` INTEGER NOT NULL, `Contract` INTEGER NOT NULL, `EnqueuedAtUtc` TEXT NOT NULL)",
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_SyncOutbox_EntityType_SyncId` ON `SyncOutbox` (`EntityType`, `SyncId`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `SyncSavedChanges` (`Id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `Source` TEXT NOT NULL, `Generation` TEXT, `EntityType` TEXT NOT NULL, " +
+                        "`SyncId` TEXT NOT NULL, `Kind` TEXT NOT NULL, `Payload` TEXT NOT NULL, `Protocol` INTEGER NOT NULL, `Contract` INTEGER NOT NULL, `SavedAtUtc` TEXT NOT NULL)",
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_SyncSavedChanges_Source_EntityType_SyncId` ON `SyncSavedChanges` (`Source`, `EntityType`, `SyncId`)")
+            }
+        }
     }
 }

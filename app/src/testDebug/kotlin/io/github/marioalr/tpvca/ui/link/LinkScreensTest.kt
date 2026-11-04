@@ -75,6 +75,14 @@ class LinkScreensTest {
             calls += "forget"
         }
 
+        override fun exportPending() {
+            calls += "exportar"
+        }
+
+        override fun eraseAfterExport() {
+            calls += "borrar-exportado"
+        }
+
         override fun acknowledgeRevocation() {
             calls += "acknowledge"
         }
@@ -105,6 +113,21 @@ class LinkScreensTest {
 
     private fun form(problem: LinkProblem? = null, secure: Boolean = true) = screen {
         LinkFormScreen(problem, secure, DeviceRole.AndroidMobileAdmin, actions, {}, {})
+    }
+
+    @Test
+    fun revocadoConPendientesExportaYSoloDespuesBorraConConfirmacion() {
+        var state by mutableStateOf(LinkState.Revoked("quitado", erased = false, pending = 2))
+        compose.setContent { AppRoot(state, Gate.Open, true, "0.1.0", 21, HomeLayout.Narrow, actions, noCamera) }
+        compose.onNodeWithTag(LinkTags.ERASE_AFTER_EXPORT).assertDoesNotExist()
+        compose.onNodeWithTag(LinkTags.EXPORT_PENDING).performClick()
+        assertEquals(listOf("exportar"), actions.calls)
+        state = LinkState.Revoked("quitado", erased = false, pending = 2, exported = true)
+        compose.waitForIdle()
+        compose.onNodeWithTag(LinkTags.ERASE_AFTER_EXPORT).performClick()
+        assertEquals("Todavía no borra", listOf("exportar"), actions.calls)
+        compose.onNodeWithTag(LinkTags.ERASE_CONFIRM).performClick()
+        assertEquals(listOf("exportar", "borrar-exportado"), actions.calls)
     }
 
     @Test

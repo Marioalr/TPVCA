@@ -23,7 +23,7 @@ sealed interface LinkProblem {
     /** No se pudo comprobar de quién es esa nube ([message]): no se guardó nada. */
     data class CloudUnverified(val message: String) : LinkProblem
 
-    /** La credencial ya no se puede abrir (el Keystore perdió la llave): se borró todo y hay que vincular otra vez. */
+    /** La credencial ya no se puede abrir (el Keystore perdió la llave) y no había nada sin subir: se borró todo y hay que vincular otra vez. */
     data object CredentialLost : LinkProblem
 }
 
@@ -79,8 +79,14 @@ sealed interface LinkState {
     data object LocalError : LinkState
 
     /**
-     * La PC lo quitó, lo marcó como perdido o lo rechazó. [erased]: ya se borraron la base, la credencial y los borradores. Sin borrar solo
-     * si es `quitado` con [pending] cambios sin subir: los sube K5, antes de borrarse.
+     * La PC lo quitó, lo marcó como perdido o lo rechazó. [erased]: ya se borraron la base, la credencial y los borradores. Sin borrar solo si hay [pending] cambios sin subir (nunca en un equipo
+     * perdido): `quitado` los intenta subir y se borra al terminar; si no puede, se exportan a un archivo. [exported]: ya se exportaron y se puede borrar con confirmación.
      */
-    data class Revoked(val reason: String?, val erased: Boolean, val pending: Int = 0) : LinkState
+    data class Revoked(val reason: String?, val erased: Boolean, val pending: Int = 0, val exported: Boolean = false) : LinkState
+
+    /**
+     * La credencial ya no se puede abrir (el Keystore perdió la llave) y hay [pending] cambios sin subir: sin `DeviceId` ni token no hay forma de subirlos. **No se borra nada** hasta exportarlos
+     * ([exported]) y confirmarlo.
+     */
+    data class CredentialLost(val pending: Int, val exported: Boolean = false) : LinkState
 }

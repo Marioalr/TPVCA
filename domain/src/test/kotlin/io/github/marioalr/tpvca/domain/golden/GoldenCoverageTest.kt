@@ -37,6 +37,7 @@ class GoldenCoverageTest {
         "allergy-check.json" to "patients.PatientsGoldenTest",
         "agenda.json" to "patients.PatientsGoldenTest",
         "appointment-overlap.json" to "patients.PatientsGoldenTest",
+        "duplicate-patients.json" to "patients.PatientsGoldenTest",
         "prescription-sheet.json" to "documents.DocumentsGoldenTest",
         "prescription-html-fields.json" to "documents.DocumentsGoldenTest",
         "ticket-text.json" to "documents.DocumentsGoldenTest",
@@ -49,23 +50,21 @@ class GoldenCoverageTest {
         "lww.json" to "SyncRulesGoldenTest",
         "link-qr.json" to "LinkCodeGoldenTest",
         "lab-files.json" to "LabFilesGoldenTest",
+        "uuid5.json" to "WriteRulesGoldenTest",
+        "canonical-json.json" to "WriteRulesGoldenTest",
+        "field-stamps.json" to "WriteRulesGoldenTest",
+        "patient-merge.json" to "WriteRulesGoldenTest",
+        "folios.json" to "WriteRulesGoldenTest",
     )
 
     /** Portados en parte: archivo → los tipos de caso que faltan y su paso (la prueba del archivo los salta por nombre). */
     private val partial = mapOf(
         "patient-identity.json" to "K6 (alta y edición: parse-name, compose-name, birth-date, email, validate)",
-        "lww.json" to "K5 (server-upsert y server-tombstone: corren el SQL de la subida en SQLite)",
         "lab-files.json" to "K7 (subir y lo de la PC principal: el celular solo baja)",
     )
 
     /** Los vectores pendientes: archivo → el paso que los porta. */
     private val pending = mapOf(
-        "uuid5.json" to "K5",
-        "canonical-json.json" to "K5",
-        "field-stamps.json" to "K5",
-        "patient-merge.json" to "K5",
-        "duplicate-patients.json" to "K5",
-        "folios.json" to "K5",
         "date-mask.json" to "K6",
         "cie10-catalog.json" to "K7",
         "cie10-search.json" to "K7",

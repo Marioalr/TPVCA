@@ -45,7 +45,7 @@ Pila: Jetpack Compose con Material 3, Room + SQLCipher, OkHttp, kotlinx.serializ
 | **K3** | Vinculación y seguridad: pegar o escanear la URL y el token, aprobación de la PC, Keystore, SQLCipher, bloqueo y revocación ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)) | ✅ Hecho |
 | **K4** | Celular: negocio, inventario, pacientes y agenda de solo lectura, compartir receta y ticket, con el diseño aprobado ([`docs/diseno-celular/`](docs/diseno-celular/)). **Primera versión del celular** | ✅ Hecho |
 | K4b | Celular: agendar con aviso de empalme y registrar entradas de mercancía | Pendiente |
-| K5 | Motor de escritura: cola de salida, LWW, cerca de generación, combinación de pacientes, movimientos, folios y WorkManager | Pendiente |
+| **K5** | Motor de escritura: cola de salida, LWW, cerca de generación, combinación de pacientes, movimientos, folios y WorkManager | Hecho: ninguna pantalla escribe todavía ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)) |
 | K6 | Inicio, ficha, agenda, alta y edición de pacientes | Pendiente |
 | K7 | Consulta completa: receta, insumos, servicios, cuenta, terminar y cobrar, también sin conexión | Pendiente |
 | K8 | Consulta entre equipos. **Con K5–K8, primera versión de la tablet** | Pendiente |

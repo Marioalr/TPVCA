@@ -92,6 +92,18 @@
         <item quantity="other">Tiene %1$d cambios sin subir: se conservan hasta subirlos y después se borra todo.</item>
     </plurals>
     <string name="revoked_ok">Entendido</string>
+    <string name="pending_export">Exportar a un archivo</string>
+    <string name="pending_erase">Borrar este equipo</string>
+    <string name="pending_erase_title">¿Borrar este equipo?</string>
+    <string name="pending_erase_body">Se borran su base, su credencial y sus borradores. Los cambios sin subir solo quedan en el archivo que exportó: guárdelo e impórtelo en la PC.</string>
+    <string name="pending_erase_confirm">Borrar</string>
+    <string name="pending_erase_keep">No borrar</string>
+    <string name="credential_lost_title">Este equipo ya no puede abrir su credencial</string>
+    <plurals name="credential_lost_body">
+        <item quantity="one">Hay 1 cambio sin subir y sin la credencial no se puede subir. Expórtelo a un archivo e impórtelo en la PC antes de borrar. Después se vuelve a vincular.</item>
+        <item quantity="many">Hay %1$d cambios sin subir y sin la credencial no se pueden subir. Expórtelos a un archivo e impórtelos en la PC antes de borrar. Después se vuelve a vincular.</item>
+        <item quantity="other">Hay %1$d cambios sin subir y sin la credencial no se pueden subir. Expórtelos a un archivo e impórtelos en la PC antes de borrar. Después se vuelve a vincular.</item>
+    </plurals>
 
     <string name="locked_title">TPVC está bloqueada</string>
     <string name="locked_body">Use su huella o el bloqueo de pantalla de este equipo para entrar.</string>

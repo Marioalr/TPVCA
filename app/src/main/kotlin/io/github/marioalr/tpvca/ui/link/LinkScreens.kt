@@ -36,6 +36,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,6 +74,9 @@ object LinkTags {
     const val TOKEN_SCREEN = "token-screen"
     const val TOKEN_SUBMIT = "token-submit"
     const val REVOKED_OK = "revoked-ok"
+    const val EXPORT_PENDING = "exportar-pendiente"
+    const val ERASE_AFTER_EXPORT = "borrar-exportado"
+    const val ERASE_CONFIRM = "borrar-confirmar"
     const val UNLOCK = "locked-unlock"
     const val SCAN_SCREEN = "scan-screen"
     const val SETTINGS = "open-settings"
@@ -99,6 +103,12 @@ interface LinkActions {
     fun forget()
 
     fun acknowledgeRevocation()
+
+    /** Escribir lo que no se pudo subir a un archivo y compartirlo. */
+    fun exportPending()
+
+    /** Ya exportado y con confirmación: lo único que borra con algo sin subir. */
+    fun eraseAfterExport()
 
     fun unlock()
 
@@ -499,7 +509,44 @@ fun RevokedScreen(state: LinkState.Revoked, actions: LinkActions) {
             Button(onClick = actions::acknowledgeRevocation, Modifier.heightIn(min = 48.dp).testTag(LinkTags.REVOKED_OK)) {
                 Text(stringResource(R.string.revoked_ok))
             }
+        } else {
+            PendingActions(state.exported, actions)
         }
+    }
+}
+
+/** Exportar lo que no se pudo subir y, ya exportado, borrar con confirmación. */
+@Composable
+private fun PendingActions(exported: Boolean, actions: LinkActions) {
+    var confirming by rememberSaveable { mutableStateOf(false) }
+    Button(onClick = actions::exportPending, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(LinkTags.EXPORT_PENDING)) {
+        Text(stringResource(R.string.pending_export))
+    }
+    if (exported) {
+        TextButton(onClick = { confirming = true }, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(LinkTags.ERASE_AFTER_EXPORT)) {
+            Text(stringResource(R.string.pending_erase))
+        }
+    }
+    if (confirming) {
+        AlertDialog(
+            onDismissRequest = { confirming = false },
+            title = { Text(stringResource(R.string.pending_erase_title)) },
+            text = { Text(stringResource(R.string.pending_erase_body)) },
+            confirmButton = {
+                TextButton(onClick = actions::eraseAfterExport, Modifier.testTag(LinkTags.ERASE_CONFIRM)) { Text(stringResource(R.string.pending_erase_confirm)) }
+            },
+            dismissButton = { TextButton(onClick = { confirming = false }) { Text(stringResource(R.string.pending_erase_keep)) } },
+        )
+    }
+}
+
+/** La credencial no se puede abrir y hay algo sin subir: sin `DeviceId` ni token no se puede subir. */
+@Composable
+fun CredentialLostScreen(state: LinkState.CredentialLost, actions: LinkActions) {
+    LinkPage {
+        Title(stringResource(R.string.credential_lost_title))
+        Warning(pluralStringResource(R.plurals.credential_lost_body, state.pending, state.pending))
+        PendingActions(state.exported, actions)
     }
 }
 

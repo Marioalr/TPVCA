@@ -115,6 +115,12 @@ interface LinkNotices {
 
 data class Revocation(val reason: String?)
 
+/** Dónde queda el último número de cada serie con letra: fuera de la base. */
+interface FolioNumbers : io.github.marioalr.tpvca.sync.engine.FolioLedger {
+    /** Al quitar el equipo: el `DeviceId` nuevo trae otro código, así que no se puede repetir un folio. */
+    fun clear()
+}
+
 /** Si el equipo tiene bloqueo de pantalla seguro (`KeyguardManager.isDeviceSecure`). */
 fun interface DeviceLock {
     fun isSecure(): Boolean

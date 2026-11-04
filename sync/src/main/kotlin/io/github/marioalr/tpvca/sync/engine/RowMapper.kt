@@ -44,6 +44,20 @@ object RowMapper {
         .filter { it.derived != true && it.name in row }
         .associate { it.name to localValue(it, row[it.name]) }
 
+    /** De la forma local a como viaja: `ToRemoteValue` de la PC. */
+    fun remoteValue(value: Any?): HranaValue = when (value) {
+        null -> HranaValue.Null
+        is Long -> HranaValue.Integer(value)
+        is Int -> HranaValue.Integer(value.toLong())
+        is Double -> HranaValue.Float(value)
+        is ByteArray -> HranaValue.Blob(value)
+        else -> HranaValue.Text(value.toString())
+    }
+
+    /** Toda la fila como viaja. */
+    fun remoteRow(table: SyncTable, row: LocalRow): Row =
+        java.util.TreeMap<String, HranaValue>(String.CASE_INSENSITIVE_ORDER).apply { table.columns.forEach { put(it.name, remoteValue(row[it.name])) } }
+
     private fun fromRemote(value: RemoteValue): Any? = when (value.type) {
         "integer" -> value.value?.toLong()
         "float" -> value.value?.toDouble()

@@ -16,7 +16,7 @@ import java.util.UUID
  *   de lectura para ese archivo: ningún dato en sus extras. **No se puede borrar al irse a la otra app**, que lo lee después; se borra a los 15 min, al volver a la app o al abrirla
  *   ([purgeOld]). Con la app cerrada no corre nada, así que el último compartido puede quedar en la caché hasta entonces. Al revocar se borra todo ([DeviceFiles]).
  */
-class SharedDocuments(context: Context, val gate: DataGate = DataGate(), private val now: () -> Long = System::currentTimeMillis) {
+class SharedDocuments(context: Context, val gate: DataGate = DataGate(), private val onShared: () -> Unit = {}, private val now: () -> Long = System::currentTimeMillis) {
     private val app = context.applicationContext
     val folder: File = File(app.cacheDir, FOLDER)
     val viewFolder: File = File(app.cacheDir, VIEW_FOLDER)
@@ -26,7 +26,10 @@ class SharedDocuments(context: Context, val gate: DataGate = DataGate(), private
 
     fun write(ticket: Long, fileName: String, write: (File) -> Unit): File {
         purgeOld()
-        return writeIn(folder, ticket, fileName, write)
+        val file = writeIn(folder, ticket, fileName, write)
+        // Se borra a su tiempo aunque la app ya no se vuelva a abrir
+        onShared()
+        return file
     }
 
     fun writeView(ticket: Long, fileName: String, write: (File) -> Unit): File = writeIn(viewFolder, ticket, fileName, write)

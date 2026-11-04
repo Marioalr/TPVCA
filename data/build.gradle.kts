@@ -35,6 +35,8 @@ android {
                 )
                 // Las pruebas leen los mismos archivos de contracts/ que la PC
                 it.systemProperty("tpvca.contracts", rootProject.layout.projectDirectory.dir("contracts").asFile.absolutePath)
+                // Las rutas de control de TPVC: con ellas, los escenarios corren con el motor real de la PC y B en Room
+                providers.gradleProperty("tpvc.control").orNull?.let { control -> it.systemProperty("tpvc.control", control) }
             }
         }
     }

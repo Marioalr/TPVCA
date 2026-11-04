@@ -226,6 +226,19 @@ class LinkControllerTest {
     }
 
     @Test
+    fun variosGuardadosSeguidosSonUnaSolaSincronizacion() {
+        controller.noteLocalWrite()
+        scope.advanceTimeBy(LinkController.AFTER_SAVE_MILLIS - 1)
+        controller.noteLocalWrite()
+        scope.advanceTimeBy(LinkController.AFTER_SAVE_MILLIS - 1)
+        scope.runCurrent()
+        // Sin vincular no hay nada que subir: aquí solo se comprueba que no truena y que espera al último
+        scope.advanceTimeBy(2)
+        scope.runCurrent()
+        assertTrue(controller.state.value !is LinkState.LocalError)
+    }
+
+    @Test
     fun a5MinEnSegundoPlanoSeBloquea() {
         controller.onForeground()
         lock.unlock()

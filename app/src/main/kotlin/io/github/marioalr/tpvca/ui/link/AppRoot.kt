@@ -60,6 +60,7 @@ fun AppRoot(
             is LinkState.WrongRole -> Light { WrongRoleScreen(actions) }
             is LinkState.CloudProblem -> Light { CloudProblemScreen(state, actions) }
             is LinkState.Revoked -> Light { RevokedScreen(state, actions) }
+            is LinkState.CredentialLost -> Light { CredentialLostScreen(state, actions) }
             LinkState.LocalError -> Light { LocalErrorScreen(actions) }
         }
     }

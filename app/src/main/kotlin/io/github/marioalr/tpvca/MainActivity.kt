@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import io.github.marioalr.tpvca.domain.devices.DeviceRole
 import io.github.marioalr.tpvca.link.LinkController
 import io.github.marioalr.tpvca.link.gateFor
@@ -24,6 +25,9 @@ import io.github.marioalr.tpvca.ui.link.CameraQrReader
 import io.github.marioalr.tpvca.ui.link.LinkActions
 import io.github.marioalr.tpvca.ui.phone.PhoneApp
 import io.github.marioalr.tpvca.ui.phone.PhoneStatus
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** `FragmentActivity` porque `BiometricPrompt` lo pide. */
 class MainActivity : FragmentActivity() {
@@ -103,8 +107,23 @@ class MainActivity : FragmentActivity() {
 
         override fun acknowledgeRevocation() = controller.acknowledgeRevocation()
 
+        override fun exportPending() {
+            val graph = (application as TpvcaApplication).graph
+            lifecycleScope.launch {
+                // Fuera del hilo principal: lee la base y escribe el archivo. Si falla, la pantalla sigue ahí y nada se borró
+                val file = withContext(Dispatchers.IO) { runCatching { graph.exportPendingFile() }.getOrNull() } ?: return@launch
+                startActivity(Intent.createChooser(graph.phone.documents.shareIntent(file, EXPORT_MIME), null))
+            }
+        }
+
+        override fun eraseAfterExport() = controller.eraseAfterExport()
+
         override fun unlock() = showUnlockPrompt()
 
         override fun openSecuritySettings() = startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
+    }
+
+    private companion object {
+        const val EXPORT_MIME = "application/octet-stream"
     }
 }

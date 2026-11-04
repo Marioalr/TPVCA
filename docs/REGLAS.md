@@ -66,7 +66,7 @@ Paquetes: `io.github.marioalr.tpvca.domain` + `search`, `business`, `patients`, 
 |---|---|---|---|
 | `values.json` | `ValueCodec.encode`, `decode`; `HranaValue.fromJson` | 50/50 | ✅ |
 | `stamping.json` | `SyncRules.nextLocalStamp` | 8/8 | ✅ |
-| `lww.json` | `SyncRules.remoteRowWins`, `remoteTombstoneDeletes`, `afterRejectedUpsert`, `serverRowAppliesAfterReject` (17 casos). Los 16 de `server-upsert` y `server-tombstone` corren el SQL de la subida en SQLite: **K5** | 17/33 | 🟡 Lo de la bajada |
+| `lww.json` | `SyncRules.remoteRowWins`, `remoteTombstoneDeletes`, `afterRejectedUpsert`, `serverRowAppliesAfterReject` (17 casos) y, desde K5, los 16 de `server-upsert` y `server-tombstone`: `Statements.upsertSql`, `TOMBSTONE_UPSERT` y `deleteTombstonedSql` ejecutados de verdad en SQLite (`SqlCloud`). `SyncRulesGoldenTest`. |
 
 Pruebas: `ValuesGoldenTest` y `SyncRulesGoldenTest`. Cómo se usan al bajar: [`SINCRONIZACION.md`](SINCRONIZACION.md).
 
@@ -94,12 +94,12 @@ Prueba: `LabFilesGoldenTest`. Lo demás de K4 no trae vector nuevo: arma lo port
 
 | Vector | Paso | Qué es |
 |---|---|---|
-| `uuid5.json` | K5 | SyncId deterministas (UUIDv5) |
-| `canonical-json.json` | K5 | Forma canónica de los JSON sincronizados |
-| `field-stamps.json` | K5 | Marcas por campo del expediente |
-| `patient-merge.json` | K5 | Combinación de dos versiones de un expediente |
-| `duplicate-patients.json` | K5 | Aviso de posibles expedientes duplicados después de bajar |
-| `folios.json` | K5 | Folios con y sin conexión (toma un número de la nube: es escritura) |
+| `uuid5.json` | K5, hecho | `rules/SyncIds`: UUIDv5, los SyncId deterministas de devoluciones y cierres. `WriteRulesGoldenTest`. |
+| `canonical-json.json` | K5, hecho | `rules/CanonicalJson` y `rules/PatientSheets`: la forma canónica. `WriteRulesGoldenTest`. |
+| `field-stamps.json` | K5, hecho | `rules/PatientFieldStamps`: las marcas por campo. `WriteRulesGoldenTest`. |
+| `patient-merge.json` | K5, hecho | `rules/PatientMerge`: la combinación por campo y por renglón. `WriteRulesGoldenTest`. |
+| `duplicate-patients.json` | K5, hecho | `DuplicatePatientRules`: el aviso de posibles duplicados después de bajar (`SyncNotices`). `PatientsGoldenTest`. |
+| `folios.json` | K5, hecho | `rules/FolioFactory`: los folios con y sin conexión. `WriteRulesGoldenTest`. |
 | `date-mask.json` | K6 | El campo de fecha dd/mm/aaaa |
 | `cie10-catalog.json` | K7 | El catálogo CIE-10 |
 | `cie10-search.json` | K7 | La búsqueda del diagnóstico |

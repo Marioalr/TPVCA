@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 20,
+  "contract": 21,
   "notes": [
     "Services/Rules/PatientSearchRules.cs (antes PatientsHomeViewModel.RankPatients): el buscador del inicio. 'expected' son los recordNumber de los resultados en orden.",
     "Con la consulta q normalizada (text-search.json; vacía = ninguna fila) y el nombre normalizado: grupo 0 si el nombre empieza con q, 1 si una palabra del nombre empieza con q (' ' + nombre contiene ' ' + q), 2 si el nombre contiene q o la unión 'RecordNumber OriginalFolio LastDiagnosis' normalizada lo contiene, 2 también si q tiene 4 dígitos o más y los dígitos del teléfono contienen los dígitos de q (todos juntos, aunque q tenga letras); si no, fuera.",

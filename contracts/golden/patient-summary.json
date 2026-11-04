@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": "2026-10-11",
   "now": "2026-10-12T05:30:00.0000000+00:00",
-  "contract": 20,
+  "contract": 21,
   "notes": [
     "El resumen derivado del expediente (Services/Rules/PatientSummaryRules, paso 8.22): NextAppointmentDate, NextAppointmentTime, NextAppointmentReason, NextAppointmentNotes y LastVisit son columnas derivadas. Cada equipo las calcula después de cada guardado y de cada bajada (y la PC, completo al abrir), suben como información y nunca se aplican al bajar, salvo al crear la fila. Agendar ya no escribe el expediente.",
     "next-appointment: de las citas del expediente que no están 'Cancelada' ni 'Atendida' y caen 'today' (el día del consultorio) o después, la primera por fecha, luego por hora ('time', abajo) y luego por SyncId en minúsculas (orden ordinal). La fecha va sin hora (dateOnly) y la hora, el motivo y las notas tal como están en la cita. Sin ninguna: fecha nula y textos ''. 'today' es el día de VectorNow en cada zona: 11/10 en la Ciudad de México, 12/10 en UTC.",

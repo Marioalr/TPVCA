@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 20,
+  "contract": 21,
   "notes": [
     "Citas empalmadas (Services/Rules/AppointmentRules, paso 8.23, H2). Dos citas (PatientAppointments) se empalman si: no son la misma (SyncId; uno vacío es una cita nueva sin guardar), ninguna tiene Status 'Cancelada' (exacto; 'Atendida' sí cuenta), tienen la misma Date (solo la fecha, dateOnly) y sus horarios [inicio, fin) se cruzan: inicioA < finB y inicioB < finA. Tocarse no es empalme.",
     "interval: en segundos desde la medianoche de su Date. El inicio es la hora de Time leída con la regla de patient-summary.json ('time': H:mm o HH:mm, :ss opcional, AM/PM opcional; lo que no se lee, las 10:00); 'minutes' es DurationMinutes, o 30 si es 0 o negativa (la agenda la dibuja igual); el fin, inicio + minutes. El fin puede pasar de 86400 (la medianoche) y sigue contando solo en su mismo día: no se compara con las citas del día siguiente.",

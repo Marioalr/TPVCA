@@ -38,7 +38,7 @@ class SyncContractTest {
 
     @Test
     fun cadaTablaTieneLaLlaveSyncId() {
-        assertEquals("Las 14 tablas sincronizadas de la revisión 20", 14, schema.tables.size)
+        assertEquals("Las 14 tablas sincronizadas", 14, schema.tables.size)
         for (table in schema.tables) {
             val key = table.column(SyncContract.PRIMARY_KEY)
             assertNotNull("${table.table} no tiene SyncId", key)

@@ -7,7 +7,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /** La revisión del contrato de la que salieron estas entidades. */
-const val ENTITIES_CONTRACT_REVISION: Int = 20
+const val ENTITIES_CONTRACT_REVISION: Int = 21
 
 @Entity(tableName = "Categories", indices = [])
 data class CategoryEntity(

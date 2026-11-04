@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 20,
+  "contract": 21,
   "notes": [
     "Services/TextSearch.cs. normalize: quita los espacios de los lados, descompone en NFD, quita las marcas que no ocupan espacio (categoría Unicode Mn: acentos, diéresis y la tilde de la ñ, así que ñ queda n), pasa cada carácter a minúscula invariante y recompone en NFC. Sin texto (nulo, vacío o solo espacios) da ''. En Kotlin: java.text.Normalizer NFD, quitar \\p{Mn}, lowercase(Locale.ROOT), NFC.",
     "matches: 'query' se normaliza primero (la PC lo hace antes de llamar); true si la consulta normalizada está vacía o si algún campo no vacío, normalizado, la contiene (comparación ordinal). Un campo nulo no coincide.",

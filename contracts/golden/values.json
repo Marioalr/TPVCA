@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 20,
+  "contract": 21,
   "notes": [
     "encode: el valor (en 'value', como texto invariante; un BLOB en hexadecimal; null = nulo) se manda a Turso como el argumento Hrana de 'expected'. Un entero, booleano o enum como número JSON hace que Turso rechace la petición con HTTP 400.",
     "decode: el valor Hrana de una fila se guarda en una columna de 'clrType' (con '?' acepta nulo); 'expected' es su forma canónica: entero en base 10, booleano true/false, decimal con su escala, fecha yyyy-MM-dd HH:mm:ss.fffffff, GUID en minúsculas, enum por su nombre, BLOB en hexadecimal en minúsculas ('' = BLOB vacío), null = nulo.",

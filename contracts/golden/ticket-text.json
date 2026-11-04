@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 20,
+  "contract": 21,
   "notes": [
     "Services/Documents/TicketText.cs: el ticket en 42 columnas, renglón por renglón; lo mismo que imprime la PC en la impresora térmica (sus textos salen de aquí).",
     "Cabecera centrada (relleno a la izquierda de (42 − largo) / 2 espacios, sin relleno a la derecha): el consultorio en mayúsculas ('CONSULTORIO MÉDICO TPVC' si no hay), el médico ('Dr. Titular' si no hay) con ' • Céd. ' y la cédula, domicilio y 'Tel: ' + teléfono si los hay. Un renglón largo se parte por palabras a 42; una palabra más larga se corta.",

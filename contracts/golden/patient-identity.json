@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 20,
+  "contract": 21,
   "notes": [
     "La identidad del paciente (Services/Rules/PatientFormRules.cs y Models/PatientRecord.cs). 'today' es el día del consultorio (fechas yyyy-MM-dd).",
     "parse-name (ParseFullName): sin espacios a los lados; con coma y algo a cada lado: lo de después es el nombre y de lo de antes la primera palabra es el paterno y el resto el materno. Si no (también ',Juan', que sin las partes vacías tiene una sola): por palabras separadas por espacios, 1 = nombre, 2 = nombre y paterno, 3 = nombre, paterno y materno, más = las dos últimas son los apellidos y lo demás el nombre. compose-name: 'Nombre Paterno Materno' con cada parte sin espacios a los lados, sin el materno si está vacío.",

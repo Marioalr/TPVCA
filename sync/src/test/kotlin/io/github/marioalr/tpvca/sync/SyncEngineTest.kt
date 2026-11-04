@@ -1,6 +1,5 @@
 package io.github.marioalr.tpvca.sync
 
-import io.github.marioalr.tpvca.domain.devices.DeviceRole
 import io.github.marioalr.tpvca.sync.engine.ConsumptionBrake
 import io.github.marioalr.tpvca.sync.engine.ManifestDiff
 import io.github.marioalr.tpvca.sync.engine.ParkDirection
@@ -142,37 +141,6 @@ class SyncEngineTest {
         assertEquals(SyncOutcome.WrongRole("WindowsDesktop"), engine().sync())
         assertEquals(setOf("c"), store.rows("Categories").keys)
         assertEquals(cursor, store.meta(SyncEngine.CURSOR_PREFIX + "Categories"))
-    }
-
-    @Test
-    fun unaFilaDeTabletEnUnCelularNoBajaNiBorra() {
-        val phone = config.copy(expectedRole = DeviceRole.AndroidMobileAdmin)
-        role("AndroidTablet")
-        val outcome = engine(phone).sync(SyncTrigger.USER)
-        assertEquals(SyncOutcome.WrongRole("AndroidTablet", DeviceRole.AndroidMobileAdmin), outcome)
-        assertEquals("Se detiene en su fila", 2, cloud.requests.size)
-        assertNull(store.meta(SyncEngine.FIRST_DOWNLOAD_DONE))
-        assertEquals(0, ConsumptionBrake(store, clock).fullPullsToday)
-    }
-
-    @Test
-    fun unaFilaDeCelularEnUnaTabletNoBajaNiBorra() {
-        firstSyncDone()
-        store.put("Categories", "c", "UpdatedAtUtc" to stamp(1))
-        val cursor = store.meta(SyncEngine.CURSOR_PREFIX + "Categories")
-        cloud.add("Categories", "nueva", stamp(2), later)
-        role("AndroidMobileAdmin")
-        val tablet = config.copy(expectedRole = DeviceRole.AndroidTablet)
-        assertEquals(SyncOutcome.WrongRole("AndroidMobileAdmin", DeviceRole.AndroidTablet), engine(tablet).sync())
-        assertEquals(setOf("c"), store.rows("Categories").keys)
-        assertEquals(cursor, store.meta(SyncEngine.CURSOR_PREFIX + "Categories"))
-    }
-
-    @Test
-    fun elRolQueEligioSigueBajando() {
-        role("AndroidTablet")
-        completed(engine(config.copy(expectedRole = DeviceRole.AndroidTablet)).sync(SyncTrigger.USER))
-        assertEquals("AndroidTablet", store.meta(SyncEngine.DEVICE_ROLE))
     }
 
     @Test

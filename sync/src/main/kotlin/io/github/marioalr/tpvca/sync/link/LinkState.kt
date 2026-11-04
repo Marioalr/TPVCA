@@ -34,7 +34,7 @@ sealed interface LinkState {
     /** La PC lo aprobó y va la primera descarga. */
     data class Downloading(val role: DeviceRole, val clinicName: String) : LinkState
 
-    /** Vinculado. [notice]: lo último que hay que avisar (sin red, cuota, solo lectura); los datos siguen aquí. */
+    /** Vinculado. [role] es el de su fila de `DeviceRegistry`, aunque haya pedido el otro. [notice]: lo último que hay que avisar (sin red, cuota, solo lectura); los datos siguen aquí. */
     data class Linked(val role: DeviceRole, val code: String?, val clinicName: String, val notice: String? = null) : LinkState
 
     /**
@@ -44,8 +44,8 @@ sealed interface LinkState {
      */
     data class NeedsToken(val malformed: Boolean, val erased: Boolean, val pending: Int, val problem: LinkProblem? = null) : LinkState
 
-    /** La fila dice otro rol. No se bajó ni se borró nada: lo corrige la PC. */
-    data class WrongRole(val registered: String?, val requested: DeviceRole) : LinkState
+    /** La fila dice un rol que no es de un equipo Android (una PC, o uno que esta versión no conoce). No se bajó ni se borró nada: lo corrige la PC. */
+    data class WrongRole(val registered: String?) : LinkState
 
     /** La nube no se puede usar todavía u otra vez (sin esquema, sin verificar, otra versión, otro consultorio). No se bajó nada. */
     data class CloudProblem(val message: String) : LinkState

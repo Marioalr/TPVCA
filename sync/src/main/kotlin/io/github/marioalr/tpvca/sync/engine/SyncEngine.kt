@@ -27,11 +27,6 @@ data class SyncEngineConfig(
     val deviceId: String,
     /** El `clinicId` de la credencial (K3). Sin él, se adopta el de la nube la primera vez. */
     val expectedClinicId: String? = null,
-    /**
-     * El rol que eligió este equipo al vincularse: una fila con el otro rol de Android también se detiene en `WrongRole`. Sin él (la
-     * pantalla de desarrollo) basta con que sea un rol de Android.
-     */
-    val expectedRole: DeviceRole? = null,
     /** Para las pruebas: un mismo tamaño de página en todas las tablas. */
     val pageSizeOverride: Int? = null,
 )
@@ -186,11 +181,10 @@ class SyncEngine(
             if (!mustKeep) store.wipeEverything()
             throw Stop(SyncOutcome.Revoked(reason, wiped = !mustKeep))
         }
-        // §7.3: el rol sale de su fila, como el nombre del enum de la PC
+        // §7.3: el rol sale de su fila, como el nombre del enum de la PC. Es la autoridad: la PC puede aprobar con el rol que no se pidió
         val roleName = row.text("Role")
         val role = DeviceRole.fromName(roleName)
-        if (role !in ANDROID_ROLES) throw Stop(SyncOutcome.WrongRole(roleName, config.expectedRole))
-        if (config.expectedRole != null && role != config.expectedRole) throw Stop(SyncOutcome.WrongRole(roleName, config.expectedRole))
+        if (role !in ANDROID_ROLES) throw Stop(SyncOutcome.WrongRole(roleName))
         store.apply(StoreChanges(meta = buildMap {
             put(DEVICE_ROLE, role!!.name)
             if (code != null) put(DEVICE_CODE, code)

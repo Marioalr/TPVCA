@@ -1,6 +1,5 @@
 package io.github.marioalr.tpvca.sync.engine
 
-import io.github.marioalr.tpvca.domain.devices.DeviceRole
 import java.time.Instant
 
 /** Cómo terminó una sincronización. [message] es el texto para el médico; `null` si no hay nada que avisar. */
@@ -34,13 +33,11 @@ sealed class SyncOutcome(open val message: String?) {
     data object NotApproved : SyncOutcome("Este equipo espera que la PC lo apruebe en Equipos vinculados.")
 
     /**
-     * Su fila dice un rol que no es de un equipo Android (una PC, o uno que esta versión no conoce), o no es el que eligió este equipo
-     * al vincularse ([expected]): una fila de tablet en un celular. No baja nada y no borra nada: lo corrige la PC.
+     * Su fila dice un rol que no es de un equipo Android (una PC, o uno que esta versión no conoce). No baja nada y no borra nada: lo corrige
+     * la PC. Cualquiera de los dos roles de Android sirve: `DeviceRegistry` manda, aunque este equipo haya pedido el otro.
      */
-    data class WrongRole(val role: String?, val expected: DeviceRole? = null) : SyncOutcome(
-        "La PC registró este equipo con otro rol${role?.takeIf { it.isNotEmpty() }?.let { " ($it)" }.orEmpty()}" +
-            "${expected?.let { ", y aquí se eligió ${it.name}" }.orEmpty()}. Revíselo en Equipos vinculados.",
-    )
+    data class WrongRole(val role: String?) :
+        SyncOutcome("La PC registró este equipo con otro rol${role?.takeIf { it.isNotEmpty() }?.let { " ($it)" }.orEmpty()}. Revíselo en Equipos vinculados.")
 
     /**
      * Con `RevokedAtUtc`, o con código X. [wiped]: se borró la base. Sin borrar solo si hay cambios sin subir que no deben perderse (K5).

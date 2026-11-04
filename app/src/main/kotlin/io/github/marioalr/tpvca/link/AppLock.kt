@@ -41,6 +41,8 @@ enum class Gate { Loading, NoSecureLock, Locked, Open }
 
 /**
  * - **Sin bloqueo de pantalla** un equipo vinculado no muestra nada: el plan pide no vincular sin él, y esto cubre a quien lo quita después.
+ * [role] es el rol con el que trabaja el equipo: el de su fila de `DeviceRegistry` y, hasta la aprobación, el que pidió.
+ *
  * - **El bloqueo de la app es del celular** (plan §4.8 y §7.2): en la tablet el consultorio la tiene al frente durante la consulta, igual que
  *   la PC, y la protege su bloqueo de pantalla.
  */

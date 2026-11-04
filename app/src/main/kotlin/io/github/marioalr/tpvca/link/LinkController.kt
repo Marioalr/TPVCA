@@ -30,6 +30,8 @@ class LinkController(
 ) {
     val state: StateFlow<LinkState?> = states
     val locked: StateFlow<Boolean> = appLock.locked
+
+    /** El rol con el que trabaja el equipo. Cambia junto con un estado nuevo: quien lee [state] lee también el rol al día. */
     val role: DeviceRole? get() = flow.role
 
     private val mutableSecure = MutableStateFlow(deviceLock.isSecure())

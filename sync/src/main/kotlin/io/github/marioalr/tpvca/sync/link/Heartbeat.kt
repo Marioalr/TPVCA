@@ -8,7 +8,7 @@ import io.github.marioalr.tpvca.sync.hrana.ResultSet
 import io.github.marioalr.tpvca.sync.hrana.Statement
 import io.github.marioalr.tpvca.sync.hrana.text
 
-/** Lo que dice el latido de este equipo. [role] es el que pide: la autoridad es su fila de `DeviceRegistry`. */
+/** Lo que dice el latido de este equipo. [role] es el que pide y, ya aprobado, el de su fila de `DeviceRegistry`, que es la autoridad. */
 data class HeartbeatInfo(
     val deviceId: String,
     val deviceName: String,

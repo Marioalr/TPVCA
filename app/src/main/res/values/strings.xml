@@ -58,9 +58,8 @@
     <string name="token_scan">Escanear el QR de la PC</string>
     <string name="token_other_cloud">Vincular con otra nube</string>
 
-    <string name="role_title">Este equipo tiene otro rol en la PC</string>
-    <string name="role_body">La PC lo registró como %1$s, y aquí se eligió %2$s. No se bajó ni se borró nada. Para corregirlo, quítelo en la PC (Equipos vinculados) y vincúlelo otra vez.</string>
-    <string name="role_unknown">otro rol</string>
+    <string name="role_title">Este equipo tiene un rol que esta app no maneja</string>
+    <string name="role_body">La PC no lo registró como tablet ni como celular. No se bajó ni se borró nada. Para corregirlo, quítelo en la PC (Equipos vinculados) y vincúlelo otra vez.</string>
 
     <string name="cloud_title">No se puede usar la nube todavía</string>
     <string name="cloud_retry">Intentar otra vez</string>

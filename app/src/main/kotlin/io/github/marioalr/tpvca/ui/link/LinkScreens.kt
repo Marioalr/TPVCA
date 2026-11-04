@@ -356,15 +356,10 @@ fun TokenScreen(state: LinkState.NeedsToken, deviceSecure: Boolean, actions: Lin
 }
 
 @Composable
-fun WrongRoleScreen(state: LinkState.WrongRole, actions: LinkActions) {
-    val registered = when (DeviceRole.fromName(state.registered)) {
-        DeviceRole.AndroidMobileAdmin -> stringResource(R.string.role_phone)
-        DeviceRole.AndroidTablet -> stringResource(R.string.role_tablet)
-        else -> stringResource(R.string.role_unknown)
-    }
+fun WrongRoleScreen(actions: LinkActions) {
     LinkPage {
         Title(stringResource(R.string.role_title))
-        Body(stringResource(R.string.role_body, registered, roleName(state.requested)))
+        Body(stringResource(R.string.role_body))
         OutlinedButton(onClick = actions::refreshNow, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.cloud_retry)) }
     }
 }

@@ -62,6 +62,15 @@ class AppLockTest {
     }
 
     @Test
+    fun elBloqueoSigueAlRolConElQueTrabajaNoAlQuePidio() {
+        // Pidió tablet y la PC lo aprobó como celular: role ya es el aprobado (LinkFlow.role)
+        assertEquals(Gate.Locked, gateFor(linked, DeviceRole.AndroidMobileAdmin, locked = true, deviceSecure = true))
+        // Pidió celular y quedó como tablet
+        val tablet = LinkState.Linked(DeviceRole.AndroidTablet, "T1", "")
+        assertEquals(Gate.Open, gateFor(tablet, DeviceRole.AndroidTablet, locked = true, deviceSecure = true))
+    }
+
+    @Test
     fun sinBloqueoDePantallaNoSeMuestraNadaDeUnEquipoVinculado() {
         assertEquals(Gate.NoSecureLock, gateFor(linked, DeviceRole.AndroidMobileAdmin, locked = false, deviceSecure = false))
         assertEquals(Gate.NoSecureLock, gateFor(linked, DeviceRole.AndroidTablet, locked = false, deviceSecure = false))

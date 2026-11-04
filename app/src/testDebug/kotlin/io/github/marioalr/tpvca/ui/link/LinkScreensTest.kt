@@ -318,9 +318,9 @@ class LinkScreensTest {
     // ---------------------------------------------------------------------------------------------------------------- rol, revocado, bloqueo
 
     @Test
-    fun otroRolDiceCualesYQueNadaSeBorro() {
-        root(LinkState.WrongRole("AndroidTablet", DeviceRole.AndroidMobileAdmin))
-        compose.onNodeWithText("La PC lo registró como Tablet, y aquí se eligió Celular", substring = true).assertIsDisplayed()
+    fun unRolQueNoEsDeAndroidDiceQueNadaSeBorro() {
+        root(LinkState.WrongRole("WindowsDesktop"))
+        compose.onNodeWithText("La PC no lo registró como tablet ni como celular. No se bajó ni se borró nada", substring = true).assertIsDisplayed()
     }
 
     @Test
@@ -373,6 +373,12 @@ class LinkScreensTest {
         root(LinkState.Linked(DeviceRole.AndroidTablet, "T1", "Consultorio"), gate = Gate.NoSecureLock, secure = false)
         compose.onNodeWithText("Active el bloqueo de pantalla").assertIsDisplayed()
         compose.onNodeWithText("Consultorio").assertDoesNotExist()
+    }
+
+    @Test
+    fun elInicioDiceElRolQueAproboLaPc() {
+        root(LinkState.Linked(DeviceRole.AndroidMobileAdmin, "C1", ""))
+        compose.onNodeWithText("Vinculado como Celular · código C1").assertIsDisplayed()
     }
 
     @Test

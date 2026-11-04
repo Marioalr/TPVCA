@@ -12,6 +12,9 @@ import kotlinx.serialization.json.put
  * La credencial de este equipo: nunca viaja ni va en un respaldo. [token] es `null` después de borrarse por dos 401: el `DeviceId` y la
  * URL se quedan, porque la fila de `DeviceRegistry` sigue y con el token nuevo no hay que aprobarlo otra vez (§4.7). [toString] no muestra
  * ni el token ni la URL.
+ *
+ * [requestedRole] es el que eligió al vincularse y [approvedRole] el último que leyó en su fila, que es la autoridad. Va aquí y no solo en la
+ * base porque sobrevive a borrarla: el bloqueo de la app lo necesita mientras espera el token nuevo.
  */
 class DeviceCredential(
     val url: String,
@@ -20,13 +23,18 @@ class DeviceCredential(
     val deviceId: String,
     val requestedRole: DeviceRole,
     val clinicId: String? = null,
+    val approvedRole: DeviceRole? = null,
 ) {
+    /** El rol con el que trabaja este equipo: el que pidió solo sirve hasta que la PC lo aprueba. */
+    val effectiveRole: DeviceRole get() = approvedRole ?: requestedRole
+
     fun copy(
         url: String = this.url,
         token: String? = this.token,
         deviceId: String = this.deviceId,
         clinicId: String? = this.clinicId,
-    ) = DeviceCredential(url, token, clinicName, deviceId, requestedRole, clinicId)
+        approvedRole: DeviceRole? = this.approvedRole,
+    ) = DeviceCredential(url, token, clinicName, deviceId, requestedRole, clinicId, approvedRole)
 
     fun toJson(): String = buildJsonObject {
         put("url", url)
@@ -35,9 +43,10 @@ class DeviceCredential(
         put("deviceId", deviceId)
         put("role", requestedRole.name)
         put("clinicId", clinicId)
+        put("approvedRole", approvedRole?.name)
     }.toString()
 
-    override fun toString(): String = "DeviceCredential(deviceId=$deviceId, rol=$requestedRole, conToken=${token != null})"
+    override fun toString(): String = "DeviceCredential(deviceId=$deviceId, rol=$effectiveRole, conToken=${token != null})"
 
     companion object {
         /** `null` si no se puede leer. */
@@ -49,7 +58,15 @@ class DeviceCredential(
             if (json == null || url == null || deviceId == null || role == null) {
                 null
             } else {
-                DeviceCredential(url, json.text("token"), json.text("clinicName").orEmpty(), deviceId, role, json.text("clinicId"))
+                DeviceCredential(
+                    url,
+                    json.text("token"),
+                    json.text("clinicName").orEmpty(),
+                    deviceId,
+                    role,
+                    json.text("clinicId"),
+                    DeviceRole.fromName(json.text("approvedRole")),
+                )
             }
         } catch (_: IllegalArgumentException) {
             null

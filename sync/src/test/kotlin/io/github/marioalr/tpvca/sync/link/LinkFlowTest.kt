@@ -343,35 +343,113 @@ class LinkFlowTest {
 
     // ----------------------------------------------------------------------------------------------------------------- rol
 
+    /** La PC puede aprobar con el otro rol (`ApproveAsPhone` a un equipo que pidió tablet) y `DeviceRegistry` manda. */
     @Test
-    fun aprobadoConElOtroRolNoBajaNiBorra() {
+    fun aprobadoConElOtroRolBajaYTrabajaConElQueDijoLaPc() {
+        val (flow, _) = tablet()
+        assertEquals("Hasta la aprobación, el que pidió", DeviceRole.AndroidTablet, flow.role)
+        cloud.add("Categories", "c1", "2026-11-03 10:00:00.0000000", "2026-11-03 10:00:00.000")
+        approve("AndroidMobileAdmin", "C1")
+        assertEquals(LinkState.Linked(DeviceRole.AndroidMobileAdmin, "C1", "Consultorio Peña"), flow.refresh(Refresh.USER))
+        assertEquals(DeviceRole.AndroidMobileAdmin, flow.role)
+        assertEquals(setOf("c1"), store.rows("Categories").keys)
+        assertEquals(DeviceRole.AndroidTablet, vault.credential!!.requestedRole)
+        assertEquals(DeviceRole.AndroidMobileAdmin, vault.credential!!.approvedRole)
+        assertEquals(0, database.erased)
+    }
+
+    @Test
+    fun elRolAprobadoSigueDespuesDeCerrarLaApp() {
         val (flow, _) = tablet()
         approve("AndroidMobileAdmin", "C1")
-        val state = flow.refresh(Refresh.USER)
-        assertEquals(LinkState.WrongRole("AndroidMobileAdmin", DeviceRole.AndroidTablet), state)
-        assertEquals(0, database.erased)
-        assertNotNull(vault.credential)
-        assertNull(store.meta(SyncEngine.FIRST_DOWNLOAD_DONE))
-        assertFalse(cloud.requests.flatten().any { it.startsWith("SELECT * FROM \"Categories\"") })
+        flow.refresh(Refresh.USER)
+        val reopened = flow()
+        assertEquals(LinkState.Linked(DeviceRole.AndroidMobileAdmin, "C1", "Consultorio Peña"), reopened.restore())
+        assertEquals(DeviceRole.AndroidMobileAdmin, reopened.role)
     }
 
     @Test
-    fun unaFilaDeTabletEnUnCelularYaVinculadoConservaLoQueBajo() {
-        approve("AndroidMobileAdmin", "C1")
-        val flow = flow()
-        flow.link(url, token, "", DeviceRole.AndroidMobileAdmin)
+    fun siElRolCambiaEnLaFilaLaAppLoSigueEnLaSiguienteRevision() {
+        val flow = linked()
+        assertEquals(DeviceRole.AndroidTablet, flow.role)
         store.put("Categories", "c", "UpdatedAtUtc" to "2026-11-03 10:00:00.0000000")
-        approve("AndroidTablet", "T1")
-        assertEquals(LinkState.WrongRole("AndroidTablet", DeviceRole.AndroidMobileAdmin), flow.refresh(Refresh.USER))
+        approve("AndroidMobileAdmin", "T1")
+        assertEquals(LinkState.Linked(DeviceRole.AndroidMobileAdmin, "T1", "Consultorio Peña"), flow.refresh(Refresh.USER))
+        assertEquals(DeviceRole.AndroidMobileAdmin, flow.role)
+        assertEquals(DeviceRole.AndroidMobileAdmin, vault.credential!!.approvedRole)
         assertEquals(setOf("c"), store.rows("Categories").keys)
-        assertEquals(0, database.erased)
+
+        approve("AndroidTablet", "T1")
+        flow.refresh(Refresh.USER)
+        assertEquals("Y de regreso", DeviceRole.AndroidTablet, flow.role)
     }
 
     @Test
-    fun unaFilaDePcTampocoBaja() {
+    fun elLatidoYLaCadenciaSiguenAlRolAprobado() {
+        val (flow, _) = tablet()
+        assertEquals("Pide tablet", "AndroidTablet", cloud.heartbeats.last()[2].text)
+        approve("AndroidMobileAdmin", "C1")
+        flow.refresh(Refresh.OPENED)
+        flow.refresh(Refresh.OPENED)
+        assertEquals("Ya aprobado dice su rol", "AndroidMobileAdmin", cloud.heartbeats.last()[2].text)
+        // La tablet bajaría cada 10 min; el celular, cada 120 s
+        cloud.requests.clear()
+        clock.advance(Duration.ofSeconds(120))
+        flow.refresh(Refresh.TICK)
+        assertTrue(Statements.REGISTRY_OWN in cloud.requests.flatten())
+    }
+
+    @Test
+    fun elRolAprobadoSobreviveABorrarseSinToken() {
+        val (flow, _) = tablet()
+        approve("AndroidMobileAdmin", "C1")
+        flow.refresh(Refresh.USER)
+        rejectToken()
+        flow.refresh(Refresh.OPENED)
+        clock.advance(Duration.ofMinutes(10))
+        assertEquals(LinkState.NeedsToken(malformed = false, erased = true, pending = 0), flow.refresh(Refresh.OPENED))
+        assertEquals("El bloqueo de la app sigue aunque ya no haya base", DeviceRole.AndroidMobileAdmin, flow.role)
+        assertEquals(DeviceRole.AndroidMobileAdmin, flow().also { it.restore() }.role)
+    }
+
+    @Test
+    fun unaIdentidadNuevaVuelveAlRolQuePidio() {
+        val (flow, _) = tablet()
+        approve("AndroidMobileAdmin", "C1")
+        flow.refresh(Refresh.USER)
+        cloud.rowNonce = "de-otra-instalacion"
+        cloud.registry = null
+        assertTrue(flow.refresh(Refresh.OPENED) is LinkState.WaitingApproval)
+        assertEquals(DeviceRole.AndroidTablet, flow.role)
+        assertNull(vault.credential!!.approvedRole)
+    }
+
+    @Test
+    fun unaFilaDePcOUnRolDesconocidoNoBajaNiBorra() {
+        for ((name, code) in listOf("WindowsDesktop" to "P1", "RolDelFuturo" to "Z1")) {
+            val flow = linked()
+            store.put("Categories", "c", "UpdatedAtUtc" to "2026-11-03 10:00:00.0000000")
+            val cursor = store.meta(SyncEngine.FIRST_DOWNLOAD_DONE)
+            approve(name, code)
+            assertEquals(LinkState.WrongRole(name), flow.refresh(Refresh.USER))
+            assertEquals(setOf("c"), store.rows("Categories").keys)
+            assertEquals(cursor, store.meta(SyncEngine.FIRST_DOWNLOAD_DONE))
+            assertEquals(0, database.erased)
+            assertNotNull(vault.credential)
+            flow.forget()
+            database.erased = 0
+        }
+    }
+
+    @Test
+    fun antesDeAprobarUnaFilaDePcNiSiquieraDiceQueBaja() {
         val (flow, _) = tablet()
         approve("WindowsDesktop", "P1")
-        assertEquals(LinkState.WrongRole("WindowsDesktop", DeviceRole.AndroidTablet), flow.refresh(Refresh.USER))
+        published.clear()
+        assertEquals(LinkState.WrongRole("WindowsDesktop"), flow.refresh(Refresh.USER))
+        assertFalse("$published", published.any { it is LinkState.Downloading })
+        assertEquals(DeviceRole.AndroidTablet, flow.role)
+        assertFalse(cloud.requests.flatten().any { it.startsWith("SELECT * FROM \"Categories\"") })
     }
 
     // ----------------------------------------------------------------------------------------------------------------- revocación
@@ -665,9 +743,13 @@ class LinkFlowTest {
 
     @Test
     fun laCredencialSobreviveAlJsonSinPerderNada() {
-        val credential = DeviceCredential(url, token, "Peña", "id", DeviceRole.AndroidMobileAdmin, "clinica")
+        val credential = DeviceCredential(url, token, "Peña", "id", DeviceRole.AndroidMobileAdmin, "clinica", DeviceRole.AndroidTablet)
         val back = DeviceCredential.fromJson(credential.toJson())!!
-        assertEquals(listOf(url, token, "Peña", "id", DeviceRole.AndroidMobileAdmin, "clinica"), listOf(back.url, back.token, back.clinicName, back.deviceId, back.requestedRole, back.clinicId))
+        assertEquals(
+            listOf(url, token, "Peña", "id", DeviceRole.AndroidMobileAdmin, "clinica", DeviceRole.AndroidTablet, DeviceRole.AndroidTablet),
+            listOf(back.url, back.token, back.clinicName, back.deviceId, back.requestedRole, back.clinicId, back.approvedRole, back.effectiveRole),
+        )
+        assertEquals(DeviceRole.AndroidMobileAdmin, DeviceCredential.fromJson(credential.copy(approvedRole = null).toJson())!!.effectiveRole)
         assertNull(DeviceCredential.fromJson(credential.copy(token = null).toJson())!!.token)
         assertNull(DeviceCredential.fromJson("no es json"))
         assertNull(DeviceCredential.fromJson("""{"url":"x"}"""))

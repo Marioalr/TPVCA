@@ -49,7 +49,7 @@ fun AppRoot(
             is LinkState.WaitingApproval -> Light { WaitingScreen(state, actions) }
             is LinkState.Downloading -> Light { DownloadingScreen() }
             is LinkState.NeedsToken -> Light { NeedsToken(state, deviceSecure, actions, qrReader) }
-            is LinkState.WrongRole -> Light { WrongRoleScreen(state, actions) }
+            is LinkState.WrongRole -> Light { WrongRoleScreen(actions) }
             is LinkState.CloudProblem -> Light { CloudProblemScreen(state, actions) }
             is LinkState.Revoked -> Light { RevokedScreen(state, actions) }
         }

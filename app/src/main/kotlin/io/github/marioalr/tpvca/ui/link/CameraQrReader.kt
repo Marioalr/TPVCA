@@ -39,7 +39,7 @@ import java.util.concurrent.Executors
 
 /**
  * Lee el QR con CameraX y ML Kit, con el modelo incluido en la app (plan §7.2). Pide el permiso de la cámara al entrar. Sin él o si falla, se
- * pegan a mano. Lo leído no se guarda, no se registra y solo llega a [onText]. Esta pieza solo se comprueba en un equipo con cámara.
+ * pegan a mano. Lo leído no se guarda, no se registra y solo llega a [onText]. ML Kit se comprueba con `QrDecodingDeviceTest`; la cámara, solo en un equipo.
  */
 @Composable
 fun CameraQrReader(onText: (String) -> Unit, onNoPermission: () -> Unit) {

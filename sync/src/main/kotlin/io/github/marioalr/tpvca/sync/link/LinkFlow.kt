@@ -68,10 +68,11 @@ class LinkFlow(
         private set
 
     /**
-     * El rol que eligió este equipo: el de su fila, porque otro se detiene en `WrongRole`. `null` si no hay credencial. Se puede leer
-     * desde el hilo principal: no espera a la llamada en curso.
+     * El rol con el que trabaja este equipo: el de su fila de `DeviceRegistry` y, hasta que la PC lo aprueba, el que pidió. Lo que dependa
+     * del rol (el bloqueo de la app, la cadencia, las pantallas) lee este. `null` si no hay credencial. Se puede leer desde el hilo principal:
+     * no espera a la llamada en curso.
      */
-    val role: DeviceRole? get() = credential?.requestedRole
+    val role: DeviceRole? get() = credential?.effectiveRole
 
     private class Session(val credential: DeviceCredential, val connection: HranaConnection, val engine: SyncEngine)
 
@@ -108,7 +109,7 @@ class LinkFlow(
         return when {
             store.meta(SyncEngine.AUTH_MALFORMED) != null -> LinkState.NeedsToken(malformed = true, erased = false, pending = pending)
             store.meta(SyncEngine.AUTH_FIRST_401) != null -> LinkState.NeedsToken(malformed = false, erased = false, pending = pending)
-            wasApproved() -> linkedState(saved, null)
+            saved.approvedRole != null -> linkedState(saved, null)
             else -> waiting(saved)
         }
     }
@@ -164,7 +165,7 @@ class LinkFlow(
         val current = state
         if (saved.token == null || (current is LinkState.Revoked && current.erased)) return state
         if (current is LinkState.WaitingApproval) return pollApproval(saved, current, reason)
-        if (reason == Refresh.TICK && !isDue(lastCheck, LinkCadence.sync(saved.requestedRole))) {
+        if (reason == Refresh.TICK && !isDue(lastCheck, LinkCadence.sync(saved.effectiveRole))) {
             if (current is LinkState.Linked && heartbeatFoundOtherInstallation(saved, force = false)) return publish(waiting(credential!!, newIdentity = true))
             return state
         }
@@ -183,11 +184,12 @@ class LinkFlow(
             val row = session(saved).connection.query(listOf(Statements.registryOwn(saved.deviceId))).single().rows.firstOrNull()
             when {
                 row == null -> publish(current.copy(problem = null))
-                row.text("RevokedAtUtc").isNullOrEmpty() && row.text("DeviceCode")?.startsWith("X") != true -> {
-                    publish(LinkState.Downloading(saved.requestedRole, saved.clinicName))
+                else -> {
+                    // Se ve que va a bajar solo si de verdad va a bajar: revocado o con un rol que no es de Android se detiene en el motor
+                    val approved = DeviceRole.fromName(row.text("Role")).takeIf { row.text("RevokedAtUtc").isNullOrEmpty() && row.text("DeviceCode")?.startsWith("X") != true }
+                    if (approved == DeviceRole.AndroidTablet || approved == DeviceRole.AndroidMobileAdmin) publish(LinkState.Downloading(approved, saved.clinicName))
                     syncNow(saved, SyncTrigger.USER, forceHeartbeat = false)
                 }
-                else -> syncNow(saved, SyncTrigger.USER, forceHeartbeat = false)
             }
         } catch (e: HranaException) {
             // El token: que el motor aplique las reglas del 401, en un solo lugar
@@ -205,32 +207,34 @@ class LinkFlow(
         return publish(settle(saved, outcome, forceHeartbeat))
     }
 
-    private fun settle(saved: DeviceCredential, outcome: SyncOutcome, forceHeartbeat: Boolean): LinkState = when (outcome) {
-        SyncOutcome.NotApproved -> {
-            // El primer latido va aquí: ya se sabe que la nube está lista y es la que debe ser
-            val problem = try {
-                if (writeHeartbeat(saved)) return waiting(credential!!, newIdentity = true)
-                null
-            } catch (e: HranaException) {
-                e.message
+    /** Lo que el motor acaba de leer se guarda aquí antes de decidir nada: si la fila cambió de rol, la app lo sigue desde esta revisión. */
+    private fun settle(before: DeviceCredential, outcome: SyncOutcome, forceHeartbeat: Boolean): LinkState {
+        val saved = adoptFromStore(before)
+        return when (outcome) {
+            SyncOutcome.NotApproved -> {
+                // El primer latido va aquí: ya se sabe que la nube está lista y es la que debe ser
+                val problem = try {
+                    if (writeHeartbeat(saved)) return waiting(credential!!, newIdentity = true)
+                    null
+                } catch (e: HranaException) {
+                    e.message
+                }
+                waiting(saved, problem)
             }
-            waiting(saved, problem)
+            is SyncOutcome.WrongRole -> LinkState.WrongRole(outcome.role)
+            is SyncOutcome.Revoked -> onRevoked(outcome)
+            is SyncOutcome.TokenRejected -> {
+                if (outcome.wiped) onTokenWipe(saved)
+                LinkState.NeedsToken(malformed = false, erased = outcome.wiped, pending = if (outcome.wiped) 0 else pendingNow())
+            }
+            SyncOutcome.TokenMalformed -> LinkState.NeedsToken(malformed = true, erased = false, pending = pendingNow())
+            SyncOutcome.SchemaMissing, is SyncOutcome.CloudNotReady, is SyncOutcome.ClientOutdated, is SyncOutcome.OtherCloud ->
+                LinkState.CloudProblem(outcome.message.orEmpty())
+            is SyncOutcome.Completed ->
+                if (heartbeatFoundOtherInstallation(saved, force = forceHeartbeat)) waiting(credential!!, newIdentity = true) else linkedState(saved, outcome.message)
+            // Sin red, cuota, freno, otra generación: los datos siguen aquí. Si nunca leyó su fila, tampoco sabe si está aprobado: sigue esperando
+            else -> if (saved.approvedRole != null) linkedState(saved, outcome.message) else waiting(saved, outcome.message)
         }
-        is SyncOutcome.WrongRole -> LinkState.WrongRole(outcome.role, saved.requestedRole)
-        is SyncOutcome.Revoked -> onRevoked(outcome)
-        is SyncOutcome.TokenRejected -> {
-            if (outcome.wiped) onTokenWipe(saved)
-            LinkState.NeedsToken(malformed = false, erased = outcome.wiped, pending = if (outcome.wiped) 0 else pendingNow())
-        }
-        SyncOutcome.TokenMalformed -> LinkState.NeedsToken(malformed = true, erased = false, pending = pendingNow())
-        SyncOutcome.SchemaMissing, is SyncOutcome.CloudNotReady, is SyncOutcome.ClientOutdated, is SyncOutcome.OtherCloud ->
-            LinkState.CloudProblem(outcome.message.orEmpty())
-        is SyncOutcome.Completed -> {
-            val updated = adoptClinic(saved)
-            if (heartbeatFoundOtherInstallation(updated, force = forceHeartbeat)) waiting(credential!!, newIdentity = true) else linkedState(updated, outcome.message)
-        }
-        // Sin red, cuota, freno, otra generación: los datos siguen aquí. Si nunca leyó su fila, tampoco sabe si está aprobado: sigue esperando
-        else -> if (wasApproved()) linkedState(saved, outcome.message) else waiting(saved, outcome.message)
     }
 
     /**
@@ -285,16 +289,22 @@ class LinkFlow(
         val engine = SyncEngine(
             connection,
             database.store(),
-            SyncEngineConfig(saved.deviceId, expectedClinicId = saved.clinicId, expectedRole = saved.requestedRole),
+            SyncEngineConfig(saved.deviceId, expectedClinicId = saved.clinicId),
             clock = clock,
         )
         return Session(saved, connection, engine).also { session = it }
     }
 
-    private fun adoptClinic(saved: DeviceCredential): DeviceCredential {
-        val clinicId = database.store().meta(SyncEngine.CLINIC_ID)
-        if (clinicId == null || clinicId == saved.clinicId) return saved
-        val updated = saved.copy(clinicId = clinicId)
+    /**
+     * El consultorio y el rol aprobado, de la base a la credencial. Sin ellos en la base (se acaba de borrar) se queda lo que había: una
+     * fila revocada termina borrando la credencial de todos modos.
+     */
+    private fun adoptFromStore(saved: DeviceCredential): DeviceCredential {
+        val store = database.store()
+        val clinicId = store.meta(SyncEngine.CLINIC_ID) ?: saved.clinicId
+        val approved = DeviceRole.fromName(store.meta(SyncEngine.DEVICE_ROLE)) ?: saved.approvedRole
+        if (clinicId == saved.clinicId && approved == saved.approvedRole) return saved
+        val updated = saved.copy(clinicId = clinicId, approvedRole = approved)
         vault.save(updated)
         credential = updated
         // El motor de esta sesión ya tiene la nube: no hace falta otra conexión
@@ -304,7 +314,7 @@ class LinkFlow(
 
     /** El latido de un equipo que ya baja datos: uno perdido no detiene nada, la siguiente sincronización dirá qué pasa con la red o el token. */
     private fun heartbeatFoundOtherInstallation(saved: DeviceCredential, force: Boolean): Boolean {
-        if (!force && !isDue(lastHeartbeat, LinkCadence.heartbeat(saved.requestedRole))) return false
+        if (!force && !isDue(lastHeartbeat, LinkCadence.heartbeat(saved.effectiveRole))) return false
         return try {
             writeHeartbeat(saved)
         } catch (_: HranaException) {
@@ -315,7 +325,7 @@ class LinkFlow(
     /** Escribe el latido. `true` si otra instalación usa su `DeviceId`: ya tomó uno nuevo y debe esperar la aprobación. */
     private fun writeHeartbeat(saved: DeviceCredential): Boolean {
         val store = database.store()
-        val info = HeartbeatInfo(saved.deviceId, deviceName, saved.requestedRole, appVersion, store.pendingChanges(), null, nonce)
+        val info = HeartbeatInfo(saved.deviceId, deviceName, saved.effectiveRole, appVersion, store.pendingChanges(), null, nonce)
         val results = session(saved).connection.query(Heartbeat.statements(info))
         lastHeartbeat = clock.instant()
         val duplicate = Heartbeat.otherInstallation(results.first(), nonceWrittenFor == saved.deviceId, nonce)
@@ -326,7 +336,7 @@ class LinkFlow(
 
     /** Regla «Latido»: toma un `DeviceId` nuevo y vuelve a bajar todo una vez. La PC lo aprueba otra vez. */
     private fun takeNewIdentity(saved: DeviceCredential) {
-        val updated = saved.copy(deviceId = newId())
+        val updated = saved.copy(deviceId = newId(), approvedRole = null)
         vault.save(updated)
         credential = updated
         session = null
@@ -336,9 +346,6 @@ class LinkFlow(
         database.store().apply(StoreChanges(metaRemoved = setOf(SyncEngine.DEVICE_CODE, SyncEngine.DEVICE_ROLE)))
     }
 
-    /** Ya leyó una vez su fila con un rol válido. */
-    private fun wasApproved(): Boolean = database.store().meta(SyncEngine.DEVICE_ROLE) != null
-
     private fun pendingNow(): Int = database.store().pendingChanges()
 
     private fun isDue(last: Instant?, every: Duration): Boolean = last == null || Duration.between(last, clock.instant()) >= every
@@ -347,7 +354,7 @@ class LinkFlow(
         LinkState.WaitingApproval(Heartbeat.suffix(saved.deviceId), saved.requestedRole, saved.clinicName, problem, newIdentity)
 
     private fun linkedState(saved: DeviceCredential, notice: String?) =
-        LinkState.Linked(saved.requestedRole, database.store().meta(SyncEngine.DEVICE_CODE), saved.clinicName, notice)
+        LinkState.Linked(saved.effectiveRole, database.store().meta(SyncEngine.DEVICE_CODE), saved.clinicName, notice)
 
     private fun publish(next: LinkState): LinkState {
         state = next

@@ -10,6 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.xmlpull.v1.XmlPullParser
 
 @RunWith(AndroidJUnit4::class)
 class ManifestTest {
@@ -20,5 +21,37 @@ class ManifestTest {
         val info = context.packageManager.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong()))
         assertTrue(info.requestedPermissions.orEmpty().contains(Manifest.permission.INTERNET))
         assertEquals("usesCleartextTraffic=false", 0, context.applicationInfo.flags and ApplicationInfo.FLAG_USES_CLEARTEXT_TRAFFIC)
+    }
+
+    @Test
+    fun laCamaraSePideParaElQrPeroNoEsObligatoria() {
+        val info = context.packageManager.getPackageInfo(
+            context.packageName,
+            PackageManager.PackageInfoFlags.of((PackageManager.GET_PERMISSIONS or PackageManager.GET_CONFIGURATIONS).toLong()),
+        )
+        assertTrue(info.requestedPermissions.orEmpty().contains(Manifest.permission.CAMERA))
+    }
+
+    @Test
+    fun nadaVaAUnRespaldo() {
+        assertEquals("allowBackup=false", 0, context.applicationInfo.flags and ApplicationInfo.FLAG_ALLOW_BACKUP)
+    }
+
+    /** Plan §4.8: ni a la nube de Google ni a otro equipo. Una copia clonaría el `DeviceId` y no podría abrir nada sin el Keystore. */
+    @Test
+    fun lasReglasDeRespaldoExcluyenTodo() {
+        val excluded = HashMap<String, MutableSet<String>>()
+        val parser = context.resources.getXml(R.xml.data_extraction_rules)
+        var section: String? = null
+        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+            if (parser.eventType != XmlPullParser.START_TAG) continue
+            when (parser.name) {
+                "cloud-backup", "device-transfer" -> section = parser.name
+                "exclude" -> excluded.getOrPut(section!!) { HashSet() }.add(parser.getAttributeValue(null, "domain"))
+                "include" -> throw AssertionError("Nada se incluye en un respaldo")
+            }
+        }
+        val all = setOf("root", "file", "database", "sharedpref", "external")
+        assertEquals(mapOf("cloud-backup" to all, "device-transfer" to all), excluded)
     }
 }

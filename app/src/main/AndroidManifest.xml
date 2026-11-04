@@ -4,8 +4,12 @@
 
     <!-- Para Turso, solo con https:// (usesCleartextTraffic=false). -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Solo para leer el QR de la PC; se pide al pulsar «Escanear». Sin cámara se pegan la URL y el token. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
+        android:name=".TpvcaApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="false"

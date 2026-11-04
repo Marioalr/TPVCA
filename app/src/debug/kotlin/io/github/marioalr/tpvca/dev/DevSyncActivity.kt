@@ -88,7 +88,7 @@ private fun DevSyncScreen(runner: DevSyncRunner) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("Sincronización de desarrollo", style = MaterialTheme.typography.titleLarge)
-        Text("Solo baja datos. No escribe nada en Turso. La base local todavía no va cifrada (K3): use solo una base de prueba.", style = MaterialTheme.typography.bodySmall)
+        Text("Baja datos y escribe su latido: la PC debe aprobar este equipo. Use solo una base de prueba.", style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(url, { url = it }, Modifier.fillMaxWidth(), label = { Text("URL de Turso") }, singleLine = true)
         OutlinedTextField(
             token,
@@ -101,7 +101,7 @@ private fun DevSyncScreen(runner: DevSyncRunner) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { work { outcome = runner.sync(url, token) } }, enabled = !running) { Text("Sincronizar") }
             OutlinedButton(onClick = { work { runner.wipe(); outcome = null } }, enabled = !running) { Text("Borrar la base") }
-            OutlinedButton(onClick = { work { runner.resumeBrake(url, token) } }, enabled = !running && status?.brakeTripped == true) { Text("Reanudar") }
+            OutlinedButton(onClick = { work { runner.resumeBrake() } }, enabled = !running && status?.brakeTripped == true) { Text("Reanudar") }
         }
         if (running) CircularProgressIndicator()
         outcome?.let { result ->

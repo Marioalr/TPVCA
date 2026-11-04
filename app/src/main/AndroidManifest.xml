@@ -28,6 +28,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+            Sin telemetría de ML Kit. Estas tres piezas de datatransport llegan con la biblioteca y son las que suben sus eventos (FIREBASE_ML_SDK) desde
+            este proceso a firebaselogging.googleapis.com. Sin ellas no hay backend ni trabajo que suba nada. ML Kit sigue leyendo: QrDecodingDeviceTest.
+            Esto no alcanza a TelemetryLogging de Play Services, que va por otro camino: docs/SINCRONIZACION.md.
+        -->
+        <service android:name="com.google.android.datatransport.runtime.backends.TransportBackendDiscovery" tools:node="remove" />
+        <service android:name="com.google.android.datatransport.runtime.scheduling.jobscheduling.JobInfoSchedulerService" tools:node="remove" />
+        <receiver android:name="com.google.android.datatransport.runtime.scheduling.jobscheduling.AlarmManagerSchedulerBroadcastReceiver" tools:node="remove" />
     </application>
 
 </manifest>

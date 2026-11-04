@@ -37,6 +37,18 @@ class ManifestTest {
         assertEquals("allowBackup=false", 0, context.applicationInfo.flags and ApplicationInfo.FLAG_ALLOW_BACKUP)
     }
 
+    /** Robolectric lee el manifiesto ya combinado: aquí se ve lo que la biblioteca agregaría. */
+    @Test
+    fun noHayTelemetriaDeDatatransport() {
+        val info = context.packageManager.getPackageInfo(
+            context.packageName,
+            PackageManager.PackageInfoFlags.of((PackageManager.GET_SERVICES or PackageManager.GET_RECEIVERS or PackageManager.GET_PROVIDERS).toLong()),
+        )
+        val components = info.services.orEmpty().map { it.name } + info.receivers.orEmpty().map { it.name } + info.providers.orEmpty().map { it.name }
+        assertTrue("El manifiesto combinado sí se está leyendo: $components", components.any { it.startsWith("com.google.mlkit") })
+        assertEquals(emptyList<String>(), components.filter { "datatransport" in it })
+    }
+
     /** Plan §4.8: ni a la nube de Google ni a otro equipo. Una copia clonaría el `DeviceId` y no podría abrir nada sin el Keystore. */
     @Test
     fun lasReglasDeRespaldoExcluyenTodo() {

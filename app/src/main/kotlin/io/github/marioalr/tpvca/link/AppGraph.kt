@@ -52,6 +52,8 @@ class AppGraph(context: Context) {
         eraseFiles = {
             app.filesDir.listFiles()?.forEach { it.deleteRecursively() }
             app.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
+            // La base de la app ya se borró; lo que queda aquí es de las bibliotecas (los eventos locales de datatransport)
+            app.databaseList().forEach(app::deleteDatabase)
         },
         connect = { url, token -> HranaClient(url, token, BuildConfig.VERSION_NAME, http) },
         onState = { states.value = it },

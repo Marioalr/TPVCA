@@ -562,6 +562,7 @@ class SyncEngine(
         // Las tablas sin nada nuevo avanzan hasta la marca de agua, todas en una escritura
         if (idle.isNotEmpty()) store.apply(StoreChanges(meta = idle))
         retryParked(run)
+        retryWaitingReapply(run)
     }
 
     /** `PullTableAsync`: el cursor guardado nunca pasa de la marca de agua; se sigue leyendo desde lo último que llegó. */
@@ -674,9 +675,9 @@ class SyncEngine(
                 }
                 continue
             }
-            // La misma regla que la nube (`DeletedAtUtc >= marca`, `golden/lww.json`): con la misma marca gana el borrado
+            // `RemoteTombstoneDeletes`, la misma regla de siempre: con la misma marca gana el borrado; solo una estrictamente más nueva revive
             val deletedAt = deletedHere[syncId]
-            if (deletedAt != null && remoteStamp <= deletedAt) {
+            if (deletedAt != null && SyncRules.remoteTombstoneDeletes(remoteStamp, deletedAt)) {
                 if (parkedHere) unpark += key
                 continue
             }
@@ -717,6 +718,8 @@ class SyncEngine(
                 park += ParkedRow(ParkDirection.PULL, table.entityType, syncId, RowMapper.serialize(row), parkReason)
                 continue
             }
+            // «Volver a aplicar» sin su obligatoria: tampoco se descarta, su copia sigue guardada
+            if (drop && force) continue
             if (parkedHere) unpark += key
             if (drop) continue
 
@@ -987,77 +990,141 @@ class SyncEngine(
     /**
      * Cada lote en una transacción de la nube, terminando con la generación: si otra PC reemplazó la nube, la cerca no dejó escribir nada y se detiene **sin tocar la cola**.
      *
-     * **La cola se vacía al final, en una sola transacción local con el desempate:** en la red va subir, latido y releer (el orden de `tie-conflict.jsonl`), y hasta tener lo releído nada sale de la cola. Un 401 o
-     * que el proceso muera en medio solo vuelve a mandar todo; la nube descarta lo que ya tenía. Lo que se editó mientras tanto tiene un número mayor y se queda.
+     * Después, como `PushLocalChangesAsync` de la PC: se relee lo rechazado por la red, antes de tocar nada; **en una sola transacción local** se aplica el desempate, se vuelve a anotar lo que haga falta, se actualiza lo
+     * apartado y se vacía la cola; y al final el latido. Un 401 o que el proceso muera antes de esa transacción solo vuelve a mandar todo; un latido que falla ya no deja nada sin resolver. Lo que se editó mientras tanto tiene un
+     * número mayor y se queda.
      */
     private fun push(run: Run) {
         val plan = planPush(run.generation)
         val rejected = ArrayList<Pair<SyncTable, String>>()
-        val statements = sendInBatches(run, plan, rejected)
-
-        if (statements > 0) writePushHeartbeat(run, plan)
+        val leftParked = HashSet<Pair<String, String>>()
+        val statements = try {
+            sendGroups(run, plan, rejected, leftParked)
+        } catch (e: PushGaveUp) {
+            // Sin red de verdad: lo que falló solo queda apartado y la cola no se vacía
+            store.apply(StoreChanges(park = parkedRows(plan)))
+            throw e.cause
+        }
         val reread = if (rejected.isEmpty()) null else readRejected(run, rejected)
 
-        val keepParked = plan.parkNow.map { (key, reason) -> ParkedRow(ParkDirection.PUSH, key.first, key.second, "", reason) }
-        val unpark = plan.parkedBefore.filter { (it.entityType to it.syncId) !in plan.parkNow }.map { Triple(ParkDirection.PUSH, it.entityType, it.syncId) }
+        val unpark = plan.parkedBefore.map { it.entityType to it.syncId }.filter { it !in plan.parkNow && it !in leftParked }.map { Triple(ParkDirection.PUSH, it.first, it.second) }
         store.transaction {
-            store.apply(StoreChanges(outboxClearedUpTo = plan.toSeq, park = keepParked, unpark = unpark))
             reread?.let { applyRejected(run, it) }
+            store.apply(StoreChanges(outboxClearedUpTo = plan.toSeq, park = parkedRows(plan), unpark = unpark))
         }
+        if (statements > 0) writePushHeartbeat(run)
     }
+
+    /** En `Payload`, cuándo se intentó: lo que lleva más sin intentarse va primero. */
+    private fun parkedRows(plan: PushPlan) = plan.parkNow.map { (key, reason) -> ParkedRow(ParkDirection.PUSH, key.first, key.second, if (reason == TOO_BIG_TO_PUSH) writer.stamp(null) else "", reason) }
+
+    /** Tres filas seguidas que fallan solas ya no son filas: es la red. */
+    private class PushGaveUp(override val cause: HranaException) : Exception()
 
     /**
-     * Lotes de [SyncEngineConfig.pushChunkSize] instrucciones. Ante `RESPONSE_TOO_LARGE`, `TIMEOUT` o HTTP 413, como al bajar: la mitad, hasta un grupo por petición; un grupo que no pasa solo se manda fila por fila
-     * (la operación deja de ir junta, pero en la nube no hay llaves foráneas y es lo único que deja avanzar). Una fila que no pasa sola **se aparta y sigue pendiente**: no se tira y no detiene la bajada. Se vuelve a
-     * intentar en cada subida, ya de una en una mientras haya algo apartado por esto.
+     * `SendPushGroupsAsync`. Un lote que falla por `RESPONSE_TOO_LARGE`, `TIMEOUT` o HTTP 413 se reduce a la mitad, hasta una sola operación. Una operación que falla sola va fila por fila (una lápida con su `DELETE` nunca se separa) y la que falla y las que le
+     * siguen en la operación se apartan, sin detener lo demás. Después de apartar, el lote vuelve a crecer. **Tres operaciones seguidas que fallan solas detienen la subida:** lo que falló queda apartado y la cola no se vacía. Lo que ya se
+     * apartó así en otra sincronización va al final, de uno en uno y primero lo que lleva más sin intentarse, hasta el primero que vuelva a fallar: el resto espera a la siguiente, y lo nuevo de su operación se aparta con él. Los demás
+     * errores se lanzan como siempre. Regresa cuántas instrucciones entraron.
      */
-    private fun sendInBatches(run: Run, plan: PushPlan, rejected: MutableList<Pair<SyncTable, String>>): Int {
-        var size = if (plan.parkedBefore.any { it.reason == TOO_BIG_TO_PUSH }) 1 else config.pushChunkSize
-        val queue = ArrayDeque(plan.groups)
-        var sent = 0
-        while (queue.isNotEmpty()) {
-            var taken = 1
-            var count = queue.first().size
-            while (taken < queue.size && count + queue[taken].size <= size) count += queue[taken++].size
-            val chunk = queue.take(taken).flatten()
-            try {
-                val results = connection.snapshot(emptyList(), chunk.map { it.statement } + Statements.generation).statements
-                run.rowsRead += 1
-                if (normalizeGeneration(results.last().rows.firstOrNull()?.text("generation")) != run.generation) throw Stop(SyncOutcome.GenerationChanged)
-                chunk.forEachIndexed { index, push ->
-                    run.rowsWritten += results[index].affectedRows
-                    run.pushed += results[index].affectedRows.toInt()
-                    if (push.table != null && results[index].affectedRows == 0L) rejected += push.table to push.syncId
-                }
-                sent += chunk.size
-                repeat(taken) { queue.removeFirst() }
-            } catch (e: HranaException) {
-                if (!e.isTooLargeOrSlow) throw e
-                when {
-                    taken > 1 -> size = maxOf(1, minOf(size, count) / 2)
-                    // Una lápida con su `DELETE` no se parte
-                    chunk.count { it.table != null } > 1 -> {
-                        queue.removeFirst()
-                        chunk.asReversed().forEach { queue.addFirst(listOf(it)) }
-                    }
-                    else -> {
-                        queue.removeFirst()
-                        val only = chunk.first()
-                        plan.parkNow[only.entityType to only.syncId] = TOO_BIG_TO_PUSH
-                    }
-                }
+    private fun sendGroups(run: Run, plan: PushPlan, rejected: MutableList<Pair<SyncTable, String>>, leftParked: MutableSet<Pair<String, String>>): Int {
+        var statements = 0
+        var lastFailure: HranaException? = null
+
+        fun send(chunk: List<PushStatement>): Boolean = try {
+            val results = connection.snapshot(emptyList(), chunk.map { it.statement } + Statements.generation).statements
+            run.rowsRead += 1
+            if (normalizeGeneration(results.last().rows.firstOrNull()?.text("generation")) != run.generation) throw Stop(SyncOutcome.GenerationChanged)
+            chunk.forEachIndexed { index, push ->
+                run.rowsWritten += results[index].affectedRows
+                run.pushed += results[index].affectedRows.toInt()
+                if (push.table != null && results[index].affectedRows == 0L) rejected += push.table to push.syncId
+            }
+            statements += chunk.size
+            true
+        } catch (e: HranaException) {
+            if (!e.isTooLargeOrSlow) throw e
+            lastFailure = e
+            false
+        }
+
+        fun parkAll(rows: List<PushStatement>) {
+            for (row in rows) {
+                val key = row.entityType to row.syncId
+                plan.parkNow[key] = TOO_BIG_TO_PUSH
+                leftParked -= key
             }
         }
-        return sent
+
+        fun sendAlone(group: List<PushStatement>): Boolean {
+            if (send(group)) return true
+            if (group.size == 1 || group.any { it.table == null }) {
+                parkAll(group)
+                return false
+            }
+            group.forEachIndexed { index, row ->
+                if (!send(listOf(row))) {
+                    parkAll(group.drop(index))
+                    return false
+                }
+            }
+            return true
+        }
+
+        val retrying = plan.parkedBefore.filter { it.reason == TOO_BIG_TO_PUSH }.associate { (it.entityType to it.syncId) to it.payload }
+        fun waiting(group: List<PushStatement>) = group.filter { (it.entityType to it.syncId) in retrying }
+        val late = plan.groups.filter { waiting(it).isNotEmpty() }.sortedBy { group -> waiting(group).minOf { retrying.getValue(it.entityType to it.syncId) } }
+        val pending = ArrayDeque(plan.groups.filter { waiting(it).isEmpty() })
+
+        val startSize = maxOf(1, config.pushChunkSize)
+        var size = startSize
+        var soloFailures = 0
+        var recovering = false
+        while (pending.isNotEmpty()) {
+            var taken = 1
+            var count = pending.first().size
+            while (taken < pending.size && count + pending[taken].size <= size) count += pending[taken++].size
+            if (taken == 1) {
+                val group = pending.removeFirst()
+                if (sendAlone(group)) {
+                    soloFailures = 0
+                    if (recovering) size = minOf(startSize, size * 2)
+                } else {
+                    // El problema era ella, no el tamaño
+                    recovering = true
+                    if (++soloFailures >= MAX_SOLO_FAILURES) throw PushGaveUp(lastFailure!!)
+                }
+                continue
+            }
+            if (send(pending.take(taken).flatten())) {
+                repeat(taken) { pending.removeFirst() }
+                soloFailures = 0
+                if (recovering) size = minOf(startSize, size * 2)
+            } else {
+                recovering = false
+                size = maxOf(1, minOf(size, count) / 2)
+            }
+        }
+
+        for ((index, group) in late.withIndex()) {
+            if (sendAlone(group)) continue
+            for (rest in late.drop(index + 1)) {
+                for (row in rest) {
+                    val key = row.entityType to row.syncId
+                    // Lo nuevo de una operación apartada se aparta con ella: si no, se perdería al vaciar la cola
+                    if (key in retrying) leftParked += key else plan.parkNow[key] = TOO_BIG_TO_PUSH
+                }
+            }
+            break
+        }
+        return statements
     }
 
-    /** Un latido perdido no detiene nada: `LastPushUtc` se vuelve a escribir en la siguiente subida. Dice lo que quedará pendiente, aunque la cola se vacíe después. */
-    private fun writePushHeartbeat(run: Run, plan: PushPlan) {
+    /** Un latido perdido no detiene nada: `LastPushUtc` se vuelve a escribir en la siguiente subida. */
+    private fun writePushHeartbeat(run: Run) {
         val heartbeat = pushHeartbeat ?: return
-        val remaining = store.outbox().filter { it.seq > plan.toSeq }
-        val parked = plan.parkNow.keys + remaining.map { it.entityType to it.syncId }
         try {
-            val results = run.query(heartbeat.statements(parked.size, remaining.minOfOrNull { it.enqueuedAtUtc }))
+            val results = run.query(heartbeat.statements(store.pendingChanges(), store.oldestPendingUtc()))
             heartbeat.onWritten(results.first())
         } catch (e: HranaException) {
             if (e.code == HranaException.UNAUTHORIZED || e.code == HranaException.BLOCKED) throw e
@@ -1105,51 +1172,35 @@ class SyncEngine(
         return store.savedChanges().size
     }
 
-    /** Lo que hizo «Volver a aplicar»: [kept] sigue guardado para volver a intentarlo. */
+    /** Lo que hizo «Volver a aplicar»: [kept] sigue guardado. */
     data class Reapplied(val rows: Int, val deletes: Int, val kept: Int)
 
     /**
-     * «Volver a aplicar N cambios» (`ReapplySavedChangesAsync`): cada fila otra vez con marca nueva, lista para subir; cada borrado, como un borrado de aquí. Con los mismos permisos que cualquier escritura.
+     * «Volver a aplicar N cambios» (`ReapplySavedChangesAsync`): cada fila otra vez con marca nueva, lista para subir; cada borrado, como un borrado de aquí. Con los mismos permisos que cualquier escritura, y nunca a media descarga.
      *
-     * **Una copia guardada se quita solo si esa fila de verdad quedó aplicada y anotada, o el borrado hecho.** Se queda, con un aviso, la fila sin su principal (sin apartarla: `RetryParked` la aplicaría sin
-     * anotarla) y el borrado que impide una `restrict`. Se queda, sin aviso, lo que este rol no puede escribir. El médico lo vuelve a intentar cuando quiera.
+     * **La copia guardada se borra solo en la transacción que deja la fila con marca nueva y anotada.** Una fila sin su principal sigue guardada, sin apartarla en la bajada, con una marca (`ParkDirection.REAPPLY`) con la que cada sincronización
+     * la vuelve a intentar al terminar de bajar. Si su principal opcional se sabe borrado, queda en nulo; sin la obligatoria, sigue guardada. Un borrado que impide una `restrict` sigue guardado con un aviso y se reintenta solo al volver a
+     * pedirlo; uno cuya fila ya no está cuenta como hecho; y si la fila de ese registro sigue esperando, su borrado también espera. Lo que este rol no puede escribir se queda guardado.
      */
     fun reapplySaved(): Reapplied = store.transaction {
         val role = DeviceRole.fromName(store.meta(DEVICE_ROLE)) ?: throw WriteRefused(WriteRefused.Reason.NOT_APPROVED, "La PC todavía no aprueba este equipo.")
         if (store.meta(REVOKED_REASON) != null) throw WriteRefused(WriteRefused.Reason.REVOKED, "Este equipo se quitó de los equipos vinculados.")
         if (store.meta(READ_ONLY) != null) throw WriteRefused(WriteRefused.Reason.READ_ONLY, "Actualice la app: por ahora solo se puede consultar.")
+        if (store.meta(FIRST_DOWNLOAD_DONE) == null) throw WriteRefused(WriteRefused.Reason.NEEDS_SYNC, "Todavía no termina de bajar la nube: lo guardado sigue guardado.")
         val saved = store.savedChanges()
         if (saved.isEmpty()) return@transaction Reapplied(0, 0, 0)
-        val run = Run()
+        val (rows, held) = reapplyRows(Run(), role, saved)
+
+        var deletes = 0
         val done = ArrayList<Long>()
         val notices = LinkedHashSet<SyncNotice>()
-        var rows = 0
-        var deletes = 0
-        for (table in schema.tables) {
-            if (!WritePolicy.canWrite(role, table.table, creating = false)) continue
-            val copies = saved.filter { it.entityType == table.entityType && it.kind == SavedChange.KIND_ROW }
-            val group = copies.map { RowMapper.deserialize(it.payload) }
-                .groupBy { it.text("SyncId")?.lowercase(java.util.Locale.ROOT) }
-                .mapNotNull { (id, versions) -> if (id == null) null else versions.maxByOrNull { ProtocolDate.canonical(it.text("UpdatedAtUtc")) } }
-            if (group.isEmpty()) continue
-            applyRows(run, table, group, emptyMap(), emptySet(), force = true)
-            for (copy in copies) {
-                if (copy.syncId !in run.forceApplied) {
-                    notices += SyncNotice(SyncNotices.REAPPLY_NO_PRINCIPAL, table.entityType, copy.syncId)
-                    continue
-                }
-                done += copy.id
-            }
-            for (id in group.mapNotNull { it.text("SyncId")?.lowercase(java.util.Locale.ROOT) }.filter { it in run.forceApplied }) {
-                writer.restamp(table, id)
-                rows++
-            }
-        }
         for (table in schema.tables.asReversed()) {
             if (!WritePolicy.canWrite(role, table.table, creating = false)) continue
-            val copies = saved.filter { it.entityType == table.entityType && it.kind == SavedChange.KIND_TOMBSTONE }
+            val copies = saved.filter { it.entityType == table.entityType && it.kind == SavedChange.KIND_TOMBSTONE && (table.entityType to it.syncId) !in held }
             for ((syncId, sameRow) in copies.groupBy { it.syncId }) {
-                if (writer.delete(table.table, syncId)) {
+                if (store.stamps(table.table, listOf(syncId)).isEmpty()) {
+                    done += sameRow.map { it.id }
+                } else if (writer.delete(table.table, syncId)) {
                     deletes++
                     done += sameRow.map { it.id }
                 } else {
@@ -1157,9 +1208,109 @@ class SyncEngine(
                 }
             }
         }
+        notices += held.map { (entityType, syncId) -> SyncNotice(SyncNotices.REAPPLY_NO_PRINCIPAL, entityType, syncId) }
         val allNotices = SyncNotices.read(store.meta(NOTICES)) + notices
         store.apply(StoreChanges(savedRemoved = done, meta = if (notices.isEmpty()) emptyMap() else mapOf(NOTICES to SyncNotices.write(allNotices))))
-        Reapplied(rows, deletes, saved.size - done.size)
+        Reapplied(rows, deletes, store.savedChanges().size)
+    }
+
+    /**
+     * Las filas guardadas que se le den, en orden de dependencias: la versión más reciente de cada registro con marca nueva y anotada, y en la misma transacción se van sus copias y su marca de espera. La que no se puede aplicar queda marcada. Regresa (aplicadas, las que esperan).
+     */
+    private fun reapplyRows(run: Run, role: DeviceRole, saved: List<SavedChange>, deadInCloud: Set<Pair<String, String>> = emptySet()): Pair<Int, Set<Pair<String, String>>> = store.transaction {
+        var applied = 0
+        val held = LinkedHashSet<Pair<String, String>>()
+        val pressedAt = writer.stamp(null)
+        val marks = store.parkedRows().filter { it.direction == ParkDirection.REAPPLY }.associateBy { it.entityType to it.syncId }
+        for (table in schema.tables) {
+            if (!WritePolicy.canWrite(role, table.table, creating = false)) continue
+            val copies = saved.filter { it.entityType == table.entityType && it.kind == SavedChange.KIND_ROW }
+            val byId = copies.map { it to RowMapper.deserialize(it.payload) }.groupBy { it.second.text("SyncId")?.lowercase(java.util.Locale.ROOT) }.filterKeys { it != null }
+            if (byId.isEmpty()) continue
+            val group = byId.values.map { versions -> versions.maxByOrNull { ProtocolDate.canonical(it.second.text("UpdatedAtUtc")) }!!.second }
+            applyRows(run, table, group, emptyMap(), deadPrincipals(table, group) + deadInCloud, force = true)
+            val park = ArrayList<ParkedRow>()
+            val unpark = ArrayList<Triple<ParkDirection, String, String>>()
+            val done = ArrayList<Long>()
+            for ((id, versions) in byId) {
+                val syncId = id!!
+                if (syncId in run.forceApplied) {
+                    writer.restamp(table, syncId)
+                    done += versions.map { it.first.id }
+                    if ((table.entityType to syncId) in marks) unpark += Triple(ParkDirection.REAPPLY, table.entityType, syncId)
+                    applied++
+                } else {
+                    held += table.entityType to syncId
+                    // Se queda la hora de la primera vez que se pidió: lo editado después gana a esta copia
+                    val since = marks[table.entityType to syncId]?.payload ?: pressedAt
+                    park += ParkedRow(ParkDirection.REAPPLY, table.entityType, syncId, since, "Espera a su principal.")
+                }
+            }
+            store.apply(StoreChanges(park = park, unpark = unpark, savedRemoved = done))
+        }
+        applied to held
+    }
+
+    /** De los principales que estas filas nombran y aquí faltan, los que se sabe que se borraron. */
+    private fun deadPrincipals(table: SyncTable, rows: List<Row>): Set<Pair<String, String>> = buildSet {
+        for (reference in table.references) {
+            val principal = schema.tableOf(reference.principal) ?: continue
+            val wanted = rows.mapNotNull { referenceId(it, reference.column) }.toSet()
+            val missing = wanted - store.existing(principal.table, wanted)
+            if (missing.isNotEmpty()) store.tombstoned(reference.principal, missing).forEach { add(reference.principal to it) }
+        }
+    }
+
+    /**
+     * Al final de cada bajada (`RetryWaitingReapplyAsync`): lo que se pidió volver a aplicar y esperaba a su principal. Lo escrito aquí después de pedirlo gana a la copia, que se va: es lo mismo que si se hubiera aplicado en ese momento. Lo que se aplica sube en esta misma sincronización.
+     */
+    private fun retryWaitingReapply(run: Run) {
+        val marks = store.parkedRows().filter { it.direction == ParkDirection.REAPPLY }
+        if (marks.isEmpty()) return
+        val role = DeviceRole.fromName(store.meta(DEVICE_ROLE)) ?: return
+        if (store.meta(REVOKED_REASON) != null || store.meta(READ_ONLY) != null) return
+        val saved = store.savedChanges().filter { it.kind == SavedChange.KIND_ROW }
+        val stale = ArrayList<Triple<ParkDirection, String, String>>()
+        val obsolete = ArrayList<Long>()
+        val due = ArrayList<SavedChange>()
+        for (mark in marks) {
+            val copies = saved.filter { it.entityType == mark.entityType && it.syncId == mark.syncId }
+            val table = schema.tableOf(mark.entityType)
+            val key = Triple(ParkDirection.REAPPLY, mark.entityType, mark.syncId)
+            if (copies.isEmpty() || table == null) {
+                stale += key
+                continue
+            }
+            val stamp = store.stamps(table.table, listOf(mark.syncId))[mark.syncId]
+            if (stamp != null && stamp > mark.payload) {
+                stale += key
+                obsolete += copies.map { it.id }
+            } else {
+                due += copies
+            }
+        }
+        if (stale.isNotEmpty()) store.apply(StoreChanges(unpark = stale, savedRemoved = obsolete))
+        if (due.isEmpty()) return
+        val (applied, _) = reapplyRows(run, role, due, deadInCloud(run, due))
+        run.mergedForUpload += applied
+    }
+
+    /** Los principales de estas filas que aquí faltan: ¿los borraron en la nube? Con su lápida allá, una opcional queda en nulo. */
+    private fun deadInCloud(run: Run, due: List<SavedChange>): Set<Pair<String, String>> {
+        val wanted = LinkedHashMap<String, MutableSet<String>>()
+        for (copy in due) {
+            val table = schema.tableOf(copy.entityType) ?: continue
+            val row = RowMapper.deserialize(copy.payload)
+            for (reference in table.references) {
+                val principal = schema.tableOf(reference.principal) ?: continue
+                val id = referenceId(row, reference.column) ?: continue
+                if (store.existing(principal.table, listOf(id)).isEmpty()) wanted.getOrPut(reference.principal) { LinkedHashSet() } += id
+            }
+        }
+        if (wanted.isEmpty()) return emptySet()
+        val batches = wanted.flatMap { (entityType, ids) -> ids.chunked(REJECTED_PER_STATEMENT).map { entityType to it } }
+        val results = run.query(batches.map { (entityType, ids) -> Statement(Statements.rereadTombstonesSql(ids.size), listOf<HranaValue>(HranaValue.Text(entityType)) + ids.map(HranaValue::Text)) })
+        return batches.flatMapIndexed { index, (entityType, _) -> results[index].rows.mapNotNull { row -> row.text("SyncId")?.lowercase(java.util.Locale.ROOT)?.let { entityType to it } } }.toSet()
     }
 
     /** Los empalmes y posibles duplicados de lo que acaba de llegar: un aviso de este equipo que no viaja y se queda hasta descartarlo (regla «Empalmes» y «Duplicados»). */
@@ -1319,6 +1470,8 @@ class SyncEngine(
     companion object {
         const val MIN_PAGE_SIZE = 10
         private const val REJECTED_PER_STATEMENT = 200
+
+        private const val MAX_SOLO_FAILURES = 3
 
         /** El motivo de una fila apartada porque no pasa ni sola. */
         const val TOO_BIG_TO_PUSH = "No se pudo subir: es demasiado grande o tarda demasiado. Se vuelve a intentar en cada subida."

@@ -402,15 +402,15 @@ class WriteEngine(
             .filter { it["IsService"] != 1L && it["ProductSyncId"] != null && (it["Quantity"] as Long) > 0 }
 
         val state = StockState()
+        val (planned, wholePackageItems, legacyReturnIds) = planReturns(sale, items, state)
         // Los renglones de piezas sueltas se devuelven por piezas, una sola vez: nunca también por los paquetes que abrieron
         val pieceItems = items.filter { item ->
             val product = state.productOrNull(item["ProductSyncId"] as String)
-            product != null && product.int("UnitsPerPackage") > 1 && soldIndividualUnits(item, product)
+            (item["SyncId"] as String) !in wholePackageItems && product != null && product.int("UnitsPerPackage") > 1 && soldIndividualUnits(item, product)
         }
         val pieceIds = pieceItems.map { it["SyncId"] as String }.toSet()
-        val planned = planReturns(sale, items, pieceIds, state)
         val pieceReturns = pieceIds.associateWith { SyncIds.derived("return:pieces:", it) }
-        val existing = store.existing("InventoryMovements", planned.map { it.syncId } + pieceReturns.values)
+        val existing = store.existing("InventoryMovements", planned.map { it.syncId } + pieceReturns.values + legacyReturnIds.values)
         val now = protocolLocalNow()
         val writes = ArrayList<RowWrite>()
         val marks = ArrayList<OutboxMark>()
@@ -442,7 +442,8 @@ class WriteEngine(
             val product = state.product(productId)
             val itemReturns = planned.filter { it.itemId == itemId }
             // Ya cancelado en otro equipo: su devolución y el paquete abierto llegan por la sincronización
-            if (pieceReturns.getValue(itemId) in existing || itemReturns.any { it.syncId in existing }) continue
+            // También si un equipo con la versión de antes escribió la devolución por producto con las piezas adentro
+            if (pieceReturns.getValue(itemId) in existing || itemReturns.any { it.syncId in existing } || legacyReturnIds[productId] in existing) continue
             val u = product.int("UnitsPerPackage")
             val opened = maxOf(0, product.int("OpenedUnitsRemaining")) + (item["Quantity"] as Long).toInt()
             var packages = opened / u
@@ -481,41 +482,58 @@ class WriteEngine(
     private class PlannedReturn(val syncId: String, val productId: String, val batchId: String?, val itemId: String?, val quantity: Int)
 
     /**
-     * Con `LedgerVersion` 1, una por salida. Con 0, una por producto con lo que suman sus renglones **de paquetes** ([pieceIds] se devuelven por piezas, aparte), al lote de la primera salida que nombre el folio; un
-     * producto que ya no existe se salta.
+     * Con `LedgerVersion` 1, una por salida. Con 0, una por producto con lo que suman sus renglones **de paquetes**, con el mismo `SyncId` de siempre, al lote de la primera salida que nombre el folio; los de piezas se devuelven aparte, una vez. Un
+     * renglón sin la marca de piezas que la regla vieja del precio tomaría por piezas cuenta como paquetes si las salidas del ticket para ese producto suman todo lo vendido. Un producto que ya no existe se salta. Regresa además esos renglones y
+     * el `SyncId` de la devolución por producto, que un equipo con la versión de antes pudo haber escrito.
      */
-    private fun planReturns(sale: LocalRow, items: List<LocalRow>, pieceIds: Set<String>, state: StockState): List<PlannedReturn> {
-        if (items.isEmpty()) return emptyList()
+    private fun planReturns(sale: LocalRow, items: List<LocalRow>, state: StockState): Triple<List<PlannedReturn>, Set<String>, Map<String, String>> {
+        if (items.isEmpty()) return Triple(emptyList(), emptySet(), emptyMap())
         val folio = sale["Folio"] as String
         val saleId = sale["SyncId"] as String
+        val exitNumber = movementNumber("SalidaVenta").toLong()
         if ((sale["LedgerVersion"] as Long? ?: 0L) >= CURRENT_LEDGER_VERSION) {
             val movementColumns = listOf("SyncId", "SaleItemSyncId", "ProductSyncId", "BatchSyncId", "Delta", "Date", "MovementType")
-            val exitNumber = movementNumber("SalidaVenta").toLong()
             val exits = store.select("InventoryMovements", movementColumns, "SaleItemSyncId", items.map { it["SyncId"] as String }).filter { it["MovementType"] == exitNumber }
             for (item in items) {
                 val itemId = item["SyncId"] as String
                 val exited = exits.filter { it["SaleItemSyncId"] == itemId }.sumOf { kotlin.math.abs((it["Delta"] as Long).toInt()) }
-                val u = maxOf(1, state.productOrNull(item["ProductSyncId"] as String)?.int("UnitsPerPackage") ?: 1)
-                val partial = itemId in pieceIds
+                val product = state.productOrNull(item["ProductSyncId"] as String)
+                val u = maxOf(1, product?.int("UnitsPerPackage") ?: 1)
+                val partial = product != null && u > 1 && soldIndividualUnits(item, product)
                 val quantity = (item["Quantity"] as Long).toInt()
                 if ((!partial && exited != quantity) || (partial && exited > (quantity + u - 1) / u)) {
                     throw WriteRefused(WriteRefused.Reason.NEEDS_SYNC, "Este equipo todavía no tiene todos los movimientos del ticket $folio. Sincronice primero y vuelva a intentarlo.")
                 }
             }
-            return exits.sortedWith(compareBy({ it["Date"] as String }, { it["SaleItemSyncId"] as String }, { it["SyncId"] as String })).map {
+            val perExit = exits.sortedWith(compareBy({ it["Date"] as String }, { it["SaleItemSyncId"] as String }, { it["SyncId"] as String })).map {
                 PlannedReturn(SyncIds.derived("return:", it["SyncId"] as String), it["ProductSyncId"] as String, it["BatchSyncId"] as String?, it["SaleItemSyncId"] as String?, kotlin.math.abs((it["Delta"] as Long).toInt()))
             }
+            return Triple(perExit, emptySet(), emptyMap())
         }
         val prefixes = listOfNotNull(folio, sale["OriginalFolio"] as String?).filter { it.isNotBlank() }.map { "Venta POS $it - " }
-        val exitNumber = movementNumber("SalidaVenta").toLong()
-        return items.filter { (it["SyncId"] as String) !in pieceIds }.groupBy { it["ProductSyncId"] as String }
-            .filterKeys { state.productOrNull(it) != null }
-            .map { (productId, group) ->
-                val first = store.select("InventoryMovements", listOf("SyncId", "BatchSyncId", "Reason", "Date", "MovementType"), "ProductSyncId", listOf(productId))
-                    .filter { row -> row["MovementType"] == exitNumber && prefixes.any { (row["Reason"] as String?)?.startsWith(it) == true } }
-                    .minWithOrNull(compareBy({ it["Date"] as String }, { it["SyncId"] as String }))
-                PlannedReturn(SyncIds.derived("return:", saleId, productId), productId, first?.get("BatchSyncId") as String?, null, group.sumOf { (it["Quantity"] as Long).toInt() })
+        val planned = ArrayList<PlannedReturn>()
+        val wholePackages = HashSet<String>()
+        val returnIds = HashMap<String, String>()
+        for ((productId, group) in items.groupBy { it["ProductSyncId"] as String }) {
+            val product = state.productOrNull(productId) ?: continue
+            val returnId = SyncIds.derived("return:", saleId, productId)
+            returnIds[productId] = returnId
+            val exits = store.select("InventoryMovements", listOf("SyncId", "BatchSyncId", "Quantity", "Reason", "Date", "MovementType"), "ProductSyncId", listOf(productId))
+                .filter { row -> row["MovementType"] == exitNumber && prefixes.any { (row["Reason"] as String?)?.startsWith(it) == true } }
+            val first = exits.minWithOrNull(compareBy({ it["Date"] as String }, { it["SyncId"] as String }))
+            val tookWholePackages = exits.sumOf { kotlin.math.abs((it["Quantity"] as Long? ?: 0L).toInt()) } >= group.sumOf { (it["Quantity"] as Long).toInt() }
+            var packages = 0
+            for (item in group) {
+                var pieces = product.int("UnitsPerPackage") > 1 && soldIndividualUnits(item, product)
+                if (pieces && item["IsIndividualUnits"] == null && tookWholePackages) {
+                    pieces = false
+                    wholePackages += item["SyncId"] as String
+                }
+                if (!pieces) packages += (item["Quantity"] as Long).toInt()
             }
+            if (packages > 0) planned += PlannedReturn(returnId, productId, first?.get("BatchSyncId") as String?, null, packages)
+        }
+        return Triple(planned, wholePackages, returnIds)
     }
 
     /** Lo que se guardó al vender; un renglón de antes (`null`) usa la regla vieja: se cobró a menos del precio del paquete. */

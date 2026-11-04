@@ -18,7 +18,11 @@ data class TombstoneRow(
     val originDeviceId: String?,
 )
 
-enum class ParkDirection { PULL, TOMBSTONE, PUSH }
+/**
+ * [REAPPLY] solo es una marca: la fila sigue en lo guardado para «Volver a aplicar», espera a su principal y cada sincronización la vuelve a intentar. En su [ParkedRow.payload], cuándo se pidió.
+ * En [PUSH], por tamaño, cuándo se intentó.
+ */
+enum class ParkDirection { PULL, TOMBSTONE, PUSH, REAPPLY }
 
 /**
  * Una fila de la cola de salida (plan §7.5, K5): qué registro cambió aquí y todavía no sube. [seq] viene de una secuencia local que solo sube y no depende del reloj;
@@ -52,7 +56,7 @@ data class SavedChange(
     }
 }
 
-/** Una fila apartada (paso 8.4): [payload] es la fila remota tal como llegó, o la marca del borrado en una lápida. */
+/** Una fila apartada (paso 8.4): [payload] es la fila remota tal como llegó, o la marca del borrado en una lápida, o lo que dice [ParkDirection]. */
 data class ParkedRow(
     val direction: ParkDirection,
     val entityType: String,

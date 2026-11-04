@@ -158,6 +158,8 @@ class LinkController(
         return finished
     }
 
+    fun confirmExportDelivered() = launch { flow.confirmExportDelivered() }
+
     fun eraseAfterExport() = launch { flow.eraseAfterExport() }
 
     /** Al irse: sube lo que haya mientras Android deja vivo el proceso. `true` si queda algo: de respaldo, el trabajo único. */

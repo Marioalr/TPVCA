@@ -75,7 +75,7 @@ class RecordingReplay(
             if (!READ_ONLY.containsMatchIn(statement.sql)) failures += "Instrucción que no es de lectura: ${statement.sql}"
         }
 
-        val extras = requests.filter { it.isExecuteOf(Statements.META_ALL, Statements.REGISTRY_OWN) }
+        val extras = requests.filter { it.isExecuteOf(Statements.META_ALL, Statements.REGISTRY_OWN, Statements.META_SCHEMA) }
         val rest = requests - extras.toSet()
         extras.forEach { extrasServed += it.jsonObject.getValue("stmt").jsonObject.sql }
 
@@ -119,6 +119,7 @@ class RecordingReplay(
 
     private fun executeOk(request: JsonElement): JsonElement = when (request.jsonObject.getValue("stmt").jsonObject.sql) {
         Statements.META_ALL -> result(listOf("Key", "Value"), metaRows())
+        Statements.META_SCHEMA -> result(listOf("Value"), listOf(listOf(text(SyncContract.bundledSchema.fingerprint))))
         else -> result(listOf("DeviceCode", "Role", "RevokedAtUtc", "RevokedReason"), listOf(registryRow))
     }
 

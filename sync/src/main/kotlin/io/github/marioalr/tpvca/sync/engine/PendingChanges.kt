@@ -33,6 +33,13 @@ object PendingChanges {
         }
     }
 
+    /** Lo que no subió pasa a guardado, en una transacción: en la misma que lo saca de la cola. Se puede llamar varias veces. */
+    fun stash(store: SyncStore, schema: SyncSchema, clock: Clock, generation: String?) = store.transaction {
+        val parked = store.parkedRows().filter { it.direction == ParkDirection.PUSH }
+        val saved = asSaved(store, schema, clock, generation)
+        if (saved.isNotEmpty()) store.apply(StoreChanges(saved = saved, outboxClearedUpTo = Long.MAX_VALUE, unpark = parked.map { Triple(ParkDirection.PUSH, it.entityType, it.syncId) }))
+    }
+
     /** Todo lo que un archivo de exportación debe llevar: lo de la cola y lo que ya estaba guardado. */
     fun forExport(store: SyncStore, schema: SyncSchema, clock: Clock): List<SavedChange> {
         val current = asSaved(store, schema, clock, store.meta(SyncEngine.GENERATION))

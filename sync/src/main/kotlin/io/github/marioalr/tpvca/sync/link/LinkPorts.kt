@@ -99,6 +99,9 @@ interface LocalDatabase {
     /** La base abierta; la crea si hace falta. */
     fun store(): SyncStore
 
+    /** Ya hay una base en el disco. No abre nada ni toca el Keystore. */
+    fun exists(): Boolean = false
+
     /** Cierra y borra la base, su llave y las imágenes del membrete. La siguiente [store] empieza con una base y una llave nuevas. */
     fun erase()
 }

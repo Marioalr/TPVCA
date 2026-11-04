@@ -19,6 +19,12 @@ data class SyncNotice(val kind: String, val first: String, val second: String)
 object SyncNotices {
     const val OVERLAP = "empalme"
 
+    /** Una fila de «Volver a aplicar» sin su principal: [SyncNotice.first] es su `EntityType` y sigue guardada. */
+    const val REAPPLY_NO_PRINCIPAL = "reaplicar-sin-principal"
+
+    /** Un borrado de «Volver a aplicar» que impide una `restrict`: sigue guardado. */
+    const val REAPPLY_DELETE_BLOCKED = "reaplicar-borrado-bloqueado"
+
     fun read(text: String?): Set<SyncNotice> {
         if (text.isNullOrEmpty()) return emptySet()
         return Json.parseToJsonElement(text).jsonArray.map { item ->

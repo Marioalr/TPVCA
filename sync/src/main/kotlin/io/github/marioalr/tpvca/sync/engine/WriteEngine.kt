@@ -33,8 +33,24 @@ class WriteRefused(val reason: Reason, message: String) : Exception(message) {
 interface FolioLedger {
     fun last(letteredSeries: String): Int
 
-    /** Guarda el número si es mayor que el guardado. */
-    fun save(letteredSeries: String, number: Int)
+    /**
+     * Toma el siguiente número de una serie con letra: el mayor entre el guardado y [localMax], más uno. **Atómico:** dos folios sin conexión al mismo tiempo no pueden salir iguales, y queda guardado antes de usarse.
+     */
+    fun reserve(letteredSeries: String, localMax: Int): Int
+}
+
+/** Los permisos por tabla, con los mismos que la prueba `ScenarioStepAllowed` de la PC. */
+object WritePolicy {
+    fun canWrite(role: DeviceRole, table: String, creating: Boolean): Boolean = when (table) {
+        "Patients", "PatientConsultations", "LabResults" -> DevicePermissions.canManageClinicalRecords(role)
+        "Appointments" -> DevicePermissions.canScheduleAppointments(role)
+        "Sales", "SaleItems" -> DevicePermissions.canProcessSales(role)
+        // El celular todavía no: una entrada suya no puede tocar `Products` y con `CurrentStock` como valor las existencias no subirían. Hasta el 8.20 (`docs/SINCRONIZACION.md`)
+        "ProductBatches", "InventoryMovements" -> DevicePermissions.canManageInventory(role)
+        "Categories", "Products", "ClinicalServices", "ServiceDefaultProducts" -> DevicePermissions.canManageInventory(role)
+        "PediatricDoseRules", "PrescriptionTemplates" -> DevicePermissions.canConfigureSystem(role)
+        else -> false
+    }
 }
 
 /** Un renglón de una venta. Un producto o un servicio; [individualUnits]: piezas sueltas de un paquete. */
@@ -72,7 +88,7 @@ class WriteEngine(
     /** Alrededor de cada escritura: en la app, `DataGate.write`, para que un borrado en curso no se cruce con ella. */
     private val guard: (() -> Any?) -> Any? = { it() },
 ) {
-    val writer = LocalWriter(store, deviceId, schema, clock)
+    private val writer = LocalWriter(store, deviceId, schema, clock)
 
     private val role: DeviceRole?
         get() = roleOverride ?: DeviceRole.fromName(store.meta(SyncEngine.DEVICE_ROLE))
@@ -88,25 +104,12 @@ class WriteEngine(
 
     private fun refuse(what: String): Nothing = throw WriteRefused(WriteRefused.Reason.FORBIDDEN, "Este equipo no puede $what.")
 
-    /** Los mismos permisos que la prueba `ScenarioStepAllowed` de la PC. */
-    private fun canWrite(role: DeviceRole, table: String, creating: Boolean, values: Map<String, Any?>): Boolean = when (table) {
-        "Patients", "PatientConsultations", "LabResults" -> DevicePermissions.canManageClinicalRecords(role)
-        "Appointments" -> DevicePermissions.canScheduleAppointments(role)
-        "Sales", "SaleItems" -> DevicePermissions.canProcessSales(role)
-        "ProductBatches" -> DevicePermissions.canManageInventory(role) || (creating && DevicePermissions.canRegisterStockEntries(role))
-        // Regla «Catálogo con varios equipos»: el celular, solo el movimiento EntradaCompra de una entrada de mercancía
-        "InventoryMovements" -> DevicePermissions.canManageInventory(role) || (creating && DevicePermissions.canRegisterStockEntries(role) && values["MovementType"]?.toString() == ENTRY_PURCHASE)
-        "Categories", "Products", "ClinicalServices", "ServiceDefaultProducts" -> DevicePermissions.canManageInventory(role)
-        "PediatricDoseRules", "PrescriptionTemplates" -> DevicePermissions.canConfigureSystem(role)
-        else -> false
-    }
-
     @Suppress("UNCHECKED_CAST")
     private fun <T> guarded(block: () -> T): T = guard { block() } as T
 
     /** Una fila nueva. Regresa su `SyncId`. */
     fun create(table: String, values: Map<String, Any?>, syncId: String = SyncIds.random()): String = guarded {
-        if (!canWrite(requireWritable(), table, creating = true, values)) refuse("escribir en $table")
+        if (!WritePolicy.canWrite(requireWritable(), table, creating = true)) refuse("escribir en $table")
         writer.create(table, syncId.lowercase(Locale.ROOT), values)
         afterWrite(table, syncId, values)
         syncId
@@ -114,7 +117,7 @@ class WriteEngine(
 
     /** Lo que cambió de una fila, con marca nueva; un expediente, con sus marcas por campo. `false` si la fila ya no existe. */
     fun edit(table: String, syncId: String, values: Map<String, Any?>): Boolean = guarded {
-        if (!canWrite(requireWritable(), table, creating = false, values)) refuse("escribir en $table")
+        if (!WritePolicy.canWrite(requireWritable(), table, creating = false)) refuse("escribir en $table")
         val done = writer.edit(table, syncId, values)
         afterWrite(table, syncId, values)
         done
@@ -122,7 +125,7 @@ class WriteEngine(
 
     /** Borrar, con su cascada. Lo que dependa de él con `restrict` lo impide. */
     fun delete(table: String, syncId: String) = guarded {
-        if (!canWrite(requireWritable(), table, creating = false, emptyMap())) refuse("borrar en $table")
+        if (!WritePolicy.canWrite(requireWritable(), table, creating = false)) refuse("borrar en $table")
         val patients = referencedPatient(table, syncId)
         if (!writer.delete(table, syncId)) throw WriteRefused(WriteRefused.Reason.CONFLICT, "Todavía tiene registros que dependen de él.")
         recalculate(patients)
@@ -130,7 +133,7 @@ class WriteEngine(
 
     /** Agregar, quitar o cambiar un renglón de una hoja: sobre la hoja que está en la base, renglón por renglón. */
     fun editSheet(patientSyncId: String, column: String, change: (List<PatientSheets.SheetRow>) -> List<JsonObject>) = guarded {
-        if (!canWrite(requireWritable(), "Patients", creating = false, emptyMap())) refuse("escribir en Patients")
+        if (!WritePolicy.canWrite(requireWritable(), "Patients", creating = false)) refuse("escribir en Patients")
         require(PatientSheets.isSheet(column)) { "$column no es una hoja." }
         store.transaction {
             val table = writer.table("Patients")
@@ -162,21 +165,22 @@ class WriteEngine(
      * El siguiente folio (paso 8.16): del contador con conexión; sin conexión, sin respuesta en 2 s, con la cuota agotada o el token rechazado, con la letra del equipo. Sin código no se
      * crea. **El número con letra se guarda antes de usarlo.**
      */
-    fun nextFolio(kind: FolioKind, existing: Collection<String?>): String {
+    private fun nextFolio(kind: FolioKind, existing: Collection<String?>): String {
         val today = Clinic.today(clock.instant())
         val series = FolioFactory.series(kind, today)
         takeFromCounter(series, FolioFactory.maxIn(series, existing))?.let { return FolioFactory.online(kind, today, it) }
 
-        val code = store.meta(SyncEngine.DEVICE_CODE)
-        if (!FolioFactory.isDeviceCode(code)) throw WriteRefused(WriteRefused.Reason.NO_DEVICE_CODE, "Sin conexión, este equipo todavía no tiene su código para numerar sin repetir folios.")
-        val lettered = FolioFactory.letteredSeries(series, code!!)
-        val offline = FolioFactory.offline(kind, today, code, existing, folios.last(lettered))
-        folios.save(offline.letteredSeries, offline.number)
-        return offline.folio
+        return guarded {
+            val code = store.meta(SyncEngine.DEVICE_CODE)
+            if (!FolioFactory.isDeviceCode(code)) throw WriteRefused(WriteRefused.Reason.NO_DEVICE_CODE, "Sin conexión, este equipo todavía no tiene su código para numerar sin repetir folios.")
+            val lettered = FolioFactory.letteredSeries(series, code!!)
+            FolioFactory.format(kind, lettered, folios.reserve(lettered, FolioFactory.maxIn(lettered, existing)))
+        }
     }
 
+    /** Sin tener la puerta tomada mientras espera la red: un borrado no espera a estos 2 s. */
     private fun takeFromCounter(series: String, floor: Int): Int? {
-        if (networkHanging() || isPaused()) return null
+        if (networkHanging() || guarded { isPaused() }) return null
         val connection = folioConnection() ?: return null
         return try {
             val result = connection.query(listOf(Statements.folioTake(series, floor))).single()
@@ -194,8 +198,10 @@ class WriteEngine(
 
     /** Un expediente nuevo con su folio. */
     fun newPatient(fullName: String, values: Map<String, Any?> = emptyMap(), syncId: String = SyncIds.random()): Pair<String, String> {
-        if (!canWrite(requireWritable(), "Patients", creating = true, values)) refuse("crear expedientes")
-        val existing = store.select("Patients", listOf("RecordNumber")).map { it["RecordNumber"] as String? }
+        val existing = guarded {
+            if (!WritePolicy.canWrite(requireWritable(), "Patients", creating = true)) refuse("crear expedientes")
+            store.select("Patients", listOf("RecordNumber")).map { it["RecordNumber"] as String? }
+        }
         val folio = nextFolio(FolioKind.Patient, existing)
         guarded {
             writer.create("Patients", syncId, values + mapOf("FullName" to fullName, "RecordNumber" to folio, "IsActive" to true, "CreatedAt" to protocolLocalNow()))
@@ -216,14 +222,18 @@ class WriteEngine(
      * `CurrentStock` en negativo; solo un producto que ya no existe detiene la venta. El folio se pide antes de la transacción, sin dejar la base tomada mientras espera la red.
      */
     fun registerSale(lines: List<SaleLine>, patientName: String? = null, paymentMethod: String? = null, responsible: String = "Dr. / Farmacia"): SaleResult? {
-        if (!canWrite(requireWritable(), "Sales", creating = true, emptyMap())) refuse("cobrar")
         val valid = lines.filter { it.quantity > 0 }
-        if (valid.isEmpty()) return null
-        val products = valid.mapNotNull { it.productSyncId }.distinct().associateWith { store.select("Products", listOf("IsActive"), "SyncId", listOf(it)).firstOrNull() }
-        for ((id, product) in products) {
-            if (product == null || product["IsActive"] != 1L) throw WriteRefused(WriteRefused.Reason.CONFLICT, "El producto $id ya no existe en el inventario.")
+        val existing = guarded {
+            if (!WritePolicy.canWrite(requireWritable(), "Sales", creating = true)) refuse("cobrar")
+            if (valid.isEmpty()) return@guarded emptyList()
+            val products = valid.mapNotNull { it.productSyncId }.distinct().associateWith { store.select("Products", listOf("IsActive"), "SyncId", listOf(it)).firstOrNull() }
+            for ((id, product) in products) {
+                if (product == null || product["IsActive"] != 1L) throw WriteRefused(WriteRefused.Reason.CONFLICT, "El producto $id ya no existe en el inventario.")
+            }
+            store.select("Sales", listOf("Folio")).map { it["Folio"] as String? }
         }
-        val folio = nextFolio(FolioKind.Sale, store.select("Sales", listOf("Folio")).map { it["Folio"] as String? })
+        if (valid.isEmpty()) return null
+        val folio = nextFolio(FolioKind.Sale, existing)
         return guarded { store.transaction { writeSale(valid, folio, patientName, paymentMethod, responsible) } }
     }
 
@@ -366,30 +376,41 @@ class WriteEngine(
     private fun movementNumber(name: String): String =
         writer.table("InventoryMovements").column("MovementType")!!.enumValues.getValue(name).toString()
 
-    /**
-     * Cancelar un ticket (`CancelSaleAsync`): cada salida vuelve a su lote con un `SyncId` determinista, así dos equipos que cancelan el mismo ticket escriben la misma fila. Si la
-     * devolución ya está aquí cuenta como hecha. Con `LedgerVersion` 1 y sin todos los movimientos del renglón se niega: «Sincronice primero».
-     */
-    fun cancelSale(folio: String, reason: String = "Devolución / Cancelación de ticket", responsible: String = "Dr. Titular"): Boolean = guarded {
-        if (!canWrite(requireWritable(), "Sales", creating = false, emptyMap())) refuse("cancelar tickets")
-        store.transaction { writeCancel(folio, reason, responsible) }
+    /** El `SyncId` del ticket con ese folio, o con ese folio sin conexión (`OriginalFolio`, 8.17). Para buscarlo: se cancela por su `SyncId`, porque un folio se puede repetir. */
+    fun findSale(folio: String): String? = guarded {
+        val wanted = folio.trim()
+        store.select("Sales", listOf("SyncId", "Folio", "OriginalFolio"))
+            .firstOrNull { (it["Folio"] as String?).equals(wanted, ignoreCase = true) || (it["OriginalFolio"] as String?).equals(wanted, ignoreCase = true) }?.get("SyncId") as String?
     }
 
-    private fun writeCancel(folio: String, reason: String, responsible: String): Boolean {
+    /**
+     * Cancelar un ticket (`CancelSaleAsync`): cada salida vuelve a su lote con un `SyncId` determinista, así dos equipos que cancelan el mismo ticket escriben la misma fila. Si la
+     * devolución ya está aquí cuenta como hecha. Con `LedgerVersion` 1 y sin todos los movimientos del renglón se niega: «Sincronice primero». Un producto que ya no existe se salta y el ticket se cancela igual.
+     */
+    fun cancelSale(saleSyncId: String, reason: String = "Devolución / Cancelación de ticket", responsible: String = "Dr. Titular"): Boolean = guarded {
+        if (!WritePolicy.canWrite(requireWritable(), "Sales", creating = false)) refuse("cancelar tickets")
+        store.transaction { writeCancel(saleSyncId, reason, responsible) }
+    }
+
+    private fun writeCancel(saleId: String, reason: String, responsible: String): Boolean {
         val saleTable = writer.table("Sales")
-        val sale = store.select(saleTable.table, saleTable.columns.map { it.name })
-            .firstOrNull { (it["Folio"] as String?).equals(folio.trim(), ignoreCase = true) || (it["OriginalFolio"] as String?).equals(folio.trim(), ignoreCase = true) }
-            ?: throw WriteRefused(WriteRefused.Reason.CONFLICT, "No se encontró el ticket $folio.")
+        val sale = writer.find(saleTable, saleId) ?: throw WriteRefused(WriteRefused.Reason.CONFLICT, "No se encontró el ticket.")
         if (sale["IsCancelled"] == 1L) throw WriteRefused(WriteRefused.Reason.CONFLICT, "El ticket ${sale["Folio"]} ya se encuentra cancelado.")
-        val saleId = sale["SyncId"] as String
         val saleFolio = sale["Folio"] as String
         val itemTable = writer.table("SaleItems")
         val items = store.select(itemTable.table, itemTable.columns.map { it.name }, "SaleSyncId", listOf(saleId))
             .filter { it["IsService"] != 1L && it["ProductSyncId"] != null && (it["Quantity"] as Long) > 0 }
 
         val state = StockState()
-        val planned = planReturns(sale, items, state)
-        val existing = store.existing("InventoryMovements", planned.map { it.syncId })
+        // Los renglones de piezas sueltas se devuelven por piezas, una sola vez: nunca también por los paquetes que abrieron
+        val pieceItems = items.filter { item ->
+            val product = state.productOrNull(item["ProductSyncId"] as String)
+            product != null && product.int("UnitsPerPackage") > 1 && soldIndividualUnits(item, product)
+        }
+        val pieceIds = pieceItems.map { it["SyncId"] as String }.toSet()
+        val planned = planReturns(sale, items, pieceIds, state)
+        val pieceReturns = pieceIds.associateWith { SyncIds.derived("return:pieces:", it) }
+        val existing = store.existing("InventoryMovements", planned.map { it.syncId } + pieceReturns.values)
         val now = protocolLocalNow()
         val writes = ArrayList<RowWrite>()
         val marks = ArrayList<OutboxMark>()
@@ -410,12 +431,10 @@ class WriteEngine(
             addMovement(product, productId, batchId, itemId, "EntradaDevolucion", quantity, quantity, now, movementReason, responsible, syncId, writes, marks)
         }
 
-        val pieceItems = items.filter { item ->
-            val product = state.product(item["ProductSyncId"] as String)
-            product.int("UnitsPerPackage") > 1 && soldIndividualUnits(item, product)
+        for (plan in planned.filter { it.syncId !in existing && it.itemId !in pieceIds }) {
+            if (state.productOrNull(plan.productId) == null) continue
+            addReturn(plan.productId, plan.syncId, plan.batchId, plan.itemId, plan.quantity)
         }
-        val pieceIds = pieceItems.map { it["SyncId"] as String }.toSet()
-        for (plan in planned.filter { it.syncId !in existing && it.itemId !in pieceIds }) addReturn(plan.productId, plan.syncId, plan.batchId, plan.itemId, plan.quantity)
 
         for (item in pieceItems) {
             val itemId = item["SyncId"] as String
@@ -423,7 +442,7 @@ class WriteEngine(
             val product = state.product(productId)
             val itemReturns = planned.filter { it.itemId == itemId }
             // Ya cancelado en otro equipo: su devolución y el paquete abierto llegan por la sincronización
-            if (itemReturns.any { it.syncId in existing }) continue
+            if (pieceReturns.getValue(itemId) in existing || itemReturns.any { it.syncId in existing }) continue
             val u = product.int("UnitsPerPackage")
             val opened = maxOf(0, product.int("OpenedUnitsRemaining")) + (item["Quantity"] as Long).toInt()
             var packages = opened / u
@@ -440,8 +459,9 @@ class WriteEngine(
                 val last = store.select("InventoryMovements", listOf("BatchSyncId", "Delta", "Date"), "ProductSyncId", listOf(productId))
                     .filter { it["BatchSyncId"] != null && (it["Delta"] as Long) < 0 }
                     .maxByOrNull { it["Date"] as String }?.get("BatchSyncId") as String?
-                val batchId = last?.takeIf { state.batch(it)?.get("ClosedAtUtc") == null }
-                addReturn(productId, SyncIds.derived("return:pieces:", itemId), batchId, itemId, packages)
+                // Al lote de la última salida, si existe y sigue abierto
+                val batchId = last?.takeIf { id -> state.batch(id)?.let { it["ClosedAtUtc"] == null } == true }
+                addReturn(productId, pieceReturns.getValue(itemId), batchId, itemId, packages)
             }
         }
 
@@ -460,8 +480,11 @@ class WriteEngine(
 
     private class PlannedReturn(val syncId: String, val productId: String, val batchId: String?, val itemId: String?, val quantity: Int)
 
-    /** Con `LedgerVersion` 1, una por salida; con 0, una por producto, al lote de la primera salida que nombre el folio. */
-    private fun planReturns(sale: LocalRow, items: List<LocalRow>, state: StockState): List<PlannedReturn> {
+    /**
+     * Con `LedgerVersion` 1, una por salida. Con 0, una por producto con lo que suman sus renglones **de paquetes** ([pieceIds] se devuelven por piezas, aparte), al lote de la primera salida que nombre el folio; un
+     * producto que ya no existe se salta.
+     */
+    private fun planReturns(sale: LocalRow, items: List<LocalRow>, pieceIds: Set<String>, state: StockState): List<PlannedReturn> {
         if (items.isEmpty()) return emptyList()
         val folio = sale["Folio"] as String
         val saleId = sale["SyncId"] as String
@@ -472,9 +495,8 @@ class WriteEngine(
             for (item in items) {
                 val itemId = item["SyncId"] as String
                 val exited = exits.filter { it["SaleItemSyncId"] == itemId }.sumOf { kotlin.math.abs((it["Delta"] as Long).toInt()) }
-                val product = state.product(item["ProductSyncId"] as String)
-                val u = maxOf(1, product.int("UnitsPerPackage"))
-                val partial = u > 1 && soldIndividualUnits(item, product)
+                val u = maxOf(1, state.productOrNull(item["ProductSyncId"] as String)?.int("UnitsPerPackage") ?: 1)
+                val partial = itemId in pieceIds
                 val quantity = (item["Quantity"] as Long).toInt()
                 if ((!partial && exited != quantity) || (partial && exited > (quantity + u - 1) / u)) {
                     throw WriteRefused(WriteRefused.Reason.NEEDS_SYNC, "Este equipo todavía no tiene todos los movimientos del ticket $folio. Sincronice primero y vuelva a intentarlo.")
@@ -486,12 +508,14 @@ class WriteEngine(
         }
         val prefixes = listOfNotNull(folio, sale["OriginalFolio"] as String?).filter { it.isNotBlank() }.map { "Venta POS $it - " }
         val exitNumber = movementNumber("SalidaVenta").toLong()
-        return items.groupBy { it["ProductSyncId"] as String }.map { (productId, group) ->
-            val first = store.select("InventoryMovements", listOf("SyncId", "BatchSyncId", "Reason", "Date", "MovementType"), "ProductSyncId", listOf(productId))
-                .filter { row -> row["MovementType"] == exitNumber && prefixes.any { (row["Reason"] as String?)?.startsWith(it) == true } }
-                .minWithOrNull(compareBy({ it["Date"] as String }, { it["SyncId"] as String }))
-            PlannedReturn(SyncIds.derived("return:", saleId, productId), productId, first?.get("BatchSyncId") as String?, null, group.sumOf { (it["Quantity"] as Long).toInt() })
-        }
+        return items.filter { (it["SyncId"] as String) !in pieceIds }.groupBy { it["ProductSyncId"] as String }
+            .filterKeys { state.productOrNull(it) != null }
+            .map { (productId, group) ->
+                val first = store.select("InventoryMovements", listOf("SyncId", "BatchSyncId", "Reason", "Date", "MovementType"), "ProductSyncId", listOf(productId))
+                    .filter { row -> row["MovementType"] == exitNumber && prefixes.any { (row["Reason"] as String?)?.startsWith(it) == true } }
+                    .minWithOrNull(compareBy({ it["Date"] as String }, { it["SyncId"] as String }))
+                PlannedReturn(SyncIds.derived("return:", saleId, productId), productId, first?.get("BatchSyncId") as String?, null, group.sumOf { (it["Quantity"] as Long).toInt() })
+            }
     }
 
     /** Lo que se guardó al vender; un renglón de antes (`null`) usa la regla vieja: se cobró a menos del precio del paquete. */
@@ -507,7 +531,7 @@ class WriteEngine(
      * tenía, aunque quede en negativo. Una parte que ya existe (otro equipo lo cerró) no se vuelve a escribir ni a descontar. Los lotes no se borran.
      */
     fun closeBatch(batchSyncId: String) = guarded {
-        if (!canWrite(requireWritable(), "ProductBatches", creating = false, emptyMap())) refuse("cerrar lotes")
+        if (!WritePolicy.canWrite(requireWritable(), "ProductBatches", creating = false)) refuse("cerrar lotes")
         store.transaction {
             val state = StockState()
             val batch = state.batch(batchSyncId) ?: return@transaction
@@ -528,10 +552,15 @@ class WriteEngine(
             val reason = "Eliminación del lote ${batch["BatchNumber"]}"
             val writes = ArrayList<RowWrite>()
             val marks = ArrayList<OutboxMark>()
-            if (lotDelta != 0 && lotPart !in written) addMovement(product, productId, batchSyncId, null, "AjusteInventario", kotlin.math.abs(lotDelta), lotDelta, now, reason, "Dr. Consulta", lotPart, writes, marks)
-            if (restDelta != 0 && restPart !in written) addMovement(product, productId, null, null, "AjusteInventario", kotlin.math.abs(restDelta), restDelta, now, reason, "Dr. Consulta", restPart, writes, marks)
-            product["UpdatedAt"] = now
-            state.touch(productId)
+            // El producto cambia solo si se escribe una parte: otro equipo que ya lo cerró ya lo descontó
+            fun close(syncId: String, batch: String?, delta: Int) {
+                if (delta == 0 || syncId in written) return
+                addMovement(product, productId, batch, null, "AjusteInventario", kotlin.math.abs(delta), delta, now, reason, "Dr. Consulta", syncId, writes, marks)
+                product["UpdatedAt"] = now
+                state.touch(productId)
+            }
+            close(lotPart, batchSyncId, lotDelta)
+            close(restPart, null, restDelta)
             batch["Quantity"] = 0L
             batch["IsDepleted"] = 1L
             batch["ClosedAtUtc"] = writer.stamp(null)
@@ -554,12 +583,11 @@ class WriteEngine(
     }
 
     /**
-     * Una entrada de mercancía de un producto que ya existe: el lote y su movimiento `EntradaCompra` con el costo de ese momento. Es lo único del inventario que puede el celular (regla «Catálogo con
-     * varios equipos»: nunca `Products`); la tablet además sube `CurrentStock`, como la PC.
+     * Una entrada de mercancía de un producto que ya existe: el lote, su movimiento `EntradaCompra` con el costo de ese momento y `CurrentStock`, como la PC. **El celular todavía no:** la regla «Catálogo con varios
+     * equipos» no lo deja escribir `Products` y, con `CurrentStock` como valor, la entrada no subiría las existencias en ningún equipo. Se niega aquí hasta el 8.20 (`docs/SINCRONIZACION.md`).
      */
     fun registerStockEntry(productSyncId: String, batchNumber: String, expirationDate: String?, quantity: Int, unitCost: BigDecimal?, reason: String, responsible: String): String = guarded {
-        val role = requireWritable()
-        if (!DevicePermissions.canRegisterStockEntries(role)) refuse("registrar entradas")
+        if (!DevicePermissions.canManageInventory(requireWritable())) refuse("registrar entradas hasta que las existencias salgan del libro (8.20)")
         require(quantity > 0) { "La entrada necesita piezas." }
         store.transaction {
             val state = StockState()
@@ -575,11 +603,9 @@ class WriteEngine(
             writes += RowWrite(table.table, batchId, writer.buildRow(table, batchId, batch, writer.stamp(null)), isNew = true)
             marks += writer.mark(table, batchId)
             addMovement(product, productSyncId, batchId, null, "EntradaCompra", quantity, quantity, now, reason, responsible, SyncIds.random(), writes, marks, unitCost?.toPlainString())
-            if (DevicePermissions.canManageInventory(role)) {
-                product["UpdatedAt"] = now
-                state.touch(productSyncId)
-                state.flush(writes, marks)
-            }
+            product["UpdatedAt"] = now
+            state.touch(productSyncId)
+            state.flush(writes, marks)
             store.apply(StoreChanges(writes = writes, outbox = marks))
             batchId
         }
@@ -600,9 +626,14 @@ class WriteEngine(
         private val touchedProducts = LinkedHashSet<String>()
         private val touchedBatches = LinkedHashSet<String>()
 
-        fun product(id: String): MutableMap<String, Any?> = products.getOrPut(id) {
-            val table = writer.table("Products")
-            writer.find(table, id)?.toMutableMap() ?: throw WriteRefused(WriteRefused.Reason.CONFLICT, "El producto $id ya no existe en el inventario.")
+        fun product(id: String): MutableMap<String, Any?> =
+            productOrNull(id) ?: throw WriteRefused(WriteRefused.Reason.CONFLICT, "El producto $id ya no existe en el inventario.")
+
+        fun productOrNull(id: String): MutableMap<String, Any?>? {
+            products[id]?.let { return it }
+            val row = writer.find(writer.table("Products"), id)?.toMutableMap() ?: return null
+            products[id] = row
+            return row
         }
 
         fun batch(id: String): MutableMap<String, Any?>? {
@@ -651,8 +682,6 @@ class WriteEngine(
 
     companion object {
         const val CURRENT_LEDGER_VERSION = 1L
-        const val ENTRY_PURCHASE_NAME = "EntradaCompra"
-        private val ENTRY_PURCHASE: String by lazy { SyncContract.bundledSchema.table("InventoryMovements")!!.column("MovementType")!!.enumValues.getValue(ENTRY_PURCHASE_NAME).toString() }
 
     }
 }

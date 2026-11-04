@@ -51,6 +51,7 @@ class TranscriptReplayTest {
     private fun syncedStore(): InMemorySyncStore = InMemorySyncStore().apply {
         metaValues[SyncEngine.FIRST_DOWNLOAD_DONE] = "2026-11-02T18:00:00Z"
         metaValues[SyncEngine.MANIFEST_CONTRACT] = SyncContract.REVISION.toString()
+            metaValues[SyncEngine.CLOUD_SCHEMA_SEEN] = SyncContract.bundledSchema.fingerprint
         metaValues[SyncEngine.CLINIC_ID] = "<id:1>"
         metaValues[SyncEngine.GENERATION] = "<id:2>"
         metaValues[SyncEngine.SUMMARY_DAY] = "2026-11-03"

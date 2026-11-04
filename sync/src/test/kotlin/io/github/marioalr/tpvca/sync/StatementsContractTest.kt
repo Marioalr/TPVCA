@@ -24,10 +24,9 @@ class StatementsContractTest {
 
     /** Las que usan K2 y K3. Si `statements.json` trae una nueva, esta prueba falla hasta decidir de qué paso es. */
     private val usedByK2 = setOf(
-        "meta.all", "handshake", "generation", "profile", "registry.own", "asset.meta", "asset.chunk", "heartbeat.readNonce", "heartbeat.write", "heartbeat.writeAfterPush", "folio.take", "folio.raise",
+        "meta.all", "handshake", "generation", "profile", "registry.own", "asset.meta", "asset.chunk", "heartbeat.readNonce", "heartbeat.write", "heartbeat.writeAfterPush", "meta.schema", "folio.take", "folio.raise",
     )
     private val laterSteps = mapOf(
-        "meta.schema" to "sin uso: meta.all ya trae la huella",
         "registry.primary" to "K9b: Equipos vinculados en la tablet; vincular no lo necesita",
         "asset.exists" to "K9b",
         "asset.writeChunk" to "K9b",
@@ -50,6 +49,7 @@ class StatementsContractTest {
     @Test
     fun laSubidaEsLaDeLaGrabacion() {
         assertEquals(statements["folio.take"], Statements.FOLIO_TAKE)
+        assertEquals(statements["meta.schema"], Statements.META_SCHEMA)
         assertEquals(statements["folio.raise"], Statements.FOLIO_RAISE)
         assertEquals(statements["heartbeat.writeAfterPush"], Statements.HEARTBEAT_AFTER_PUSH)
         // push.jsonl y tie-conflict.jsonl: el texto de cada instrucción de la subida, literal aunque el contrato no lo exija

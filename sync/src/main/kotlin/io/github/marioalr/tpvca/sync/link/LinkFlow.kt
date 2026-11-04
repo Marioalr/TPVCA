@@ -12,8 +12,10 @@ import io.github.marioalr.tpvca.sync.engine.StoreChanges
 import io.github.marioalr.tpvca.sync.engine.SyncEngine
 import io.github.marioalr.tpvca.sync.engine.SyncEngineConfig
 import io.github.marioalr.tpvca.sync.engine.SyncOutcome
+import io.github.marioalr.tpvca.sync.engine.SyncStore
 import io.github.marioalr.tpvca.sync.engine.SyncTrigger
 import io.github.marioalr.tpvca.sync.engine.WriteEngine
+import io.github.marioalr.tpvca.sync.engine.WriteRefused
 import io.github.marioalr.tpvca.sync.engine.unsyncedChanges
 import io.github.marioalr.tpvca.sync.hrana.HranaClient
 import io.github.marioalr.tpvca.sync.hrana.HranaConnection
@@ -140,13 +142,16 @@ class LinkFlow(
         }
         // Un error pasajero del Keystore o del disco sale de aquí como excepción: nada se borra y [loaded] sigue en falso
         return when (val stored = vault.load()) {
-            StoredCredential.Empty -> LinkState.NotLinked()
+            StoredCredential.Empty -> {
+                // Una base sin credencial con algo sin subir: tampoco se pierde. Sin base no se abre nada, ni se toca el Keystore
+                val store = if (database.exists()) database.store() else null
+                if (store != null && store.unsyncedChanges() > 0) credentialLost(store) else LinkState.NotLinked()
+            }
             StoredCredential.Unreadable -> {
                 // La llave se perdió de verdad: sin credencial no hay DeviceId ni forma de subir nada. Con algo pendiente no se borra: se exporta primero
                 val store = database.store()
-                val pending = store.unsyncedChanges()
-                if (pending > 0) {
-                    LinkState.CredentialLost(pending, store.meta(EXPORTED_COUNT) == pending.toString())
+                if (store.unsyncedChanges() > 0) {
+                    credentialLost(store)
                 } else {
                     eraseAll()
                     LinkState.NotLinked(LinkProblem.CredentialLost)
@@ -159,6 +164,23 @@ class LinkFlow(
         }
     }
 
+    private fun credentialLost(store: SyncStore): LinkState.CredentialLost {
+        val (ready, exported) = exportFlags(store)
+        return LinkState.CredentialLost(store.unsyncedChanges(), ready, exported)
+    }
+
+    /** Si el archivo sigue siendo el de lo que hay ahora, y si el médico confirmó que llegó. Lo anotado después ya no está en ese archivo. */
+    private fun exportFlags(store: SyncStore): Pair<Boolean, Boolean> {
+        val pending = store.unsyncedChanges().toString()
+        return (store.meta(EXPORT_READY_COUNT) == pending) to (store.meta(EXPORTED_COUNT) == pending)
+    }
+
+    private fun needsToken(malformed: Boolean, erased: Boolean, pending: Int, store: SyncStore?): LinkState.NeedsToken {
+        val reason = store?.meta(SyncEngine.REVOKED_REASON)
+        val (ready, exported) = if (store != null && reason != null) exportFlags(store) else (false to false)
+        return LinkState.NeedsToken(malformed, erased, pending, revokedReason = reason, exportReady = ready, exported = exported)
+    }
+
     /** Algo local falló. Lo que hay guardado se queda como está. */
     @Synchronized
     fun reportLocalError(): LinkState = publish(LinkState.LocalError)
@@ -167,12 +189,18 @@ class LinkFlow(
         // Sin token ya se borró la base: no hace falta abrirla ni crear otra
         if (saved.token == null) return LinkState.NeedsToken(malformed = false, erased = true, pending = 0)
         val store = database.store()
+        // Se quedó a medio cambiar de identidad: se termina antes que nada
+        store.meta(SyncEngine.IDENTITY_CHANGE)?.let { newId ->
+            closeForErase()
+            finishIdentityChange(saved, newId)
+            return waiting(credential!!, newIdentity = true)
+        }
         val pending = store.unsyncedChanges()
         return when {
             // Revocado con algo pendiente: lo dice aunque no haya red, y no se abren los datos como si nada
             store.meta(SyncEngine.REVOKED_REASON) != null -> revokedKept(store.meta(SyncEngine.REVOKED_REASON), store)
-            store.meta(SyncEngine.AUTH_MALFORMED) != null -> LinkState.NeedsToken(malformed = true, erased = false, pending = pending)
-            store.meta(SyncEngine.AUTH_FIRST_401) != null -> LinkState.NeedsToken(malformed = false, erased = false, pending = pending)
+            store.meta(SyncEngine.AUTH_MALFORMED) != null -> needsToken(malformed = true, erased = false, pending, store)
+            store.meta(SyncEngine.AUTH_FIRST_401) != null -> needsToken(malformed = false, erased = false, pending, store)
             saved.approvedRole != null -> linkedState(saved, null)
             else -> waiting(saved)
         }
@@ -279,10 +307,11 @@ class LinkFlow(
     /** Lo que corre la cadencia, y «Revisar ahora». */
     @Synchronized
     fun refresh(reason: Refresh): LinkState {
+        lastFailed = false
         val saved = credential
         val current = state
-        // Un error al vincular, sin credencial: se regresa a la pantalla de vincular
-        if (saved == null) return if (loaded && current is LinkState.LocalError) publish(LinkState.NotLinked()) else state
+        // Un error sin credencial: se vuelve a leer lo guardado, y solo si de verdad no hay nada regresa a la pantalla de vincular. Un borrado que falló a la mitad, o un archivo que no se pudo exportar, no dejan cambios atrás
+        if (saved == null) return if (loaded && current is LinkState.LocalError) publish(readSaved()) else state
         if (reason == Refresh.BACKGROUND) return guardingUrl { refreshBackground(saved, current) }
         if (saved.token == null || (current is LinkState.Revoked && current.erased)) return state
         // Está decidiendo qué pegar: la cadencia no le cambia la pantalla
@@ -340,7 +369,8 @@ class LinkFlow(
         lastCheck = clock.instant()
         onSyncing(true)
         try {
-            val outcome = session(saved).engine.sync(trigger)
+            // Un equipo revocado no sube nada en segundo plano: espera a que se abra la app
+            val outcome = session(saved).engine.sync(trigger, uploadIfRevoked = !background)
             lastFailed = outcome is SyncOutcome.Failed
             return publish(settle(saved, outcome, forceHeartbeat, background))
         } finally {
@@ -351,13 +381,15 @@ class LinkFlow(
     /** Lo que el motor acaba de leer se guarda aquí antes de decidir nada: si la fila cambió de rol, la app lo sigue desde esta revisión. */
     private fun settle(before: DeviceCredential, outcome: SyncOutcome, forceHeartbeat: Boolean, background: Boolean = false): LinkState {
         val saved = if (outcome is SyncOutcome.Revoked && outcome.wiped) before else adoptFromStore(before)
+        val duplicate = duplicateSeen
+        duplicateSeen = false
         // Revocado con algo pendiente y sin poder preguntar otra vez (sin red, cuota): sigue revocado, no vuelve a verse como vinculado
         val store = if (outcome is SyncOutcome.Revoked && outcome.wiped) null else database.store()
         if (outcome !is SyncOutcome.Revoked && outcome !is SyncOutcome.TokenRejected && outcome != SyncOutcome.TokenMalformed && store?.meta(SyncEngine.REVOKED_REASON) != null) {
             return revokedKept(store.meta(SyncEngine.REVOKED_REASON), store)
         }
-        if (duplicateSeen) {
-            duplicateSeen = false
+        // Otra instalación con su `DeviceId`, salvo que esté revocado o se acabe de borrar: eso manda, y no queda nada que cambiar
+        if (duplicate && outcome !is SyncOutcome.Revoked && !(outcome is SyncOutcome.TokenRejected && outcome.wiped)) {
             takeNewIdentity(saved)
             return waiting(credential!!, newIdentity = true)
         }
@@ -376,9 +408,9 @@ class LinkFlow(
             is SyncOutcome.Revoked -> onRevoked(outcome)
             is SyncOutcome.TokenRejected -> {
                 if (outcome.wiped) onTokenWipe(saved)
-                LinkState.NeedsToken(malformed = false, erased = outcome.wiped, pending = if (outcome.wiped) 0 else pendingNow())
+                if (outcome.wiped) LinkState.NeedsToken(malformed = false, erased = true, pending = 0) else needsToken(malformed = false, erased = false, pendingNow(), database.store())
             }
-            SyncOutcome.TokenMalformed -> LinkState.NeedsToken(malformed = true, erased = false, pending = pendingNow())
+            SyncOutcome.TokenMalformed -> needsToken(malformed = true, erased = false, pendingNow(), database.store())
             SyncOutcome.SchemaMissing, is SyncOutcome.CloudNotReady, is SyncOutcome.ClientOutdated, is SyncOutcome.OtherCloud -> cloudProblem(outcome)
             is SyncOutcome.Completed ->
                 if (!background && heartbeatFoundOtherInstallation(saved, force = forceHeartbeat)) waiting(credential!!, newIdentity = true) else linkedState(saved, outcome.message)
@@ -412,41 +444,62 @@ class LinkFlow(
     }
 
     private fun revokedKept(reason: String?, store: io.github.marioalr.tpvca.sync.engine.SyncStore): LinkState.Revoked {
-        val pending = store.unsyncedChanges()
-        return LinkState.Revoked(reason, erased = false, pending = pending, exported = store.meta(EXPORTED_COUNT) == pending.toString())
+        val (ready, exported) = exportFlags(store)
+        return LinkState.Revoked(reason, erased = false, pending = store.unsyncedChanges(), exportReady = ready, exported = exported)
+    }
+
+    /** Se puede exportar: revocado o sin credencial con algo sin subir, también después de que anularon los tokens. */
+    private fun canExport(current: LinkState) = current is LinkState.CredentialLost || (current is LinkState.Revoked && !current.erased) || (current is LinkState.NeedsToken && current.revokedReason != null)
+
+    private fun refreshedExportState(current: LinkState, store: SyncStore): LinkState = when (current) {
+        is LinkState.CredentialLost -> credentialLost(store)
+        is LinkState.Revoked -> revokedKept(current.reason, store)
+        is LinkState.NeedsToken -> needsToken(current.malformed, current.erased, store.unsyncedChanges(), store)
+        else -> current
     }
 
     /**
-     * Lo que está sin subir, para escribirlo en un archivo que la PC puede importar (§4.7). [write] lo guarda; si termina bien, se anota cuántos se exportaron: lo que se anote después ya no está en el archivo y
-     * vuelve a pedir exportar. Solo con el equipo revocado o sin credencial.
+     * Lo que está sin subir, para escribirlo en un archivo que la PC puede importar (§4.7). **Generar el archivo no cuenta como entregado:** la app no ve qué pasa después de «Compartir», y cancelar se ve igual. Hasta
+     * [confirmExportDelivered] no se puede borrar. Lo que se anote después ya no está en el archivo y vuelve a pedir exportar.
      */
     @Synchronized
     fun exportPending(write: (List<SavedChange>) -> Unit): LinkState {
         val current = state
-        if (!(current is LinkState.CredentialLost || (current is LinkState.Revoked && !current.erased))) return state
+        if (!canExport(current)) return state
         val store = database.store()
         val changes = PendingChanges.forExport(store, SyncContract.bundledSchema, clock)
         if (changes.isEmpty()) return state
         write(changes)
-        store.apply(StoreChanges(meta = mapOf(EXPORTED_COUNT to store.unsyncedChanges().toString())))
-        return publish(if (current is LinkState.CredentialLost) current.copy(pending = store.unsyncedChanges(), exported = true) else revokedKept((current as LinkState.Revoked).reason, store))
+        store.apply(StoreChanges(meta = mapOf(EXPORT_READY_COUNT to store.unsyncedChanges().toString()), metaRemoved = setOf(EXPORTED_COUNT)))
+        return publish(refreshedExportState(current, store))
     }
 
-    /** «Borrar este equipo» después de exportar: lo único que borra con algo sin subir, porque ya está en el archivo y el médico lo confirmó. */
+    /** El médico dice que el archivo ya está en otro lado. Es lo único que la app puede saber de eso. */
+    @Synchronized
+    fun confirmExportDelivered(): LinkState {
+        val current = state
+        if (!canExport(current)) return state
+        val store = database.store()
+        if (!exportFlags(store).first) return state
+        store.apply(StoreChanges(meta = mapOf(EXPORTED_COUNT to store.unsyncedChanges().toString())))
+        return publish(refreshedExportState(current, store))
+    }
+
+    /** «Borrar este equipo» después de exportar y confirmar: lo único que borra con algo sin subir, porque ya está en otro lado y el médico lo dijo. */
     @Synchronized
     fun eraseAfterExport(): LinkState {
         val current = state
-        val exported = (current as? LinkState.Revoked)?.takeIf { !it.erased }?.exported == true || (current as? LinkState.CredentialLost)?.exported == true
-        if (!exported || database.store().meta(EXPORTED_COUNT) != database.store().unsyncedChanges().toString()) return state
-        val reason = (current as? LinkState.Revoked)?.reason
-        if (current is LinkState.Revoked) notices.saveRevocation(reason)
+        if (!canExport(current) || !exportFlags(database.store()).second) return state
+        val reason = (current as? LinkState.Revoked)?.reason ?: (current as? LinkState.NeedsToken)?.revokedReason
+        val revoked = current !is LinkState.CredentialLost
+        if (revoked) notices.saveRevocation(reason)
         eraseAll()
-        return publish(if (current is LinkState.Revoked) LinkState.Revoked(reason, erased = true) else LinkState.NotLinked(LinkProblem.CredentialLost))
+        return publish(if (revoked) LinkState.Revoked(reason, erased = true) else LinkState.NotLinked(LinkProblem.CredentialLost))
     }
 
     /** «Volver a aplicar N cambios»: lo guardado por un cambio de generación o de identidad otra vez, con marca nueva. Suben en la siguiente sincronización. */
     @Synchronized
-    fun reapplySaved(): Pair<Int, Int>? {
+    fun reapplySaved(): SyncEngine.Reapplied? {
         val saved = credential ?: return null
         if (saved.token == null || state !is LinkState.Linked) return null
         return session(saved).engine.reapplySaved()
@@ -462,10 +515,13 @@ class LinkFlow(
 
     /**
      * Los casos de uso que escriben. `null` sin credencial o sin token: sin ellos no hay nada que anotar a nombre de nadie. Revisan el permiso con el rol de su fila, no con el de la credencial.
+     *
+     * **Se pide uno para cada operación.** Si alguien se queda con uno, después de un borrado o de cambiar de identidad falla (`WriteRefused`): nunca vuelve a abrir la base ni crea una.
      */
     fun writes(): WriteEngine? {
         val saved = credential ?: return null
         val token = saved.token ?: return null
+        val issuedAt = eraseCount
         return WriteEngine(
             database.store(),
             { saved.deviceId },
@@ -473,7 +529,14 @@ class LinkFlow(
             { connectFolio(saved.url, token) },
             clock = clock,
             networkHanging = { quickSyncHanging },
-            guard = writeGuard,
+            guard = { block ->
+                val issued = issuedAt
+                writeGuard {
+                    // Dentro de la puerta: un borrado que empiece después espera a que esto termine
+                    if (issued != eraseCount) throw WriteRefused(WriteRefused.Reason.REVOKED, "Los datos de este equipo ya no están disponibles.")
+                    block()
+                }
+            },
         )
     }
 
@@ -495,8 +558,13 @@ class LinkFlow(
     private fun closeForErase() {
         if (eraseClosed) return
         eraseClosed = true
+        eraseCount++
         onEraseStarting()
     }
+
+    /** Cuántos borrados o cambios de identidad han empezado: lo que un `WriteEngine` guardado compara. */
+    @Volatile
+    private var eraseCount = 0L
 
     private fun eraseAll() {
         closeForErase()
@@ -602,7 +670,8 @@ class LinkFlow(
 
     /** El latido al final de una subida, con `LastPushUtc`. Si ve otra instalación, se resuelve al terminar la sincronización: no se vacía la base a media subida. */
     private inner class PushBeat(private val saved: DeviceCredential) : PushHeartbeat {
-        override fun statements(): List<Statement> = Heartbeat.statements(heartbeatInfo(saved), afterPush = true)
+        override fun statements(pending: Int, oldest: String?): List<Statement> =
+            Heartbeat.statements(heartbeatInfo(saved).copy(pendingCount = pending, oldestPendingUtc = oldest), afterPush = true)
 
         override fun onWritten(before: ResultSet) {
             lastHeartbeat = clock.instant()
@@ -622,17 +691,36 @@ class LinkFlow(
         return duplicate
     }
 
-    /** Regla «Latido»: toma un `DeviceId` nuevo y vuelve a bajar todo una vez. La PC lo aprueba otra vez. Lo que no subió se guarda antes para «Volver a aplicar»: no se pierde con la identidad. */
+    /**
+     * Regla «Latido»: toma un `DeviceId` nuevo y vuelve a bajar todo una vez. La PC lo aprueba otra vez. Con la escritura cerrada de principio a fin, hasta que vuelva a estar vinculado. Lo que no subió se guarda para
+     * «Volver a aplicar» **en la misma transacción que anota el cambio**: si el proceso muere en medio, al abrir se termina ([remembered]).
+     */
     private fun takeNewIdentity(saved: DeviceCredential) {
-        session(saved).engine.stashBeforeClearing()
-        val updated = saved.copy(deviceId = newId(), approvedRole = null)
-        vault.save(updated)
+        closeForErase()
+        val store = database.store()
+        val next = newId()
+        store.transaction {
+            PendingChanges.stash(store, SyncContract.bundledSchema, clock, store.meta(SyncEngine.GENERATION))
+            store.apply(StoreChanges(meta = mapOf(SyncEngine.IDENTITY_CHANGE to next)))
+        }
+        finishIdentityChange(saved, next)
+    }
+
+    private fun finishIdentityChange(saved: DeviceCredential, next: String) {
+        val updated = if (saved.deviceId == next) saved else saved.copy(deviceId = next, approvedRole = null)
+        if (updated !== saved) vault.save(updated)
         credential = updated
         session = null
         nonce = newNonce()
         nonceWrittenFor = null
-        database.store().clearSyncedData(SyncEngine.KEPT_META_ON_CLEAR)
-        database.store().apply(StoreChanges(metaRemoved = setOf(SyncEngine.DEVICE_CODE, SyncEngine.DEVICE_ROLE)))
+        val store = database.store()
+        store.transaction {
+            PendingChanges.stash(store, SyncContract.bundledSchema, clock, store.meta(SyncEngine.GENERATION))
+            store.clearSyncedData(SyncEngine.KEPT_META_ON_CLEAR)
+            store.apply(StoreChanges(metaRemoved = setOf(SyncEngine.DEVICE_CODE, SyncEngine.DEVICE_ROLE, SyncEngine.IDENTITY_CHANGE)))
+        }
+        // La puerta sigue cerrada hasta `Linked`; el siguiente borrado la vuelve a cerrar
+        eraseClosed = false
     }
 
     /** Todo lo que todavía no está en la nube: la cola, lo apartado al subir y lo guardado. Con algo aquí no se borra nada. */
@@ -659,8 +747,11 @@ class LinkFlow(
     }
 
     private companion object {
-        /** Cuántos cambios lleva el último archivo exportado. Si hay otro número, ya no basta con ese archivo. */
+        /** Cuántos cambios lleva el archivo que el médico confirmó que llegó. Si hay otro número, ya no basta con ese archivo. */
         const val EXPORTED_COUNT = "Cloud:ExportedCount"
+
+        /** Cuántos cambios lleva el último archivo generado: que se generó no quiere decir que llegó. */
+        const val EXPORT_READY_COUNT = "Cloud:ExportReadyCount"
     }
 }
 
@@ -670,8 +761,11 @@ class MemoryFolioNumbers : FolioNumbers {
 
     override fun last(letteredSeries: String) = values[letteredSeries] ?: 0
 
-    override fun save(letteredSeries: String, number: Int) {
-        if ((values[letteredSeries] ?: 0) < number) values[letteredSeries] = number
+    @Synchronized
+    override fun reserve(letteredSeries: String, localMax: Int): Int {
+        val next = maxOf(values[letteredSeries] ?: 0, localMax) + 1
+        values[letteredSeries] = next
+        return next
     }
 
     override fun clear() = values.clear()

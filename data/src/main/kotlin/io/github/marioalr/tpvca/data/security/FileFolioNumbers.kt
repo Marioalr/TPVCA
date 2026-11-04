@@ -8,6 +8,7 @@ import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 
 /**
@@ -18,15 +19,20 @@ class FileFolioNumbers(private val file: File) : FolioNumbers {
     @Synchronized
     override fun last(letteredSeries: String): Int = read()[letteredSeries] ?: 0
 
+    /** En el disco antes de regresar: con `fsync`, un corte de luz no repite un folio ya impreso. */
     @Synchronized
-    override fun save(letteredSeries: String, number: Int) {
+    override fun reserve(letteredSeries: String, localMax: Int): Int {
         val all = read().toMutableMap()
-        if ((all[letteredSeries] ?: 0) >= number) return
-        all[letteredSeries] = number
+        val next = maxOf(all[letteredSeries] ?: 0, localMax) + 1
+        all[letteredSeries] = next
         file.parentFile?.mkdirs()
         val temporary = File(file.path + ".tmp")
-        temporary.writeText(JsonObject(all.mapValues { JsonPrimitive(it.value) }).toString())
+        FileOutputStream(temporary).use { stream ->
+            stream.write(JsonObject(all.mapValues { JsonPrimitive(it.value) }).toString().toByteArray(Charsets.UTF_8))
+            stream.fd.sync()
+        }
         if (!temporary.renameTo(file)) throw IOException("No se pudo guardar el último folio.")
+        return next
     }
 
     @Synchronized

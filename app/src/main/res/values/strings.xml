@@ -93,9 +93,11 @@
     </plurals>
     <string name="revoked_ok">Entendido</string>
     <string name="pending_export">Exportar a un archivo</string>
+    <string name="pending_export_ready">El archivo está listo. Esta app no puede saber si llegó a alguna parte: si cerró «Compartir» sin elegir nada, no se guardó. Vuelva a exportar si hace falta.</string>
+    <string name="pending_export_delivered">Ya guardé el archivo en otro lado</string>
     <string name="pending_erase">Borrar este equipo</string>
     <string name="pending_erase_title">¿Borrar este equipo?</string>
-    <string name="pending_erase_body">Se borran su base, su credencial y sus borradores. Los cambios sin subir solo quedan en el archivo que exportó: guárdelo e impórtelo en la PC.</string>
+    <string name="pending_erase_body">Se borran su base, su credencial, sus borradores y también el archivo que queda en este equipo. Los cambios sin subir solo quedarán en la copia que usted guardó en otro lado. Si no llegó, se pierden: revíselo antes de borrar e impórtelo en la PC.</string>
     <string name="pending_erase_confirm">Borrar</string>
     <string name="pending_erase_keep">No borrar</string>
     <string name="credential_lost_title">Este equipo ya no puede abrir su credencial</string>

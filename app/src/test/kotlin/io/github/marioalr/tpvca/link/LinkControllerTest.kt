@@ -48,6 +48,15 @@ class LinkControllerTest {
     private var stored: StoredCredential = StoredCredential.Empty
     private var registryRow: List<String?>? = null
 
+    @Volatile
+    private var syncs = 0
+
+    /** Una nube que no contesta hasta soltarla. */
+    @Volatile
+    private var hang: java.util.concurrent.CountDownLatch? = null
+
+    private fun syncRequests() = syncs
+
     private val vault = object : CredentialVault {
         override fun load(): StoredCredential {
             if (failLoad) throw java.io.IOException("ruta/secreta/credencial.bin")
@@ -89,6 +98,7 @@ class LinkControllerTest {
         Statements.REGISTRY_OWN -> ResultSet(listOfNotNull(registryRow?.let { row("DeviceCode" to it[0], "Role" to it[1], "RevokedAtUtc" to it[2], "RevokedReason" to it[3]) }))
         Statements.HANDSHAKE -> ResultSet(listOf(row("now" to "2026-11-03 18:00:00.000", "wm" to "2026-11-03 17:59:55.000", "clinicId" to "clinica-1", "generation" to "gen-1", "generationReady" to "gen-1", "fullUploadAtUtc" to "2026-10-01 10:00:00.000")))
         Statements.GENERATION -> ResultSet(listOf(row("generation" to "gen-1")))
+        Statements.META_SCHEMA -> ResultSet(listOf(row("Value" to SyncContract.bundledSchema.fingerprint)))
         else -> ResultSet(emptyList())
     }
 
@@ -98,7 +108,11 @@ class LinkControllerTest {
             return statements.map(::answer)
         }
 
-        override fun snapshot(before: List<Statement>, statements: List<Statement>) = Snapshot(before.map(::answer), statements.map(::answer))
+        override fun snapshot(before: List<Statement>, statements: List<Statement>): Snapshot {
+            syncs++
+            hang?.await(5, java.util.concurrent.TimeUnit.SECONDS)
+            return Snapshot(before.map(::answer), statements.map(::answer))
+        }
     }
 
     private val flow = LinkFlow(
@@ -225,17 +239,57 @@ class LinkControllerTest {
         controller.onBackground()
     }
 
+    private fun linkedController() {
+        registryRow = listOf("T1", "AndroidTablet", null, null)
+        controller.onForeground()
+        scope.runCurrent()
+        controller.link("https://consultorio-ejemplo.turso.io", "token-de-prueba", "", DeviceRole.AndroidTablet)
+        scope.runCurrent()
+        assertTrue(controller.state.value is LinkState.Linked)
+        controller.onBackground()
+    }
+
     @Test
     fun variosGuardadosSeguidosSonUnaSolaSincronizacion() {
+        linkedController()
+        val before = syncRequests()
         controller.noteLocalWrite()
         scope.advanceTimeBy(LinkController.AFTER_SAVE_MILLIS - 1)
         controller.noteLocalWrite()
         scope.advanceTimeBy(LinkController.AFTER_SAVE_MILLIS - 1)
         scope.runCurrent()
-        // Sin vincular no hay nada que subir: aquí solo se comprueba que no truena y que espera al último
+        assertEquals("Espera al último", before, syncRequests())
         scope.advanceTimeBy(2)
         scope.runCurrent()
-        assertTrue(controller.state.value !is LinkState.LocalError)
+        assertEquals("Una sola", before + 1, syncRequests())
+    }
+
+    /** Con hilos de verdad: el tiempo de la espera y el de la red son independientes. */
+    private fun realController() =
+        LinkController(flow, states, lock, { true }, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO), kotlinx.coroutines.Dispatchers.IO)
+
+    @Test
+    fun laSincronizacionRapidaTerminaATiempo() {
+        linkedController()
+        val before = syncRequests()
+        assertTrue(kotlinx.coroutines.runBlocking { realController().quickSync() })
+        assertEquals(before + 1, syncRequests())
+        assertFalse(flow.quickSyncHanging)
+    }
+
+    @Test
+    fun laSincronizacionRapidaColgadaNoDetieneElFolio() {
+        linkedController()
+        val release = java.util.concurrent.CountDownLatch(1)
+        hang = release
+        val finished = kotlinx.coroutines.runBlocking { realController().quickSync(waitMillis = 50) }
+        assertFalse(finished)
+        assertTrue("El folio ya no espera a la red", flow.quickSyncHanging)
+        release.countDown()
+        // Cuando por fin termina, se quita
+        val deadline = System.currentTimeMillis() + 5_000
+        while (flow.quickSyncHanging && System.currentTimeMillis() < deadline) Thread.sleep(5)
+        assertFalse(flow.quickSyncHanging)
     }
 
     @Test

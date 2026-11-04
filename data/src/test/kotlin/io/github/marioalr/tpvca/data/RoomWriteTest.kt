@@ -150,9 +150,13 @@ class RoomWriteTest {
         val file = File(context.cacheDir, "folios-prueba.json").also { it.delete() }
         val numbers = FileFolioNumbers(file)
         assertEquals(0, numbers.last("EXP-2026-T1"))
-        numbers.save("EXP-2026-T1", 3)
-        numbers.save("EXP-2026-T1", 2)
-        assertEquals("Una instancia nueva lee lo mismo y nunca baja", 3, FileFolioNumbers(file).last("EXP-2026-T1"))
+        assertEquals(1, numbers.reserve("EXP-2026-T1", 0))
+        assertEquals("El mayor local manda si es mayor", 4, numbers.reserve("EXP-2026-T1", 3))
+        assertEquals("Y nunca baja", 5, numbers.reserve("EXP-2026-T1", 0))
+        assertEquals("Una instancia nueva lee lo mismo", 5, FileFolioNumbers(file).last("EXP-2026-T1"))
+        // Dos hilos a la vez no pueden tomar el mismo
+        val taken = (1..20).map { java.util.concurrent.CompletableFuture.supplyAsync { numbers.reserve("TKT-T1", 0) } }.map { it.get() }
+        assertEquals(20, taken.toSet().size)
         file.writeText("no es json")
         assertEquals(0, numbers.last("EXP-2026-T1"))
     }

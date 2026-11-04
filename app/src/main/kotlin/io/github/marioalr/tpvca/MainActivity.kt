@@ -116,6 +116,8 @@ class MainActivity : FragmentActivity() {
             }
         }
 
+        override fun confirmExportDelivered() = controller.confirmExportDelivered()
+
         override fun eraseAfterExport() = controller.eraseAfterExport()
 
         override fun unlock() = showUnlockPrompt()

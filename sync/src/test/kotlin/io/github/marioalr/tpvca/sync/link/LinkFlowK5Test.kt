@@ -10,6 +10,7 @@ import io.github.marioalr.tpvca.sync.engine.StoreChanges
 import io.github.marioalr.tpvca.sync.engine.SyncEngine
 import io.github.marioalr.tpvca.sync.engine.SyncStore
 import io.github.marioalr.tpvca.sync.engine.WriteRefused
+import io.github.marioalr.tpvca.sync.engine.unsyncedChanges
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -41,9 +42,18 @@ class LinkFlowK5Test {
         var store = InMemorySyncStore()
         var erased = 0
 
-        override fun store(): SyncStore = store
+        var failErase = false
+        var created = 0
+
+        override fun store(): SyncStore = store.also { created++ }
+
+        override fun exists() = store.rowCounts().values.any { it > 0 } || store.unsyncedChanges() > 0
 
         override fun erase() {
+            if (failErase) {
+                failErase = false
+                error("El disco falló")
+            }
             erased++
             store = InMemorySyncStore()
         }
@@ -146,7 +156,11 @@ class LinkFlowK5Test {
         assertEquals(0, database.erased)
         val exported = ArrayList<io.github.marioalr.tpvca.sync.engine.SavedChange>()
         val after = first.exportPending { exported += it } as LinkState.Revoked
-        assertTrue(after.exported)
+        assertTrue(after.exportReady)
+        assertFalse("Generado no es entregado", after.exported)
+        assertEquals("Sin confirmar que llegó no se borra", after, first.eraseAfterExport())
+        assertEquals(0, database.erased)
+        assertTrue((first.confirmExportDelivered() as LinkState.Revoked).exported)
         assertEquals("row", exported.single().kind)
         assertEquals("PatientAppointment", exported.single().entityType)
         // Lo que se anote después ya no está en el archivo: se vuelve a pedir exportar
@@ -154,6 +168,7 @@ class LinkFlowK5Test {
         assertTrue(first.eraseAfterExport() is LinkState.Revoked)
         assertEquals(0, database.erased)
         first.exportPending { }
+        first.confirmExportDelivered()
         assertEquals(LinkState.Revoked("rechazado", erased = true), first.eraseAfterExport())
         assertEquals(1, database.erased)
     }
@@ -180,6 +195,9 @@ class LinkFlowK5Test {
         assertEquals(0, database.erased)
         assertEquals(state, second.eraseAfterExport())
         second.exportPending { }
+        assertEquals("Generado no es entregado", 0, database.erased.also { second.eraseAfterExport() })
+        assertEquals(0, database.erased)
+        second.confirmExportDelivered()
         assertEquals(LinkState.NotLinked(LinkProblem.CredentialLost), second.eraseAfterExport())
         assertEquals(1, database.erased)
     }
@@ -315,6 +333,197 @@ class LinkFlowK5Test {
         first.refresh(Refresh.USER)
         assertEquals(WriteRefused.Reason.FORBIDDEN, assertThrows(WriteRefused::class.java) { writes.newPatient("X") }.reason)
         assertEquals(DeviceRole.AndroidMobileAdmin, first.role)
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------- la revisión de K5
+
+    @Test
+    fun cancelarCompartirNoHabilitaBorrar() {
+        val first = linked()
+        first.queueAppointment()
+        revoke("rechazado")
+        first.refresh(Refresh.USER)
+        // El archivo se generó y el médico cerró «Compartir» sin elegir nada: la app no ve la diferencia
+        val ready = first.exportPending { } as LinkState.Revoked
+        assertTrue(ready.exportReady)
+        assertFalse(ready.exported)
+        assertEquals(ready, first.eraseAfterExport())
+        assertEquals(0, database.erased)
+        // Sobrevive a reiniciar: sigue sin estar confirmado
+        val second = flow()
+        val restored = second.restore() as LinkState.Revoked
+        assertTrue(restored.exportReady)
+        assertFalse(restored.exported)
+        assertEquals(restored, second.eraseAfterExport())
+        assertEquals(0, database.erased)
+        // No se puede confirmar lo que no se generó
+        database.store.apply(StoreChanges(metaRemoved = setOf("Cloud:ExportReadyCount")))
+        assertFalse((flow().also { it.restore() }.confirmExportDelivered() as LinkState.Revoked).exported)
+    }
+
+    @Test
+    fun conElTokenAnuladoTambienSeExporta() {
+        var rejected = false
+        val connection = object : io.github.marioalr.tpvca.sync.hrana.HranaConnection {
+            override fun query(statements: List<io.github.marioalr.tpvca.sync.hrana.Statement>) = if (rejected) throw io.github.marioalr.tpvca.sync.hrana.HranaException(io.github.marioalr.tpvca.sync.hrana.HranaException.UNAUTHORIZED, "401") else cloud.connection.query(statements)
+
+            override fun snapshot(before: List<io.github.marioalr.tpvca.sync.hrana.Statement>, statements: List<io.github.marioalr.tpvca.sync.hrana.Statement>) = if (rejected) throw io.github.marioalr.tpvca.sync.hrana.HranaException(io.github.marioalr.tpvca.sync.hrana.HranaException.UNAUTHORIZED, "401") else cloud.connection.snapshot(before, statements)
+        }
+        val first = LinkFlow(vault, database, notices, { true }, "1.0.0", "Tablet", {}, connect = { _, _ -> connection }, newId = { "device-b" }, allowLoopback = true)
+        first.restore()
+        first.link("http://127.0.0.1/x", "token", "Consultorio", DeviceRole.AndroidTablet)
+        first.queueAppointment()
+        revoke("quitado")
+        cloud.armCut(SqlCloud.Cut(1, SqlCloud.Cut.Mode.BEFORE_APPLY))
+        first.refresh(Refresh.USER)
+        cloud.armCut(null)
+        rejected = true
+        val state = first.refresh(Refresh.USER)
+        assertTrue(state.toString(), state is LinkState.NeedsToken && state.revokedReason == "quitado")
+        val ready = first.exportPending { } as LinkState.NeedsToken
+        assertTrue(ready.exportReady)
+        assertTrue((first.confirmExportDelivered() as LinkState.NeedsToken).exported)
+        assertEquals(LinkState.Revoked("quitado", erased = true), first.eraseAfterExport())
+    }
+
+    @Test
+    fun unTokenAnuladoSinRevocarNoOfreceExportar() {
+        val first = linked()
+        first.queueAppointment()
+        database.store.apply(StoreChanges(meta = mapOf(SyncEngine.AUTH_FIRST_401 to "2026-01-01T00:00:00Z")))
+        val second = flow()
+        val state = second.restore() as LinkState.NeedsToken
+        assertNull(state.revokedReason)
+        var wrote = false
+        second.exportPending { wrote = true }
+        assertFalse(wrote)
+    }
+
+    @Test
+    fun unErrorAlBorrarNoDejaLosCambiosAtras() {
+        linked().queueAppointment()
+        vault.stored = StoredCredential.Unreadable
+        val second = flow()
+        second.restore()
+        second.exportPending { }
+        second.confirmExportDelivered()
+        database.failErase = true
+        assertThrows(IllegalStateException::class.java) { second.eraseAfterExport() }
+        second.reportLocalError()
+        val state = second.refresh(Refresh.TICK)
+        assertTrue(state.toString(), state is LinkState.CredentialLost)
+        assertEquals(1, database.store.pendingChanges())
+    }
+
+    @Test
+    fun unaBaseConCambiosSinCredencialTampocoSePierde() {
+        linked().queueAppointment()
+        vault.stored = StoredCredential.Empty
+        val second = flow()
+        assertEquals(LinkState.CredentialLost(1), second.restore())
+        assertEquals(second.state, second.forget())
+        assertEquals(0, database.erased)
+        assertEquals("Tampoco vincular encima", second.state, second.link("http://127.0.0.1/x", "token", "Consultorio", DeviceRole.AndroidTablet))
+    }
+
+    @Test
+    fun unWriteEngineGuardadoNoVuelveAAbrirLaBaseDespuesDeBorrar() {
+        val first = linked()
+        val retained = first.writes()!!
+        revoke("perdido")
+        assertTrue(first.refresh(Refresh.USER) is LinkState.Revoked)
+        assertEquals(WriteRefused.Reason.REVOKED, assertThrows(WriteRefused::class.java) { retained.create("Appointments", emptyMap()) }.reason)
+        assertEquals(WriteRefused.Reason.REVOKED, assertThrows(WriteRefused::class.java) { retained.newPatient("X") }.reason)
+        assertEquals(0, database.store.pendingChanges())
+    }
+
+    @Test
+    fun cambiarDeIdentidadCierraLaEscrituraYTerminaDespuesDeMorir() {
+        val first = linked()
+        val retained = first.writes()!!
+        first.queueAppointment()
+        // El proceso muere con el cambio anotado: lo pendiente ya está guardado, la credencial todavía es la de antes
+        val store = database.store
+        store.apply(
+            StoreChanges(
+                saved = io.github.marioalr.tpvca.sync.engine.PendingChanges.asSaved(store, SyncContract.bundledSchema, java.time.Clock.systemUTC(), "gen-1"),
+                outboxClearedUpTo = Long.MAX_VALUE,
+                meta = mapOf(SyncEngine.IDENTITY_CHANGE to "device-nuevo"),
+            ),
+        )
+        val second = flow("otro-no-se-usa")
+        val state = second.restore()
+        assertTrue(state.toString(), state is LinkState.WaitingApproval && state.newIdentity)
+        assertEquals("device-nuevo", (vault.stored as StoredCredential.Present).credential.deviceId)
+        assertNull(store.meta(SyncEngine.IDENTITY_CHANGE))
+        assertNull(store.meta(SyncEngine.DEVICE_ROLE))
+        assertTrue(store.rows("Patients").isEmpty())
+        assertEquals("Lo que no subió sigue guardado", 1, store.savedChanges().size)
+        // El de antes no escribe a nombre de nadie: en este proceso, por la secuencia; sin rol, en cualquiera
+        assertEquals(WriteRefused.Reason.NOT_APPROVED, assertThrows(WriteRefused::class.java) { retained.create("Appointments", emptyMap()) }.reason)
+    }
+
+    @Test
+    fun cambiarDeIdentidadNoDejaEscribirConElEngineDeAntes() {
+        val first = linked()
+        val retained = first.writes()!!
+        cloud.admin("UPDATE RegisteredDevices SET InstanceNonce = 'ajeno' WHERE DeviceId = 'device-b'")
+        assertTrue(first.refresh(Refresh.OPENED) is LinkState.WaitingApproval)
+        assertEquals(WriteRefused.Reason.REVOKED, assertThrows(WriteRefused::class.java) { retained.create("Appointments", emptyMap()) }.reason)
+    }
+
+    /** La fila dice perdido y el latido de la subida vería a otra instalación: manda perdido. */
+    @Test
+    fun otraInstalacionDuranteUnBorradoNoCambiaLaIdentidad() {
+        val first = linked()
+        first.queueAppointment()
+        // Lo que pasa cuando la subida ya alcanzó a ver el nonce ajeno y lo siguiente es la revocación: el borrado termina y no se cambia nada
+        cloud.admin("UPDATE RegisteredDevices SET InstanceNonce = 'ajeno' WHERE DeviceId = 'device-b'")
+        val beatRow = cloud.admin("SELECT InstanceNonce FROM RegisteredDevices WHERE DeviceId = 'device-b'").single()
+        assertEquals("ajeno", beatRow["InstanceNonce"]?.text)
+        // La segunda petición de la subida es el latido; entre ella y la bajada la PC lo marca como perdido
+        cloud.failWith = { list ->
+            if (list.any { it.sql.startsWith("INSERT INTO RegisteredDevices") }) revoke("perdido")
+            null
+        }
+        val state = first.refresh(Refresh.USER)
+        assertEquals(LinkState.Revoked("perdido", erased = true), state)
+        assertTrue(vault.stored === StoredCredential.Empty)
+        assertEquals("Sin rastro de un cambio de identidad", 0, notices.saved.let { database.store.savedChanges().size })
+    }
+
+    @Test
+    fun revocadoEnSegundoPlanoNoSubeAunqueSeEntereAhi() {
+        val first = linked()
+        val id = first.queueAppointment()
+        revoke("quitado")
+        val background = first.refresh(Refresh.BACKGROUND)
+        assertEquals(LinkState.Revoked("quitado", erased = false, pending = 1), background)
+        assertEquals("Nada subió", 0, cloud.admin("SELECT SyncId FROM Appointments").size)
+        // Al abrir la app, sí
+        assertEquals(LinkState.Revoked("quitado", erased = true), first.refresh(Refresh.OPENED))
+        assertEquals(1, cloud.admin("SELECT SyncId FROM Appointments WHERE SyncId = ?", id).size)
+    }
+
+    @Test
+    fun lastFailedEsDeEstaVuelta() {
+        val first = linked()
+        cloud.offline = true
+        first.refresh(Refresh.BACKGROUND)
+        assertTrue(first.lastFailed)
+        cloud.offline = false
+        first.refresh(Refresh.BACKGROUND)
+        assertFalse(first.lastFailed)
+        cloud.offline = true
+        first.refresh(Refresh.BACKGROUND)
+        assertTrue(first.lastFailed)
+        // Una vuelta que no sincroniza no hereda el fallo de la anterior
+        revoke("quitado")
+        database.store.apply(StoreChanges(meta = mapOf(SyncEngine.REVOKED_REASON to "quitado")))
+        val second = flow()
+        second.restore()
+        second.refresh(Refresh.BACKGROUND)
+        assertFalse(second.lastFailed)
     }
 
     private companion object {

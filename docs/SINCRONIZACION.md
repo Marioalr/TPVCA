@@ -116,7 +116,7 @@ Con la app cerrada, ver «Segundo plano».
 |---|---|---|---|---|
 | **Rechazado** | Fila con `rechazado` o código X | Base, llave, credencial con su `DeviceId`, archivos | Solo el aviso | "La PC rechazó este equipo" |
 | **Quitado**, nada pendiente | `RevokedReason = 'quitado'` | Igual | Solo el aviso | "Este equipo se quitó…" |
-| **Quitado**, con algo pendiente | Igual | Nada todavía: sube lo pendiente y se borra al terminar | Todo, hasta subirlo o exportarlo | "Tiene N cambios sin subir". *Exportar a un archivo* y, ya exportado, *Borrar este equipo* con confirmación |
+| **Quitado**, con algo pendiente | Igual | Nada todavía: sube lo pendiente y se borra al terminar | Todo, hasta subirlo o exportarlo | "Tiene N cambios sin subir". *Exportar a un archivo*, *Ya guardé el archivo en otro lado* y solo entonces *Borrar este equipo*, con confirmación |
 | **Rechazado**, con algo pendiente | Igual | Nada: **no sube**, ver abajo | Todo, hasta exportarlo | Igual que quitado |
 | **Perdido** | `RevokedReason = 'perdido'` | Igual que rechazado, **sin subir nada** aunque haya algo pendiente. Su fila se lee antes de subir | Solo el aviso | "Este equipo se marcó como perdido" |
 | **La credencial no abre**, con algo pendiente | `StoredCredential.Unreadable` | Nada | Todo, hasta exportarlo | "Hay N cambios sin subir": exportar y borrar con confirmación |
@@ -136,8 +136,10 @@ Con la app cerrada, ver «Segundo plano».
   lectura de su fila en cada revisión, para que una revocación no espere.
 - **Antes de borrar:** se cierra la escritura (`EraseGuard`, en la app `DataGate`) y se revisa lo pendiente **con la puerta cerrada**: lo que se anotó justo antes detiene el borrado. Lo que cuenta es la cola, lo apartado al subir y lo guardado (`unsyncedChanges`). El único borrado con algo sin subir es `perdido`, por seguridad, y *Borrar este equipo* después de exportar.
 - **Revocado con algo pendiente se recuerda:** `Cloud:RevokedReason` en la base. Al abrir sin red sigue diciendo que está revocado, no se muestra vinculado ni se puede escribir.
+- **El rol sin confirmar detiene las escrituras:** sin fila, o con una fila de un rol que no es de Android, se quita `Cloud:DeviceRole`, y `WriteEngine` y «Volver a aplicar» se niegan hasta volver a leerlo.
 - **`rechazado` con algo pendiente no sube.** Un equipo sin aprobar no pudo anotar nada (`WriteEngine` lo niega), así que solo pasaría si la PC rechaza a uno que ya trabajaba, y entonces no se le acepta nada: se conserva para exportarlo. Decisión de K5: el plan no lo dice.
-- **Otra instalación con su `DeviceId`:** lo pendiente se guarda para «Volver a aplicar» antes de vaciar y de tomar otro `DeviceId`. Si la subida alcanza a correr en esa misma sincronización, ya está en la nube.
+- **Otra instalación con su `DeviceId`:** lo pendiente se guarda para «Volver a aplicar» antes de vaciar y de tomar otro `DeviceId`. Si la subida alcanza a correr en esa misma sincronización, ya está en la nube. Con la escritura cerrada de principio a fin; el cambio se anota (`Cloud:IdentityChange`) en la misma transacción que guarda lo pendiente, y si el proceso muere, al abrir se termina. Si en esa misma sincronización está revocado o se borró, eso manda.
+- **Un `WriteEngine` guardado no resucita nada:** se pide uno por operación. El que se quedó alguien falla después de un borrado o de cambiar de identidad, y `RoomSyncStore` se invalida al borrar: nunca vuelve a abrir la base ni crea otra con una llave nueva.
 - **Dos 401:** además de la base, se borran los archivos del equipo. El último folio con letra se queda: la fila de `DeviceRegistry` sigue y con ella su código. Los 10 min se miden con `elapsedRealtime`, que no se mueve con la hora del equipo. **Límite que sigue abierto:** ese reloj vuelve a cero al
   reiniciar y ahí solo queda la hora normal, así que adelantarla y reiniciar acorta la espera. Hace falta el equipo desbloqueado y un 401 real.
 - **Una descarga cortada** no se muestra como «vinculado»: sigue diciendo que baja, con el motivo y *Intentar otra vez*.
@@ -191,7 +193,7 @@ Con la app cerrada, ver «Segundo plano».
 
 **Cómo escribe un caso de uso:**
 
-1. **El permiso, en la frontera.** El rol sale de su fila de `DeviceRegistry`. Sin aprobar, revocado, en solo lectura o a media descarga no escribe nada (`WriteRefused`). `DevicePermissions` por tabla: **el celular no puede anotar expedientes, notas, resultados, recetas, ventas, catálogo ni cerrar lotes**; sí citas y una entrada de mercancía (el lote y su `EntradaCompra`, nunca `Products`, como dice «Catálogo con varios equipos»; la tablet además sube `CurrentStock`).
+1. **El permiso, en la frontera.** El rol sale de su fila de `DeviceRegistry`. Sin aprobar, revocado, en solo lectura o a media descarga no escribe nada (`WriteRefused`). `WritePolicy` por tabla: **el celular no puede anotar expedientes, notas, resultados, recetas, ventas, catálogo ni cerrar lotes**, y al combinar un expediente nunca lo anota para subir (lo hace converger la tablet o la PC); sí puede agendar. **Las entradas de mercancía del celular se niegan hasta el 8.20:** «Catálogo con varios equipos» no le deja escribir `Products`, y mientras `CurrentStock` sea un valor, una entrada suya no subiría las existencias en ningún equipo. K4b no la puede publicar por accidente. La tablet registra el lote, su `EntradaCompra` y `CurrentStock`, como la PC.
 2. **La marca:** `max(hora + desfase, guardada + 1 ms)`.
 3. **En un expediente, las marcas por campo:** solo lo que cambió por su significado; en una hoja, renglón por renglón.
 4. **Una operación completa, junta:** la venta con sus renglones, movimientos, lotes y producto, y todas sus entradas de la cola.
@@ -200,23 +202,25 @@ Con la app cerrada, ver «Segundo plano».
 
 1. **Su fila y la hora, en una petición.** `perdido` borra sin subir; otra generación guarda lo pendiente; `minClientProtocol` mayor o manifiesto distinto conservan la cola sin subir.
 2. **Una foto de la cola:** tabla por tabla en el orden de `schema.json`. Una fila que ya no existe sube como su lápida más reciente, con su `DELETE`. Una con referencia obligatoria y cascada va en el lote de su principal: un corte no parte una venta. El texto del SQL es el de la PC (`laSubidaEsLaDeLaGrabacion`).
-3. **Lotes de 80 instrucciones**, cada uno `BEGIN`/`COMMIT`, terminando con la generación. Si cambió, se detiene **sin tocar la cola**.
-4. **La cola se vacía solo si subió todo**, hasta el número que se leyó: lo editado mientras tanto se queda. Como en la PC, un corte vuelve a mandar todo y la nube descarta lo que ya tenía.
-5. **El latido con `LastPushUtc`** y `PendingCount`, `OldestPendingUtc`.
-6. **El desempate** (`lww.json`): lo que afectó 0 filas se relee en una petición y se aplica aunque empate; si no está, su lápida. **Si no tiene ninguna de las dos, se vuelve a anotar** (la PC lo deja pasar): esa fila no está en la nube.
-7. **Filas apartadas al subir** (`Direction = PUSH`): sin su principal obligatorio no sube, se reintenta en cada subida y sigue contando como pendiente.
+3. **Lotes de 80 instrucciones**, cada uno `BEGIN`/`COMMIT`, terminando con la generación. Si cambió, se detiene **sin tocar la cola**. Ante `RESPONSE_TOO_LARGE`, `TIMEOUT` o HTTP 413, como al bajar: la mitad, hasta un grupo por petición; un grupo que no pasa solo se manda fila por fila; **una fila que no pasa sola se aparta** (`TOO_BIG_TO_PUSH`, `Direction = PUSH`), sigue pendiente y no detiene la bajada. Se reintenta en cada subida, de una en una mientras haya algo así.
+4. **El latido con `LastPushUtc`**, `PendingCount` y `OldestPendingUtc`, con lo que quedará pendiente.
+5. **El desempate** (`lww.json`): lo que afectó 0 filas se relee en una petición.
+6. **Al final, en una sola transacción local:** la cola se vacía hasta el número que se leyó (lo editado mientras tanto se queda), lo apartado se actualiza y se aplica lo releído, aunque empate; si no está, su lápida. **Si no tiene ninguna de las dos, se vuelve a anotar** (la PC lo deja pasar): esa fila no está en la nube. Un 401 o que el proceso muera antes de esto solo vuelve a mandar todo: la nube descarta lo que ya tenía. En la red el orden es el de `tie-conflict.jsonl`: subir, latido, releer.
+7. **Filas apartadas al subir:** sin su principal obligatorio tampoco sube; se reintenta en cada subida y sigue contando como pendiente.
+
+**Un borrado sin subir no revive:** al bajar una fila que aquí no existe se respeta su lápida local con la regla de la nube: se aplica solo si su marca es **estrictamente mayor** que `DeletedAtUtc`. Con la misma marca gana el borrado.
 
 **Al bajar un expediente** se combina por campo; lo que queda distinto de la nube toma `max + 1 ms`, se anota en la misma transacción y sube en esa misma sincronización, una vez. Leer y aplicar una página va en una sola transacción, así una bajada no pisa una edición que se guardó en medio.
 
 **La edad se compara al día.** Con fecha de nacimiento, `Age` se calcula en los dos lados, como `PatientRecord.Age` en la PC: si se comparara el número guardado, cada cumpleaños subiría sin fin.
 
-**Otra generación (8.9):** lo que no subió pasa a `SyncSavedChanges` en una transacción, cada fila con su protocolo y revisión; `clearSyncedData` **lanza** si queda algo en la cola, así que ninguna ruta vacía sin guardar. Lo guardado sobrevive a vaciar. `reapplySaved` («Volver a aplicar N cambios») escribe cada fila con marca nueva. La pantalla de esa pregunta es de K4b: hasta entonces nada se puede guardar, porque nada escribe.
+**Otra generación (8.9):** lo que no subió pasa a `SyncSavedChanges` en una transacción, cada fila con su protocolo y revisión; `clearSyncedData` **lanza** si queda algo en la cola, así que ninguna ruta vacía sin guardar. Lo guardado sobrevive a vaciar. `reapplySaved` («Volver a aplicar N cambios») escribe cada fila con marca nueva, con los mismos permisos que cualquier escritura. **Una copia se quita solo si esa fila quedó aplicada y anotada, o el borrado hecho.** Se quedan, con un aviso, la fila sin su principal (no se aparta, porque al aplicarse después no se anotaría) y el borrado que impide una `restrict`; sin aviso, lo que este rol no puede escribir. Se vuelve a intentar a pedido. La pantalla de esa pregunta es de K4b: hasta entonces nada se puede guardar, porque nada escribe.
 
-**El archivo de un equipo que no pudo subir:** una base SQLite **sin cifrar** con la tabla `SyncSavedChanges` de la PC, para *Importar* allá. Lo pide el médico, pasa por compartir y se borra a los 15 min. Lo que se anote después ya no está en el archivo y vuelve a pedir exportar.
+**El archivo de un equipo que no pudo subir:** una base SQLite **sin cifrar** con la tabla `SyncSavedChanges` de la PC, para *Importar* allá. Lo pide el médico y pasa por compartir. **Generarlo no cuenta como entregado:** la app no ve qué pasa después de «Compartir», y cancelar se ve igual. Por eso borrar se ofrece hasta que el médico dice *Ya guardé el archivo en otro lado*, y el diálogo dice que borrar también destruye la copia que queda aquí. Esa copia no se purga a los 15 min (`SharedDocuments.writeKept`): se va al generar otra o al borrar el equipo. Lo que se anote después ya no está en el archivo y vuelve a pedir exportar. También se puede exportar con los tokens anulados (`NeedsToken.revokedReason`). Una base con algo sin subir y sin credencial, o con una que no abre (`CredentialLost`), no se borra ni deja vincular encima hasta hacer esto.
 
-**Folios:** con conexión, `folio.take` con 2 s de espera y el mayor local como piso. Sin conexión, sin respuesta, con cuota, freno o token en pausa, o mientras la sincronización rápida sigue colgada: la letra del equipo y el mayor entre `noBackupFilesDir/folios.json` y lo local, guardado antes de usarlo. Sin código no se crea. La tablet y el celular nunca regularizan.
+**Folios:** con conexión, `folio.take` con 2 s de espera y el mayor local como piso. Sin conexión, sin respuesta, con cuota, freno o token en pausa, o mientras la sincronización rápida sigue colgada: la letra del equipo y el mayor entre `noBackupFilesDir/folios.json` y lo local, tomado de forma atómica (`FolioLedger.reserve`) y en el disco con `fsync` antes de usarlo. Sin código no se crea. La tablet y el celular nunca regularizan.
 
-**Existencias:** 8.20 sigue sin hacerse en la PC. `CurrentStock` y `OpenedUnitsRemaining` son valores con LWW. **Un inventario mal contado nunca impide cobrar:** FEFO y lo que falta sale sin lote, en negativo. Cancelar y cerrar con los `SyncId` deterministas de `uuid5.json`: dos equipos que hacen lo mismo escriben la misma fila.
+**Existencias:** 8.20 sigue sin hacerse en la PC. `CurrentStock` y `OpenedUnitsRemaining` son valores con LWW. **Un inventario mal contado nunca impide cobrar:** FEFO y lo que falta sale sin lote, en negativo. Cancelar y cerrar con los `SyncId` deterministas de `uuid5.json`: dos equipos que hacen lo mismo escriben la misma fila. **Se cancela por el `SyncId` del ticket** (`findSale` busca por folio): un folio se puede repetir. Un ticket de antes (`LedgerVersion` 0) con piezas sueltas devuelve cada cosa una sola vez: la devolución por producto suma solo los renglones de paquetes, y las piezas regresan al paquete abierto (3 piezas, 10 por paquete, 8 abiertas: `CurrentStock` + 1, quedan 1 suelta y un movimiento `return:pieces:<renglón>`). Un producto que ya no existe se salta y el ticket se cancela igual; la devolución por piezas solo va a un lote que exista y siga abierto. Cerrar un lote toca el producto solo si escribe una parte.
 
 **Avisos (8.23):** los empalmes y posibles duplicados de lo que llega quedan en `Status:Notices` (solo llaves, no viaja). La pantalla es de K4b. `LinkController.quickSync` (3 s) y `noteLocalWrite` (4 s) están listos para K4b, K6 y K7.
 
@@ -231,9 +235,10 @@ Con la app cerrada, ver «Segundo plano».
 | `tpvc-token` | A los 11 min del primer 401, sin nada pendiente | Con red. La segunda revisión ya no espera a abrir la app |
 | `tpvc-compartidos` | 16 min después de compartir | Sin red; no abre la base |
 
+- **Un cambio de rol** también actualiza la cadencia. `lastFailed` es de cada vuelta.
 - **Trabajos normales, nunca expeditos:** en Android 11 y anteriores uno expedito corre como servicio con notificación.
 - **Ningún trabajo lleva datos:** sin entrada ni salida, porque la base de WorkManager no va cifrada.
-- **Respeta el freno, la cuota y el token** (`SyncTrigger.AUTOMATIC`). Nunca es la primera descarga ni hay latido aparte. **Nada corre con el equipo revocado:** lo pendiente de un `quitado` sube con la app abierta.
+- **Respeta el freno, la cuota y el token** (`SyncTrigger.AUTOMATIC`). Nunca es la primera descarga ni hay latido aparte. **Nada corre con el equipo revocado, ni sube aunque se entere en esa misma vuelta:** lo pendiente de un `quitado` sube con la app abierta.
 - **La llave se abre en segundo plano** como la dejó K3: sin autenticación y con `unlockedDeviceRequired=false`. Un error del Keystore se reintenta y no borra nada.
 - **`DeviceFiles.erase` no borra la base de WorkManager:** la tiene abierta, y borrarla debajo la haría fallar. Primero se cancelan sus trabajos.
 - **Solo reintenta lo que falló por la red** (`SyncOutcome.Failed`): una pausa o una fila apartada no se arreglan reintentando.

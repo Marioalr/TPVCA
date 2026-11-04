@@ -32,6 +32,17 @@ class SharedDocuments(context: Context, val gate: DataGate = DataGate(), private
         return file
     }
 
+    /**
+     * El archivo de lo que no se pudo subir: **no se purga a los 15 min**, porque puede ser la única copia y el médico todavía no confirma que llegó. Se va al generar otro o al borrar el equipo. Solo hay uno.
+     */
+    fun writeKept(ticket: Long, fileName: String, write: (File) -> Unit): File {
+        folder.listFiles()?.filter { it.name.startsWith(KEPT_PREFIX) }?.forEach { it.deleteRecursively() }
+        return gate.write(ticket) {
+            val parent = File(folder, KEPT_PREFIX + UUID.randomUUID()).also { it.mkdirs() }
+            File(parent, fileName).also(write)
+        }
+    }
+
     fun writeView(ticket: Long, fileName: String, write: (File) -> Unit): File = writeIn(viewFolder, ticket, fileName, write)
 
     /** Compartir lo que se está viendo: una copia aparte, porque la de la vista se borra al cerrarla. */
@@ -68,11 +79,12 @@ class SharedDocuments(context: Context, val gate: DataGate = DataGate(), private
     }
 
     fun purgeOld(maxAgeMillis: Long = MAX_AGE_MILLIS) {
-        folder.listFiles()?.forEach { if (now() - it.lastModified() > maxAgeMillis) it.deleteRecursively() }
+        folder.listFiles()?.forEach { if (!it.name.startsWith(KEPT_PREFIX) && now() - it.lastModified() > maxAgeMillis) it.deleteRecursively() }
     }
 
     companion object {
         const val FOLDER = "compartidos"
+        private const val KEPT_PREFIX = "conservar-"
         const val VIEW_FOLDER = "vista"
         const val AUTHORITY_SUFFIX = ".documentos"
         const val MAX_AGE_MILLIS = 15 * 60 * 1000L

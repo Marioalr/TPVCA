@@ -109,6 +109,12 @@ object Statements {
 
     fun folioRaise(series: String, number: Int) = Statement(FOLIO_RAISE, listOf(HranaValue.Text(series), HranaValue.Integer(number.toLong())))
 
+    /**
+     * `meta.schema`: la huella. Una fila por su llave, en la misma petición de cada sincronización: si cambió se vuelve a leer el manifiesto (150 KB) y se pone o se quita el solo lectura, también cuando la app no cambió. La PC
+     * reescribe el manifiesto cuando cambia la huella.
+     */
+    const val META_SCHEMA: String = "SELECT \"Value\" FROM \"_tpvc_meta\" WHERE \"Key\" = 'schema';"
+
     /** `registry.own`. */
     const val REGISTRY_OWN: String = "SELECT DeviceCode, Role, RevokedAtUtc, RevokedReason FROM DeviceRegistry WHERE DeviceId = ?;"
 
@@ -141,6 +147,7 @@ object Statements {
     fun assetChunk(hash: String, part: Int) = Statement(ASSET_CHUNK, listOf(HranaValue.Text(hash), HranaValue.Integer(part.toLong())))
 
     val metaAll = Statement(META_ALL)
+    val metaSchema = Statement(META_SCHEMA)
     val handshake = Statement(HANDSHAKE)
     val generation = Statement(GENERATION)
     val profile = Statement(PROFILE)

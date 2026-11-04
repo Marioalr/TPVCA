@@ -68,6 +68,22 @@ class DeviceFilesTest {
     }
 
     @Test
+    fun elArchivoDeLoNoSubidoNoSePurgaALos15MinYSoloHayUno() {
+        var now = 1_000_000_000_000L
+        val documents = SharedDocuments(context) { now }
+        val first = documents.writeKept(documents.ticket(), "cambios.db") { it.writeText("uno") }
+        first.parentFile!!.setLastModified(now)
+        now += 24 * 60 * 60 * 1000L
+        documents.purgeOld()
+        assertTrue("Puede ser la única copia", first.exists())
+        val second = documents.writeKept(documents.ticket(), "cambios.db") { it.writeText("dos") }
+        assertFalse(first.exists())
+        assertTrue(second.exists())
+        // Es de lo que ve el FileProvider y se va al borrar el equipo
+        assertTrue(second.path.startsWith(documents.folder.path))
+    }
+
+    @Test
     fun loCompartidoSeBorraPorAntiguedad() {
         var now = 1_000_000_000_000L
         val documents = SharedDocuments(context) { now }

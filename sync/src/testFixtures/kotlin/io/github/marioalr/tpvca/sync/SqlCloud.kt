@@ -51,8 +51,16 @@ class SqlCloud(private val schema: SyncSchema = SyncContract.bundledSchema) {
         }
     }
 
+    /** Una petición que esta condición rechaza responde `RESPONSE_TOO_LARGE` sin ejecutar nada. */
+    var tooLarge: (List<Statement>) -> Boolean = { false }
+
+    /** La n-ésima petición de la subida responde 401, para probar lo que se corta a media subida. Solo los latidos con esto. */
+    var failWith: ((List<Statement>) -> HranaException?)? = null
+
     private fun <T> request(statements: List<Statement>, run: () -> T): T = synchronized(this) {
         if (offline) throw HranaException(HranaException.NETWORK_ERROR, "Sin conexión con Turso.")
+        failWith?.invoke(statements)?.let { throw it }
+        if (tooLarge(statements)) throw HranaException(HranaException.RESPONSE_TOO_LARGE, "Demasiado grande.")
         val upload = statements.any { it.sql.contains("ON CONFLICT(\"SyncId\") DO UPDATE") || it.sql.contains("INSERT INTO \"SyncTombstones\"") }
         var lost = false
         if (upload) {

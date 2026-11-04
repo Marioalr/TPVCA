@@ -72,6 +72,8 @@ class PhoneDemoActivity : FragmentActivity() {
 
         override fun exportPending() = Unit
 
+        override fun confirmExportDelivered() = Unit
+
         override fun eraseAfterExport() = Unit
         override fun unlock() = Unit
         override fun openSecuritySettings() = Unit

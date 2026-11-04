@@ -26,7 +26,20 @@ class RoomSyncStore(
     private val assetsDir: File,
     private val schema: SyncSchema = SyncContract.bundledSchema,
 ) : SyncStore {
-    private val db: SupportSQLiteDatabase get() = database.openHelper.writableDatabase
+    @Volatile
+    private var closed = false
+
+    /** Room vuelve a abrir, y a crear, una base cerrada. Quien se quedó con este objeto después de un borrado no debe poder hacerlo. */
+    private val db: SupportSQLiteDatabase
+        get() {
+            check(!closed) { "Esta base ya se borró." }
+            return database.openHelper.writableDatabase
+        }
+
+    /** La base se va a borrar: desde aquí este objeto ya no la toca. */
+    fun invalidate() {
+        closed = true
+    }
     private val syncedTables = schema.tables.map { it.table }
 
     override fun meta(key: String): String? =

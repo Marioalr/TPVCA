@@ -44,7 +44,7 @@ import io.github.marioalr.tpvca.data.entity.SyncTombstoneEntity
         ServiceDefaultProductEntity::class, SyncTombstoneEntity::class, ClinicProfileEntity::class, DbMetaEntity::class, SyncParkedRowEntity::class, SyncOutboxEntity::class, SyncSavedChangeEntity::class,
     ],
     version = 2,
-    // Las migraciones van escritas a mano y las prueba `DatabaseMigrationTest` con una base de la versión anterior
+    // Las migraciones van escritas a mano y las prueba `RoomWriteTest` con una base de la versión anterior
     exportSchema = false,
 )
 abstract class TpvcaDatabase : RoomDatabase() {

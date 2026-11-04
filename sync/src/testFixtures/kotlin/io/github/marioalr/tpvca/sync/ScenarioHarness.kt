@@ -64,8 +64,10 @@ class ScenarioHarness(private val file: File, private val pc: RealPcControl? = n
 
         override fun last(letteredSeries: String) = values[letteredSeries] ?: 0
 
-        override fun save(letteredSeries: String, number: Int) {
-            if ((values[letteredSeries] ?: 0) < number) values[letteredSeries] = number
+        override fun reserve(letteredSeries: String, localMax: Int): Int {
+            val next = maxOf(values[letteredSeries] ?: 0, localMax) + 1
+            values[letteredSeries] = next
+            return next
         }
     }
 
@@ -187,7 +189,7 @@ class ScenarioHarness(private val file: File, private val pc: RealPcControl? = n
                 val sale = d().writes.registerSale(listOf(SaleLine(productSyncId = product, quantity = step.getValue("quantity").jsonPrimitive.int, unitPrice = BigDecimal(price))), "Público General", "Efectivo")!!
                 JsonObject(mapOf("folio" to JsonPrimitive(mask(sale.folio))))
             }
-            "cancelSale" -> JsonObject(mapOf("ok" to JsonPrimitive(d().writes.cancelSale(unmask(s("folio"))))))
+            "cancelSale" -> JsonObject(mapOf("ok" to JsonPrimitive(d().writes.cancelSale(d().writes.findSale(unmask(s("folio"))) ?: error("No está el ticket ${s("folio")}")))))
             "closeBatch" -> {
                 d().writes.closeBatch(s("syncId"))
                 null

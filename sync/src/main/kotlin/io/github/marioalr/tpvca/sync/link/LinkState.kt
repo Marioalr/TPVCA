@@ -54,6 +54,7 @@ sealed interface LinkState {
      * Turso rechazó el token: 401 (se anuló) o 400 con "JWT" ([malformed], mal copiado). [pending]: los cambios sin subir, que se conservan.
      * [erased]: dos 401 con 10 min de diferencia y nada pendiente: se borró la base y, con el token nuevo, vuelve a bajar todo sin aprobar.
      * [problem]: lo que se acaba de pegar no sirve. [manual]: no lo rechazó Turso; lo pidió el médico para salir de una nube que no sirve.
+     * [revokedReason]: además la PC lo quitó con algo pendiente: sin token no se puede subir, y lo que se puede hacer es exportarlo ([exportReady], [exported], como en [Revoked]) o pegar el token nuevo.
      */
     data class NeedsToken(
         val malformed: Boolean,
@@ -61,6 +62,9 @@ sealed interface LinkState {
         val pending: Int,
         val problem: LinkProblem? = null,
         val manual: Boolean = false,
+        val revokedReason: String? = null,
+        val exportReady: Boolean = false,
+        val exported: Boolean = false,
     ) : LinkState
 
     /** La fila dice un rol que no es de un equipo Android (una PC, o uno que esta versión no conoce). No se bajó ni se borró nada: lo corrige la PC. */
@@ -80,13 +84,16 @@ sealed interface LinkState {
 
     /**
      * La PC lo quitó, lo marcó como perdido o lo rechazó. [erased]: ya se borraron la base, la credencial y los borradores. Sin borrar solo si hay [pending] cambios sin subir (nunca en un equipo
-     * perdido): `quitado` los intenta subir y se borra al terminar; si no puede, se exportan a un archivo. [exported]: ya se exportaron y se puede borrar con confirmación.
+     * perdido): `quitado` los intenta subir y se borra al terminar; si no puede, se exportan a un archivo.
+     *
+     * [exportReady]: el archivo ya se generó, pero la app no puede saber si llegó a alguna parte (cancelar «Compartir» se ve igual que compartir). [exported]: **el médico confirmó** que ya lo guardó en otro lado. Solo
+     * entonces se puede borrar.
      */
-    data class Revoked(val reason: String?, val erased: Boolean, val pending: Int = 0, val exported: Boolean = false) : LinkState
+    data class Revoked(val reason: String?, val erased: Boolean, val pending: Int = 0, val exportReady: Boolean = false, val exported: Boolean = false) : LinkState
 
     /**
      * La credencial ya no se puede abrir (el Keystore perdió la llave) y hay [pending] cambios sin subir: sin `DeviceId` ni token no hay forma de subirlos. **No se borra nada** hasta exportarlos
-     * ([exported]) y confirmarlo.
+     * ([exportReady]), confirmar que el archivo llegó ([exported]) y confirmar el borrado.
      */
-    data class CredentialLost(val pending: Int, val exported: Boolean = false) : LinkState
+    data class CredentialLost(val pending: Int, val exportReady: Boolean = false, val exported: Boolean = false) : LinkState
 }

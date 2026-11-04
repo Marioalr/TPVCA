@@ -75,6 +75,7 @@ object LinkTags {
     const val TOKEN_SUBMIT = "token-submit"
     const val REVOKED_OK = "revoked-ok"
     const val EXPORT_PENDING = "exportar-pendiente"
+    const val EXPORT_DELIVERED = "archivo-entregado"
     const val ERASE_AFTER_EXPORT = "borrar-exportado"
     const val ERASE_CONFIRM = "borrar-confirmar"
     const val UNLOCK = "locked-unlock"
@@ -107,7 +108,10 @@ interface LinkActions {
     /** Escribir lo que no se pudo subir a un archivo y compartirlo. */
     fun exportPending()
 
-    /** Ya exportado y con confirmación: lo único que borra con algo sin subir. */
+    /** El médico dice que el archivo ya está en otro lado: la app no lo puede saber. */
+    fun confirmExportDelivered()
+
+    /** Con el archivo confirmado y la confirmación de borrar: lo único que borra con algo sin subir. */
     fun eraseAfterExport()
 
     fun unlock()
@@ -423,6 +427,11 @@ fun TokenScreen(state: LinkState.NeedsToken, deviceSecure: Boolean, actions: Lin
     var token by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
     LinkPage(LinkTags.TOKEN_SCREEN) {
+        if (state.revokedReason != null) {
+            // Quitado y sin token: no se puede subir, pero sí sacarlo a un archivo
+            Warning(pluralStringResource(R.plurals.revoked_pending_body, state.pending, state.pending))
+            PendingActions(state.exportReady, state.exported, actions)
+        }
         Title(stringResource(R.string.token_title))
         Body(
             stringResource(
@@ -510,17 +519,26 @@ fun RevokedScreen(state: LinkState.Revoked, actions: LinkActions) {
                 Text(stringResource(R.string.revoked_ok))
             }
         } else {
-            PendingActions(state.exported, actions)
+            PendingActions(state.exportReady, state.exported, actions)
         }
     }
 }
 
-/** Exportar lo que no se pudo subir y, ya exportado, borrar con confirmación. */
+/**
+ * Exportar lo que no se pudo subir. La app no ve qué pasa después de «Compartir»: cancelar se ve igual que compartir. Por eso borrar se ofrece hasta que el médico diga que el archivo llegó a otro lado, y
+ * el diálogo dice que borrar también destruye la copia que queda aquí.
+ */
 @Composable
-private fun PendingActions(exported: Boolean, actions: LinkActions) {
+private fun PendingActions(exportReady: Boolean, exported: Boolean, actions: LinkActions) {
     var confirming by rememberSaveable { mutableStateOf(false) }
     Button(onClick = actions::exportPending, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(LinkTags.EXPORT_PENDING)) {
         Text(stringResource(R.string.pending_export))
+    }
+    if (exportReady && !exported) {
+        Body(stringResource(R.string.pending_export_ready))
+        TextButton(onClick = actions::confirmExportDelivered, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(LinkTags.EXPORT_DELIVERED)) {
+            Text(stringResource(R.string.pending_export_delivered))
+        }
     }
     if (exported) {
         TextButton(onClick = { confirming = true }, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(LinkTags.ERASE_AFTER_EXPORT)) {
@@ -546,7 +564,7 @@ fun CredentialLostScreen(state: LinkState.CredentialLost, actions: LinkActions) 
     LinkPage {
         Title(stringResource(R.string.credential_lost_title))
         Warning(pluralStringResource(R.plurals.credential_lost_body, state.pending, state.pending))
-        PendingActions(state.exported, actions)
+        PendingActions(state.exportReady, state.exported, actions)
     }
 }
 

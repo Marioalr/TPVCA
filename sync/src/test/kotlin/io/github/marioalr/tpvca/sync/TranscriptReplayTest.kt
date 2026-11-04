@@ -143,7 +143,7 @@ class TranscriptReplayTest {
             assertTrue("$outcome", outcome is SyncOutcome.Completed && !outcome.fullDownload)
             assertClean(replay)
             assertEquals("Una sola petición (8.6), con su fila de DeviceRegistry", 1, replay.httpRequests)
-            assertEquals(listOf(Statements.REGISTRY_OWN), replay.extrasServed)
+            assertEquals(listOf(Statements.REGISTRY_OWN, Statements.META_SCHEMA), replay.extrasServed)
 
             // Llegan el paciente con su teléfono nuevo y la lápida de la cita
             val patient = store.rows("Patients").getValue("10000000-0000-4000-8000-000000000003")

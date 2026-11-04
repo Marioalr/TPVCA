@@ -77,7 +77,7 @@ class RedactorTest {
     /** Lo que dice Android cuando no hay DNS, visto en un emulador: el texto de la excepción nombra al host, que no parece de Turso. */
     @Test
     fun unHostQueNoResuelveNoSaleEnElMensaje() {
-        val host = "base-sin-resolver.invalid"
+        val host = "consultorio-ejemplo.turso.io"
         val http = OkHttpClient.Builder().dns { throw UnknownHostException("Unable to resolve host \"$it\": No address associated with hostname") }.build()
         val error = assertThrows(HranaException::class.java) { HranaClient("https://$host", token, "1.0.0", http).query(listOf(Statement("SELECT 1"))) }
         assertEquals(HranaException.NETWORK_ERROR, error.code)
@@ -94,6 +94,33 @@ class RedactorTest {
             val error = assertThrows(HranaException::class.java) { HranaClient(base, "t", "1.0.0").query(listOf(Statement("SELECT 1"))) }
             assertFalse(error.message!!, error.message!!.contains(server.hostName))
         }
+    }
+
+    @Test
+    fun soloSeAceptanHostsDeTurso() {
+        assertEquals("https://consultorio-ejemplo.turso.io/v2/pipeline", PipelineUrl.forDevice("https://consultorio-ejemplo.turso.io"))
+        assertEquals("https://consultorio-ejemplo.aws-us-east-2.turso.io/v2/pipeline", PipelineUrl.forDevice(url))
+        assertEquals("consultorio-ejemplo.turso.io", PipelineUrl.host("HTTPS://Consultorio-Ejemplo.Turso.io"))
+        for (bad in listOf("https://evil.example", "https://consultorio-ejemplo.turso.io.evil.example", "https://tur" + "so.io.evil.example/x", "https://evil.example/.turso.io")) {
+            assertThrows(bad, IllegalArgumentException::class.java) { PipelineUrl.normalize(bad) }
+        }
+        // El servidor de pruebas: la clase lo acepta, la app no
+        assertEquals("http://127.0.0.1:8787/v2/pipeline", PipelineUrl.normalize("http://127.0.0.1:8787"))
+        assertThrows(IllegalArgumentException::class.java) { PipelineUrl.forDevice("http://127.0.0.1:8787") }
+        assertThrows(IllegalArgumentException::class.java) { PipelineUrl.forDevice("https://localhost:8443") }
+    }
+
+    @Test
+    fun unTokenConCaracteresImposiblesEsMalCopiadoNoUnaCaida() {
+        MockWebServer().use { server ->
+            server.start()
+            val error = assertThrows(HranaException::class.java) {
+                HranaClient(server.url("/").toString(), "tokeñ", "1.0.0").query(listOf(Statement("SELECT 1")))
+            }
+            assertEquals(HranaException.TOKEN_MALFORMED, error.code)
+        }
+        assertFalse(HranaClient.isValidToken("tokeñ"))
+        assertEquals("ab", HranaClient.cleanToken("\u00A0a\u200Bb\uFEFF"))
     }
 
     @Test

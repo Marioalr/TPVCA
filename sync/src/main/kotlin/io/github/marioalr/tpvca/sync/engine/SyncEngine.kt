@@ -42,6 +42,8 @@ class SyncEngine(
     private val config: SyncEngineConfig,
     private val schema: SyncSchema = SyncContract.bundledSchema,
     private val clock: Clock = Clock.systemUTC(),
+    /** Un reloj que no cambia con la hora del equipo (`SystemClock.elapsedRealtime`), para los 10 min del 401. Vuelve a cero al reiniciar. */
+    private val elapsedMillis: () -> Long = { clock.millis() },
 ) {
     private val brake = ConsumptionBrake(store, clock)
     private val tombstonesTable = schema.tombstones.table
@@ -52,7 +54,7 @@ class SyncEngine(
     fun resumeAfterBrake() = brake.resume()
 
     /** Se pegó otro token: vuelve a intentar sin esperar y sin contar los 401 anteriores. */
-    fun tokenReplaced() = store.apply(StoreChanges(metaRemoved = setOf(AUTH_FIRST_401, AUTH_MALFORMED)))
+    fun tokenReplaced() = store.apply(StoreChanges(metaRemoved = setOf(AUTH_FIRST_401, AUTH_FIRST_401_ELAPSED, AUTH_MALFORMED)))
 
     /** Corre una sincronización completa de principio a fin. Nunca lanza un error de Turso: lo regresa como resultado. */
     fun sync(trigger: SyncTrigger = SyncTrigger.AUTOMATIC): SyncOutcome {
@@ -70,7 +72,7 @@ class SyncEngine(
             if (outcome is SyncOutcome.Completed) {
                 StoreChanges(
                     meta = mapOf(LAST_SUCCESS to clock.instant().toString()),
-                    metaRemoved = setOf(LAST_ERROR, QUOTA_RETRY_AT, AUTH_FIRST_401, AUTH_MALFORMED),
+                    metaRemoved = setOf(LAST_ERROR, QUOTA_RETRY_AT, AUTH_FIRST_401, AUTH_FIRST_401_ELAPSED, AUTH_MALFORMED),
                 )
             } else {
                 StoreChanges(meta = mapOf(LAST_ERROR to outcome.message.orEmpty()))
@@ -82,14 +84,42 @@ class SyncEngine(
     /** Lo automático no llega a Turso con la cuota agotada, el freno activo o el token rechazado. */
     private fun pausedOutcome(trigger: SyncTrigger): SyncOutcome? {
         if (trigger != SyncTrigger.AUTOMATIC) return null
-        if (brake.isTripped) return SyncOutcome.BrakePaused
+        if (brake.isTripped) return brakedOutcome()
         val retryAt = store.meta(QUOTA_RETRY_AT)?.let(Instant::parse)
         if (retryAt != null && clock.instant().isBefore(retryAt)) return SyncOutcome.QuotaPaused(retryAt)
         if (store.meta(AUTH_MALFORMED) != null) return SyncOutcome.TokenMalformed
-        val first401 = store.meta(AUTH_FIRST_401)?.let(Instant::parse) ?: return null
+        if (store.meta(AUTH_FIRST_401) == null) return null
         // Con algo pendiente no se vuelve a intentar hasta tener token; sin nada, una vez más a los 10 min, para confirmar y borrarse
-        val confirming = store.pendingChanges() == 0 && Duration.between(first401, clock.instant()) >= TOKEN_WIPE_AFTER
+        val confirming = store.pendingChanges() == 0 && first401IsOldEnough()
         return if (confirming) null else SyncOutcome.TokenRejected(wiped = false)
+    }
+
+    /**
+     * Con el freno puesto no se baja nada, pero una revocación no debe esperar a *Reanudar*: una sola lectura de su fila (§4.7) en cada
+     * revisión. Si el token está en pausa no toca la red. Sin red o sin respuesta, sigue en pausa.
+     */
+    private fun brakedOutcome(): SyncOutcome {
+        if (store.meta(AUTH_FIRST_401) != null || store.meta(AUTH_MALFORMED) != null) return SyncOutcome.BrakePaused
+        return try {
+            checkRegistry(connection.query(listOf(Statements.registryOwn(config.deviceId))).single())
+            SyncOutcome.BrakePaused
+        } catch (stop: Stop) {
+            if (stop.outcome == SyncOutcome.NotApproved) SyncOutcome.BrakePaused else stop.outcome
+        } catch (e: HranaException) {
+            if (e.code == HranaException.UNAUTHORIZED || e.code == HranaException.TOKEN_MALFORMED) outcomeOf(e) else SyncOutcome.BrakePaused
+        }
+    }
+
+    /**
+     * Los 10 min entre dos 401 se miden con [elapsedMillis], que una hora adelantada no mueve. Después de reiniciar el equipo ese reloj vuelve a
+     * cero y solo queda la hora normal: adelantarla y reiniciar sigue acortando la espera (`docs/SINCRONIZACION.md`).
+     */
+    private fun first401IsOldEnough(): Boolean {
+        val started = store.meta(AUTH_FIRST_401_ELAPSED)?.toLongOrNull()
+        val now = elapsedMillis()
+        if (started != null && now >= started) return Duration.ofMillis(now - started) >= TOKEN_WIPE_AFTER
+        val first = store.meta(AUTH_FIRST_401)?.let(Instant::parse) ?: return false
+        return Duration.between(first, clock.instant()) >= TOKEN_WIPE_AFTER
     }
 
     private fun outcomeOf(e: HranaException): SyncOutcome = when (e.code) {
@@ -109,13 +139,11 @@ class SyncEngine(
 
     /** §4.7: con algo pendiente se conserva todo; sin nada pendiente se borra tras dos 401 con 10 min de diferencia. */
     private fun onUnauthorized(): SyncOutcome {
-        val now = clock.instant()
-        val first = store.meta(AUTH_FIRST_401)?.let(Instant::parse)
-        if (first == null) {
-            store.apply(StoreChanges(meta = mapOf(AUTH_FIRST_401 to now.toString())))
+        if (store.meta(AUTH_FIRST_401) == null) {
+            store.apply(StoreChanges(meta = mapOf(AUTH_FIRST_401 to clock.instant().toString(), AUTH_FIRST_401_ELAPSED to elapsedMillis().toString())))
             return SyncOutcome.TokenRejected(wiped = false)
         }
-        if (store.pendingChanges() == 0 && Duration.between(first, now) >= TOKEN_WIPE_AFTER) {
+        if (store.pendingChanges() == 0 && first401IsOldEnough()) {
             store.wipeEverything()
             return SyncOutcome.TokenRejected(wiped = true)
         }
@@ -162,8 +190,12 @@ class SyncEngine(
     }
 
     private fun checkClinic(cloudClinicId: String?) {
-        if (cloudClinicId.isNullOrEmpty()) return
         val local = config.expectedClinicId ?: store.meta(CLINIC_ID)
+        if (cloudClinicId.isNullOrEmpty()) {
+            // Este equipo ya es de un consultorio: una nube sin identidad no decide nada sobre él
+            if (local != null) throw Stop(SyncOutcome.CloudNotReady(listOf("clinicId")))
+            return
+        }
         if (local != null && !local.equals(cloudClinicId, ignoreCase = true)) throw Stop(SyncOutcome.OtherCloud(cloudClinicId, local))
         if (store.meta(CLINIC_ID) == null) store.apply(StoreChanges(meta = mapOf(CLINIC_ID to cloudClinicId)))
     }
@@ -257,6 +289,8 @@ class SyncEngine(
             return incrementalTableByTable(run, own)
         }
 
+        // Primero de quién es esta nube: una ajena no aprueba, no revoca ni recibe un latido
+        checkClinic(handshake.clinicId)
         checkRegistry(registry)
         checkCloud(run, handshake, before)
         when (generationState(handshake)) {
@@ -273,8 +307,9 @@ class SyncEngine(
     private fun incrementalTableByTable(run: Run, own: Statement): SyncOutcome {
         val before = clock.instant()
         val results = run.query(listOf(own, Statements.handshake, Statements.profile))
-        checkRegistry(results[0])
         val handshake = Handshake.parse(results[1])
+        checkClinic(handshake.clinicId)
+        checkRegistry(results[0])
         checkCloud(run, handshake, before)
         when (generationState(handshake)) {
             GenerationState.Same -> Unit
@@ -793,6 +828,7 @@ class SyncEngine(
         const val CLOCK_OFFSET_MS = "Cloud:ClockOffsetMs"
         const val QUOTA_RETRY_AT = "Pause:QuotaRetryAtUtc"
         const val AUTH_FIRST_401 = "Pause:First401Utc"
+        const val AUTH_FIRST_401_ELAPSED = "Pause:First401Elapsed"
         const val AUTH_MALFORMED = "Pause:TokenMalformedUtc"
         const val LAST_ERROR = "Status:LastError"
         const val LAST_SUCCESS = "Status:LastSuccessUtc"

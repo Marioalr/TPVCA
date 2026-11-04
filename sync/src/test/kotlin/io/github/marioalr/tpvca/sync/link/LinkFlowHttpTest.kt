@@ -141,7 +141,8 @@ class LinkFlowHttpTest {
         clock = MutableClock(Instant.parse("2026-11-03T18:00:00Z")),
         newId = { "android-tab-3f9a2c" },
         newNonce = { "nonce-de-prueba" },
-    )
+        allowLoopback = true,
+    ).also { it.restore() }
 
     /** Un QR con el formato de la PC, pero que apunta a este servidor local. */
     private fun qr(): LinkData {

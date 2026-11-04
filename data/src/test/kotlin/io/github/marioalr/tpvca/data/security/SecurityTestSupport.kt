@@ -15,6 +15,9 @@ class MemorySecretWrapper : SecretWrapper {
     private var key: SecretKey? = null
     var destroyed = 0
 
+    /** El Keystore no responde esta vez. */
+    var unavailable = false
+
     private fun key() = key ?: KeyGenerator.getInstance("AES").apply { init(256) }.generateKey().also { key = it }
 
     override fun wrap(plain: ByteArray): ByteArray {
@@ -24,6 +27,7 @@ class MemorySecretWrapper : SecretWrapper {
     }
 
     override fun unwrap(wrapped: ByteArray): ByteArray {
+        if (unavailable) throw SecretTemporarilyUnavailableException()
         val key = key ?: throw SecretUnreadableException()
         try {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, wrapped, 0, 12)) }

@@ -2,6 +2,7 @@ package io.github.marioalr.tpvca.sync.link
 
 import io.github.marioalr.tpvca.domain.devices.DeviceRole
 import io.github.marioalr.tpvca.sync.Statements
+import io.github.marioalr.tpvca.sync.engine.ConsumptionBrake
 import io.github.marioalr.tpvca.sync.engine.StoreChanges
 import io.github.marioalr.tpvca.sync.engine.SyncEngine
 import io.github.marioalr.tpvca.sync.engine.SyncEngineConfig
@@ -53,6 +54,10 @@ class LinkFlow(
     private val newNonce: () -> String = { UUID.randomUUID().toString().replace("-", "") },
     /** Lo que va pasando: la primera descarga tarda y la pantalla lo muestra mientras esta llamada sigue. */
     private val onState: (LinkState) -> Unit = {},
+    /** El reloj de los 10 min del 401 (`SystemClock.elapsedRealtime`). */
+    private val elapsedMillis: () -> Long = { clock.millis() },
+    /** Solo para las pruebas con un servidor local: la app nunca lo activa. */
+    private val allowLoopback: Boolean = false,
 ) {
     @Volatile
     private var credential: DeviceCredential? = null
@@ -61,6 +66,9 @@ class LinkFlow(
     private var nonceWrittenFor: String? = null
     private var lastHeartbeat: Instant? = null
     private var lastCheck: Instant? = null
+
+    /** Ya se sabe qué hay guardado. Mientras no, no se vincula, no se sincroniza y, sobre todo, no se borra nada. */
+    private var loaded = false
 
     /** Lo último que se sabe. La pantalla lo recibe por [onState]. */
     @Volatile
@@ -79,27 +87,35 @@ class LinkFlow(
     /** Al abrir la app: lo que quedó guardado, sin tocar la red. */
     @Synchronized
     fun restore(): LinkState {
+        val next = readSaved()
+        loaded = true
+        return publish(next)
+    }
+
+    private fun readSaved(): LinkState {
         // Se quedó a medio borrar: el aviso se guarda antes de borrar, así que aquí se termina
         notices.revocation()?.let { revocation ->
             eraseAll()
-            return publish(LinkState.Revoked(revocation.reason, erased = true))
+            return LinkState.Revoked(revocation.reason, erased = true)
         }
-        val stored = vault.load()
-        return publish(
-            when (stored) {
-                StoredCredential.Empty -> LinkState.NotLinked()
-                StoredCredential.Unreadable -> {
-                    // Sin credencial no hay DeviceId ni forma de subir nada, y la llave de la base es del mismo Keystore
-                    eraseAll()
-                    LinkState.NotLinked(LinkProblem.CredentialLost)
-                }
-                is StoredCredential.Present -> {
-                    credential = stored.credential
-                    remembered(stored.credential)
-                }
-            },
-        )
+        // Un error pasajero del Keystore o del disco sale de aquí como excepción: nada se borra y [loaded] sigue en falso
+        return when (val stored = vault.load()) {
+            StoredCredential.Empty -> LinkState.NotLinked()
+            StoredCredential.Unreadable -> {
+                // La llave se perdió de verdad: sin credencial no hay DeviceId ni forma de subir nada
+                eraseAll()
+                LinkState.NotLinked(LinkProblem.CredentialLost)
+            }
+            is StoredCredential.Present -> {
+                credential = stored.credential
+                remembered(stored.credential)
+            }
+        }
     }
+
+    /** Algo local falló. Lo que hay guardado se queda como está. */
+    @Synchronized
+    fun reportLocalError(): LinkState = publish(LinkState.LocalError)
 
     private fun remembered(saved: DeviceCredential): LinkState {
         // Sin token ya se borró la base: no hace falta abrirla ni crear otra
@@ -117,30 +133,35 @@ class LinkFlow(
     /** Vincular: se niega sin bloqueo de pantalla, guarda la credencial y revisa la nube antes de escribir su latido. */
     @Synchronized
     fun link(url: String, token: String, clinicName: String, role: DeviceRole): LinkState {
-        if (credential != null) return state
+        if (!loaded || credential != null) return state
         validate(url, token)?.let { return publish(LinkState.NotLinked(it)) }
         notices.clearRevocation()
         val saved = DeviceCredential(url.trim(), HranaClient.cleanToken(token), clinicName.trim(), newId(), role)
         vault.save(saved)
         credential = saved
         nonce = newNonce()
-        return syncNow(saved, SyncTrigger.USER, forceHeartbeat = true)
+        return guardingUrl { syncNow(saved, SyncTrigger.USER, forceHeartbeat = true) }
     }
 
     /**
-     * Pegar o escanear el token nuevo después de una rotación. Se conserva el `DeviceId`, así que no hay que aprobar otra vez. Si la URL
-     * llevara a otro consultorio, el motor se detiene en `OtherCloud` sin bajar nada y sin tocar lo que hay aquí.
+     * Pegar o escanear el token nuevo después de una rotación. Se conserva el `DeviceId`, así que no hay que aprobar otra vez.
+     *
+     * Si lleva a otro host no se manda nada hasta confirmar ese host en pantalla ([confirmedHost]), y luego se comprueba **antes de guardar** que esa
+     * nube sea de este consultorio: lo que había se queda intacto si no. Así un QR falso no se lleva el token ni deja al equipo sin regreso.
      */
     @Synchronized
-    fun replaceToken(token: String, url: String? = null): LinkState {
-        val current = credential ?: return publish(LinkState.NotLinked())
+    fun replaceToken(token: String, url: String? = null, confirmedHost: String? = null): LinkState {
+        val current = credential ?: return state
+        val needs = state as? LinkState.NeedsToken ?: LinkState.NeedsToken(false, current.token == null, if (current.token == null) 0 else pendingNow())
         val newUrl = url?.trim()?.takeIf { it.isNotEmpty() } ?: current.url
-        validate(newUrl, token)?.let { problem ->
-            // Lo pegado no sirve: nada cambia y la pantalla dice por qué
-            val needs = state as? LinkState.NeedsToken ?: LinkState.NeedsToken(false, current.token == null, pendingNow())
-            return publish(needs.copy(problem = problem))
+        validate(newUrl, token)?.let { return publish(needs.copy(problem = it)) }
+        val newToken = HranaClient.cleanToken(token)
+        val newHost = PipelineUrl.host(newUrl)
+        if (newHost != hostOf(current.url)) {
+            if (confirmedHost != newHost) return publish(needs.copy(problem = LinkProblem.HostChange(newHost)))
+            verifyClinic(current, newUrl, newToken)?.let { return publish(needs.copy(problem = it)) }
         }
-        val saved = current.copy(url = newUrl, token = HranaClient.cleanToken(token))
+        val saved = current.copy(url = newUrl, token = newToken)
         vault.save(saved)
         credential = saved
         session = null
@@ -148,24 +169,81 @@ class LinkFlow(
         return syncNow(saved, SyncTrigger.USER, forceHeartbeat = true)
     }
 
+    /** Una URL guardada que ya no se acepta tampoco es «el mismo host». */
+    private fun hostOf(url: String): String? = try {
+        PipelineUrl.host(url)
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+
+    /** Solo lee `_tpvc_meta`: de quién es esa nube. Sin poder saberlo, no se guarda. */
+    private fun verifyClinic(current: DeviceCredential, url: String, token: String): LinkProblem? {
+        val rows = try {
+            connect(url, token).query(listOf(Statements.metaAll)).single().rows
+        } catch (e: HranaException) {
+            return LinkProblem.CloudUnverified(e.message.orEmpty())
+        }
+        val clinicId = rows.firstOrNull { it.text("Key") == "clinicId" }?.text("Value")
+        val known = current.clinicId ?: return null
+        return if (clinicId.equals(known, ignoreCase = true)) null else LinkProblem.OtherClinic
+    }
+
+    /** Pegar otra URL y token desde una nube que no sirve, sin borrar nada. Se queda ahí hasta que el médico decida. */
+    @Synchronized
+    fun requestToken(): LinkState {
+        if (!loaded || credential == null) return state
+        return publish(LinkState.NeedsToken(false, credential?.token == null, pendingNow(), manual = true))
+    }
+
     private fun validate(url: String, token: String): LinkProblem? {
         if (!deviceLock.isSecure()) return LinkProblem.NoSecureLock
         try {
-            PipelineUrl.normalize(url)
+            if (allowLoopback) PipelineUrl.normalize(url) else PipelineUrl.forDevice(url)
         } catch (e: IllegalArgumentException) {
             return LinkProblem.BadUrl(e.message.orEmpty())
         }
-        return if (HranaClient.cleanToken(token).isEmpty()) LinkProblem.EmptyToken else null
+        return when {
+            HranaClient.cleanToken(token).isEmpty() -> LinkProblem.EmptyToken
+            !HranaClient.isValidToken(token) -> LinkProblem.BadToken
+            else -> null
+        }
+    }
+
+    /** *Reanudar* después del freno de consumo, como en la PC: el día se vuelve a contar desde cero y se sincroniza. */
+    @Synchronized
+    fun resumeBrake(): LinkState {
+        val saved = credential ?: return state
+        if (saved.token == null) return state
+        return guardingUrl {
+            session(saved).engine.resumeAfterBrake()
+            syncNow(saved, SyncTrigger.USER, forceHeartbeat = false)
+        }
+    }
+
+    /** Una URL o una credencial que no se puede usar (de una versión anterior) se resuelve pegando otra: nunca como un error local. */
+    private inline fun guardingUrl(action: () -> LinkState): LinkState = try {
+        action()
+    } catch (e: IllegalArgumentException) {
+        publish(LinkState.CloudProblem(e.message.orEmpty(), canReplace = true, canForget = true))
     }
 
     /** Lo que corre la cadencia, y «Revisar ahora». */
     @Synchronized
     fun refresh(reason: Refresh): LinkState {
-        val saved = credential ?: return state
+        val saved = credential
         val current = state
+        // Un error al vincular, sin credencial: se regresa a la pantalla de vincular
+        if (saved == null) return if (loaded && current is LinkState.LocalError) publish(LinkState.NotLinked()) else state
         if (saved.token == null || (current is LinkState.Revoked && current.erased)) return state
+        // Está decidiendo qué pegar: la cadencia no le cambia la pantalla
+        if (current is LinkState.NeedsToken && (current.manual || current.problem != null) && reason != Refresh.USER) return state
+        return guardingUrl { refreshLinked(saved, current, reason) }
+    }
+
+    private fun refreshLinked(saved: DeviceCredential, current: LinkState, reason: Refresh): LinkState {
         if (current is LinkState.WaitingApproval) return pollApproval(saved, current, reason)
-        if (reason == Refresh.TICK && !isDue(lastCheck, LinkCadence.sync(saved.effectiveRole))) {
+        val every = if (current is LinkState.Downloading) LinkCadence.WAITING_HEARTBEAT else LinkCadence.sync(saved.effectiveRole)
+        if (reason == Refresh.TICK && !isDue(lastCheck, every)) {
             if (current is LinkState.Linked && heartbeatFoundOtherInstallation(saved, force = false)) return publish(waiting(credential!!, newIdentity = true))
             return state
         }
@@ -183,7 +261,7 @@ class LinkFlow(
             }
             val row = session(saved).connection.query(listOf(Statements.registryOwn(saved.deviceId))).single().rows.firstOrNull()
             when {
-                row == null -> publish(current.copy(problem = null))
+                row == null -> publish(current.copy(problem = null, braked = brakeTripped()))
                 else -> {
                     // Se ve que va a bajar solo si de verdad va a bajar: revocado o con un rol que no es de Android se detiene en el motor
                     val approved = DeviceRole.fromName(row.text("Role")).takeIf { row.text("RevokedAtUtc").isNullOrEmpty() && row.text("DeviceCode")?.startsWith("X") != true }
@@ -196,7 +274,7 @@ class LinkFlow(
             if (e.code == HranaException.UNAUTHORIZED || e.code == HranaException.TOKEN_MALFORMED) {
                 syncNow(saved, SyncTrigger.USER, forceHeartbeat = false)
             } else {
-                publish(current.copy(problem = e.message))
+                publish(current.copy(problem = e.message, braked = brakeTripped()))
             }
         }
     }
@@ -228,8 +306,7 @@ class LinkFlow(
                 LinkState.NeedsToken(malformed = false, erased = outcome.wiped, pending = if (outcome.wiped) 0 else pendingNow())
             }
             SyncOutcome.TokenMalformed -> LinkState.NeedsToken(malformed = true, erased = false, pending = pendingNow())
-            SyncOutcome.SchemaMissing, is SyncOutcome.CloudNotReady, is SyncOutcome.ClientOutdated, is SyncOutcome.OtherCloud ->
-                LinkState.CloudProblem(outcome.message.orEmpty())
+            SyncOutcome.SchemaMissing, is SyncOutcome.CloudNotReady, is SyncOutcome.ClientOutdated, is SyncOutcome.OtherCloud -> cloudProblem(outcome)
             is SyncOutcome.Completed ->
                 if (heartbeatFoundOtherInstallation(saved, force = forceHeartbeat)) waiting(credential!!, newIdentity = true) else linkedState(saved, outcome.message)
             // Sin red, cuota, freno, otra generación: los datos siguen aquí. Si nunca leyó su fila, tampoco sabe si está aprobado: sigue esperando
@@ -238,8 +315,22 @@ class LinkFlow(
     }
 
     /**
-     * §4.7: `quitado` sube lo pendiente y luego borra (K5; mientras tanto, con algo pendiente, se queda como está); `perdido` y `rechazado`
-     * borran. Después de borrar, el `DeviceId` también se va: su fila revocada nunca se borra y uno nuevo pasa otra vez por la PC.
+     * «Sin verificar» y «otra versión» se arreglan en la PC o actualizando, y no hay nada que borrar. Otra nube o una sin esquema pueden ser una
+     * URL equivocada: ahí se ofrece pegar otra y, con confirmación, desvincular.
+     */
+    private fun cloudProblem(outcome: SyncOutcome): LinkState.CloudProblem {
+        val message = outcome.message.orEmpty()
+        return when (outcome) {
+            is SyncOutcome.ClientOutdated -> LinkState.CloudProblem(message)
+            is SyncOutcome.CloudNotReady -> LinkState.CloudProblem(message, canReplace = true)
+            else -> LinkState.CloudProblem(message, canReplace = true, canForget = true)
+        }
+    }
+
+    /**
+     * §4.7: `perdido` borra siempre, sin subir nada. `quitado` y `rechazado` borran solo sin nada pendiente; con algo pendiente se quedan como están
+     * hasta K5 (`SyncEngine.checkRegistry`). Después de borrar, el `DeviceId` también se va: su fila revocada nunca se borra y uno nuevo pasa otra
+     * vez por la PC.
      */
     private fun onRevoked(outcome: SyncOutcome.Revoked): LinkState {
         if (!outcome.wiped) return LinkState.Revoked(outcome.reason, erased = false, pending = pendingNow())
@@ -255,6 +346,7 @@ class LinkFlow(
         credential = kept
         session = null
         database.erase()
+        eraseFiles()
     }
 
     private fun eraseAll() {
@@ -265,9 +357,10 @@ class LinkFlow(
         vault.clear()
     }
 
-    /** Cancelar mientras espera, o cambiar de nube. Nunca con cambios sin subir. */
+    /** Cancelar mientras espera, o cambiar de nube. Nunca con cambios sin subir, y nunca sin saber qué hay guardado. */
     @Synchronized
     fun forget(): LinkState {
+        if (!loaded || state is LinkState.LocalError) return state
         if (credential != null && pendingNow() > 0) return state
         eraseAll()
         return publish(LinkState.NotLinked())
@@ -291,6 +384,7 @@ class LinkFlow(
             database.store(),
             SyncEngineConfig(saved.deviceId, expectedClinicId = saved.clinicId),
             clock = clock,
+            elapsedMillis = elapsedMillis,
         )
         return Session(saved, connection, engine).also { session = it }
     }
@@ -351,10 +445,16 @@ class LinkFlow(
     private fun isDue(last: Instant?, every: Duration): Boolean = last == null || Duration.between(last, clock.instant()) >= every
 
     private fun waiting(saved: DeviceCredential, problem: String? = null, newIdentity: Boolean = false) =
-        LinkState.WaitingApproval(Heartbeat.suffix(saved.deviceId), saved.requestedRole, saved.clinicName, problem, newIdentity)
+        LinkState.WaitingApproval(Heartbeat.suffix(saved.deviceId), saved.requestedRole, saved.clinicName, problem, newIdentity, brakeTripped())
 
-    private fun linkedState(saved: DeviceCredential, notice: String?) =
-        LinkState.Linked(saved.effectiveRole, database.store().meta(SyncEngine.DEVICE_CODE), saved.clinicName, notice)
+    /** Aprobado. Hasta que la primera descarga termine no está listo, aunque se haya cortado: sigue diciendo que baja. */
+    private fun linkedState(saved: DeviceCredential, notice: String?): LinkState {
+        val store = database.store()
+        if (store.meta(SyncEngine.FIRST_DOWNLOAD_DONE) == null) return LinkState.Downloading(saved.effectiveRole, saved.clinicName, notice, brakeTripped())
+        return LinkState.Linked(saved.effectiveRole, store.meta(SyncEngine.DEVICE_CODE), saved.clinicName, notice, brakeTripped())
+    }
+
+    private fun brakeTripped() = ConsumptionBrake(database.store(), clock).isTripped
 
     private fun publish(next: LinkState): LinkState {
         state = next

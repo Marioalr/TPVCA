@@ -13,6 +13,7 @@ class EncryptedCredentialVault(private val file: WrappedFile) : CredentialVault 
             val credential = file.read()?.let { DeviceCredential.fromJson(String(it, Charsets.UTF_8)) }
             credential?.let(StoredCredential::Present) ?: StoredCredential.Unreadable
         } catch (_: SecretUnreadableException) {
+            // La llave se perdió de verdad. Un error pasajero o del disco sigue hacia arriba: no es «ilegible» y nada debe borrarse
             StoredCredential.Unreadable
         }
     }

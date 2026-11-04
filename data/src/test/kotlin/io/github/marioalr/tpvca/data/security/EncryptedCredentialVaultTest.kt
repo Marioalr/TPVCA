@@ -1,16 +1,27 @@
 package io.github.marioalr.tpvca.data.security
 
+import android.security.keystore.KeyPermanentlyInvalidatedException
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.marioalr.tpvca.domain.devices.DeviceRole
 import io.github.marioalr.tpvca.sync.link.DeviceCredential
 import io.github.marioalr.tpvca.sync.link.StoredCredential
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.IOException
+import java.security.InvalidKeyException
+import java.security.KeyStoreException
+import java.security.ProviderException
+import java.security.UnrecoverableKeyException
+import javax.crypto.AEADBadTagException
 
+@RunWith(AndroidJUnit4::class)
 class EncryptedCredentialVaultTest {
     @get:Rule
     val folder = TemporaryFolder()
@@ -68,6 +79,27 @@ class EncryptedCredentialVaultTest {
         vault.save(credential)
         wrapper.destroy()
         assertEquals(StoredCredential.Unreadable, vault.load())
+    }
+
+    @Test
+    fun unErrorPasajeroDelKeystoreNoEsIlegibleYNoSeBorraNada() {
+        vault.save(credential)
+        wrapper.unavailable = true
+        assertThrows(SecretTemporarilyUnavailableException::class.java) { vault.load() }
+        assertTrue(file.exists())
+        assertEquals(0, wrapper.destroyed)
+        wrapper.unavailable = false
+        assertEquals("token-de-prueba", (vault.load() as StoredCredential.Present).credential.token)
+    }
+
+    /** Solo es definitivo lo que no se arregla reintentando. */
+    @Test
+    fun loDefinitivoYLoPasajeroSeDistinguen() {
+        assertTrue(KeystoreSecretWrapper.classify(AEADBadTagException()) is SecretUnreadableException)
+        assertTrue(KeystoreSecretWrapper.classify(KeyPermanentlyInvalidatedException()) is SecretUnreadableException)
+        for (transient in listOf(KeyStoreException("ocupado"), UnrecoverableKeyException("x"), ProviderException("sin respuesta"), IOException("x"), InvalidKeyException("x"))) {
+            assertTrue("$transient", KeystoreSecretWrapper.classify(transient) is SecretTemporarilyUnavailableException)
+        }
     }
 
     @Test

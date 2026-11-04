@@ -10,6 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -91,6 +92,17 @@ class EncryptedLocalDatabaseTest {
         assertNull(reopened.store().meta("clave"))
         assertNotNull(keyPath.takeIf { it.exists() })
         assertFalse(passphrases[0].contentEquals(passphrases[1]))
+    }
+
+    @Test
+    fun unErrorPasajeroDelKeystoreNoBorraLaBase() {
+        database().put("clave", "valor")
+        wrapper.unavailable = true
+        assertThrows(SecretTemporarilyUnavailableException::class.java) { database().store() }
+        assertTrue(context.getDatabasePath("prueba.db").exists())
+        assertTrue(keyPath.exists())
+        wrapper.unavailable = false
+        assertEquals("valor", database().store().meta("clave"))
     }
 
     @Test

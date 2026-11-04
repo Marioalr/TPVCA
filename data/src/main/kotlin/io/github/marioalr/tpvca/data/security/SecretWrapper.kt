@@ -4,23 +4,30 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import android.security.keystore.StrongBoxUnavailableException
-import java.security.GeneralSecurityException
 import java.security.KeyStore
+import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/** Lo envuelto ya no se puede abrir: la llave del Keystore se perdió o los bytes se dañaron. */
+/**
+ * Lo envuelto **ya nunca** se podrá abrir: la llave del Keystore no está o quedó invalidada, o los bytes se dañaron. Solo esto justifica borrar. Un error
+ * pasajero del Keystore es otra excepción cualquiera y no borra nada: [SecretTemporarilyUnavailableException].
+ */
 class SecretUnreadableException(cause: Throwable? = null) : Exception("No se pudo abrir un dato guardado en este equipo.", cause)
+
+/** El Keystore falló esta vez (ocupado, sin responder). Lo guardado sigue ahí: se vuelve a intentar. */
+class SecretTemporarilyUnavailableException(cause: Throwable? = null) : Exception("El Keystore no respondió.", cause)
 
 /** Cifra y descifra con una llave que no sale del equipo. En Android es [KeystoreSecretWrapper]; en las pruebas, una llave en memoria. */
 interface SecretWrapper {
     fun wrap(plain: ByteArray): ByteArray
 
-    /** @throws SecretUnreadableException si no se puede abrir. */
+    /** @throws SecretUnreadableException si ya no se podrá abrir. @throws SecretTemporarilyUnavailableException si falló esta vez. */
     fun unwrap(wrapped: ByteArray): ByteArray
 
     /** Borra la llave: lo envuelto con ella ya no se podrá abrir. */
@@ -73,17 +80,19 @@ class KeystoreSecretWrapper(context: Context, private val alias: String) : Secre
         return cipher.iv + cipher.doFinal(plain)
     }
 
-    override fun unwrap(wrapped: ByteArray): ByteArray = try {
-        val key = keyStore().getKey(alias, null) as SecretKey? ?: throw SecretUnreadableException()
+    override fun unwrap(wrapped: ByteArray): ByteArray {
         if (wrapped.size <= IV_BYTES) throw SecretUnreadableException()
-        Cipher.getInstance(TRANSFORMATION).run {
-            init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, wrapped, 0, IV_BYTES))
-            doFinal(wrapped, IV_BYTES, wrapped.size - IV_BYTES)
+        return try {
+            val key = keyStore().getKey(alias, null) as SecretKey? ?: throw SecretUnreadableException()
+            Cipher.getInstance(TRANSFORMATION).run {
+                init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, wrapped, 0, IV_BYTES))
+                doFinal(wrapped, IV_BYTES, wrapped.size - IV_BYTES)
+            }
+        } catch (e: SecretUnreadableException) {
+            throw e
+        } catch (e: Exception) {
+            throw classify(e)
         }
-    } catch (e: GeneralSecurityException) {
-        throw SecretUnreadableException(e)
-    } catch (e: java.security.ProviderException) {
-        throw SecretUnreadableException(e)
     }
 
     @Synchronized
@@ -91,10 +100,16 @@ class KeystoreSecretWrapper(context: Context, private val alias: String) : Secre
         keyStore().deleteEntry(alias)
     }
 
-    private companion object {
-        const val PROVIDER = "AndroidKeyStore"
-        const val TRANSFORMATION = "AES/GCM/NoPadding"
-        const val IV_BYTES = 12
-        const val TAG_BITS = 128
+    companion object {
+        /** Solo es definitivo lo que no se arregla al reintentar: los bytes no corresponden o la llave quedó invalidada. Lo demás, pasajero. */
+        fun classify(e: Exception): Exception = when (e) {
+            is AEADBadTagException, is KeyPermanentlyInvalidatedException -> SecretUnreadableException(e)
+            else -> SecretTemporarilyUnavailableException(e)
+        }
+
+        private const val PROVIDER = "AndroidKeyStore"
+        private const val TRANSFORMATION = "AES/GCM/NoPadding"
+        private const val IV_BYTES = 12
+        private const val TAG_BITS = 128
     }
 }

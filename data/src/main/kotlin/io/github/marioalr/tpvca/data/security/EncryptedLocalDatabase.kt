@@ -13,7 +13,8 @@ import java.security.SecureRandom
  * La base local y su llave (plan §4.8): una frase aleatoria de 32 bytes, envuelta por el Keystore, que pasa a [helperFactory]. En la app
  * [helperFactory] es la de SQLCipher ([io.github.marioalr.tpvca.data.SqlCipher]); en las pruebas de la JVM, la de SQLite.
  *
- * Si la llave no está o no se puede abrir, lo que hay en la base ya no se puede leer: se borra y se empieza otra vez, que es bajar todo.
+ * Si la llave no está o se perdió de verdad, lo que hay en la base ya no se puede leer: se borra y se empieza otra vez, que es bajar todo. Un error pasajero
+ * del Keystore sube como excepción y no borra nada.
  */
 class EncryptedLocalDatabase(
     context: Context,

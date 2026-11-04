@@ -6,6 +6,7 @@ import io.github.marioalr.tpvca.sync.InMemorySyncStore
 import io.github.marioalr.tpvca.sync.MutableClock
 import io.github.marioalr.tpvca.sync.Statements
 import io.github.marioalr.tpvca.sync.SyncContract
+import io.github.marioalr.tpvca.sync.engine.ConsumptionBrake
 import io.github.marioalr.tpvca.sync.engine.SyncEngine
 import io.github.marioalr.tpvca.sync.engine.SyncStore
 import io.github.marioalr.tpvca.sync.hrana.HranaConnection
@@ -79,6 +80,7 @@ class LinkFlowTest {
     private var secure = true
     private var filesErased = 0
     private var ids = 0
+    private var elapsed = 0L
     private val published = ArrayList<LinkState>()
     private var connected = ArrayList<Pair<String, String>>()
     private val store get() = database.current
@@ -86,8 +88,11 @@ class LinkFlowTest {
     private val url = "https://consultorio-ejemplo.turso.io"
     private val token = "token-de-prueba"
 
-    /** Un proceso nuevo de la app sobre lo mismo que quedó guardado. */
-    private fun flow() = LinkFlow(
+    /** Un proceso nuevo de la app, ya con lo guardado leído, como lo deja el controlador. */
+    private fun flow() = raw().also { it.restore() }
+
+    /** Un proceso nuevo que todavía no lee lo guardado. */
+    private fun raw() = LinkFlow(
         vault,
         database,
         notices,
@@ -103,7 +108,14 @@ class LinkFlowTest {
         newId = { "equipo${++ids}abc3f9a2c" },
         newNonce = { "nonce-${++ids}" },
         onState = { published += it },
+        elapsedMillis = { elapsed },
     )
+
+    /** Pasa el tiempo de verdad: la hora y el reloj que no se puede adelantar. */
+    private fun advance(by: Duration) {
+        clock.advance(by)
+        elapsed += by.toMillis()
+    }
 
     private fun tablet(): Pair<LinkFlow, LinkState> = flow().let { it to it.link(url, token, "Consultorio Peña", DeviceRole.AndroidTablet) }
 
@@ -233,7 +245,7 @@ class LinkFlowTest {
         cloud.onStatement = { throw HranaException(HranaException.NETWORK_ERROR, "No se pudo conectar con Turso.") }
         val (flow, state) = tablet()
         assertEquals(LinkState.WaitingApproval("3F9A2C", DeviceRole.AndroidTablet, "Consultorio Peña", "No se pudo conectar con Turso."), state)
-        assertTrue("Después de cerrar la app tampoco", flow().restore() is LinkState.WaitingApproval)
+        assertTrue("Después de cerrar la app tampoco", raw().restore() is LinkState.WaitingApproval)
         // Vuelve la red: primero escribe su latido, que todavía no había podido
         acceptToken()
         assertTrue(flow.refresh(Refresh.USER) is LinkState.WaitingApproval)
@@ -246,12 +258,23 @@ class LinkFlowTest {
         approve()
         cloud.add("Categories", "c1", "2026-11-03 10:00:00.0000000", "2026-11-03 10:00:00.000")
         cloud.onStatement = { if (it.sql == Statements.HANDSHAKE) throw HranaException(HranaException.NETWORK_ERROR, "Sin red.") }
-        val cut = flow.refresh(Refresh.USER) as LinkState.Linked
-        assertEquals("Sin red.", cut.notice)
-        assertTrue("Después de cerrar la app sigue vinculado", flow().restore() is LinkState.Linked)
+        val cut = flow.refresh(Refresh.USER)
+        assertEquals("Aprobado pero sin datos: sigue bajando, no «vinculado»", LinkState.Downloading(DeviceRole.AndroidTablet, "Consultorio Peña", "Sin red."), cut)
+        assertEquals(LinkState.Downloading(DeviceRole.AndroidTablet, "Consultorio Peña"), raw().restore())
         acceptToken()
-        assertNull((flow.refresh(Refresh.USER) as LinkState.Linked).notice)
+        assertEquals(LinkState.Linked(DeviceRole.AndroidTablet, "T1", "Consultorio Peña"), flow.refresh(Refresh.USER))
         assertEquals(setOf("c1"), store.rows("Categories").keys)
+    }
+
+    @Test
+    fun unaDescargaCortadaSeReintentaSinEsperarLaCadenciaDeLaTablet() {
+        val (flow, _) = tablet()
+        approve()
+        cloud.onStatement = { if (it.sql == Statements.HANDSHAKE) throw HranaException(HranaException.NETWORK_ERROR, "Sin red.") }
+        flow.refresh(Refresh.USER)
+        acceptToken()
+        clock.advance(LinkCadence.WAITING_HEARTBEAT)
+        assertEquals(LinkState.Linked(DeviceRole.AndroidTablet, "T1", "Consultorio Peña"), flow.refresh(Refresh.TICK))
     }
 
     @Test
@@ -270,7 +293,7 @@ class LinkFlowTest {
     @Test
     fun alReabrirSigueEnDondeIba() {
         tablet()
-        assertTrue(flow().restore() is LinkState.WaitingApproval)
+        assertTrue(raw().restore() is LinkState.WaitingApproval)
         approve()
         flow().also { it.restore() }.refresh(Refresh.OPENED).let { assertTrue("$it", it is LinkState.Linked) }
         val deviceId = vault.credential!!.deviceId
@@ -283,7 +306,7 @@ class LinkFlowTest {
     @Test
     fun abrirLaAppNoTocaLaRed() {
         linked()
-        flow().restore()
+        raw().restore()
         assertTrue(cloud.requests.isEmpty())
     }
 
@@ -336,7 +359,7 @@ class LinkFlowTest {
         flow.refresh(Refresh.TICK)
         assertEquals(beats + 1, cloud.heartbeats.size)
         assertFalse("Sin bajar todavía", Statements.REGISTRY_OWN in cloud.requests.flatten())
-        clock.advance(Duration.ofMinutes(10))
+        advance(Duration.ofMinutes(10))
         flow.refresh(Refresh.TICK)
         assertTrue(Statements.REGISTRY_OWN in cloud.requests.flatten())
     }
@@ -406,7 +429,7 @@ class LinkFlowTest {
         flow.refresh(Refresh.USER)
         rejectToken()
         flow.refresh(Refresh.OPENED)
-        clock.advance(Duration.ofMinutes(10))
+        advance(Duration.ofMinutes(10))
         assertEquals(LinkState.NeedsToken(malformed = false, erased = true, pending = 0), flow.refresh(Refresh.OPENED))
         assertEquals("El bloqueo de la app sigue aunque ya no haya base", DeviceRole.AndroidMobileAdmin, flow.role)
         assertEquals(DeviceRole.AndroidMobileAdmin, flow().also { it.restore() }.role)
@@ -508,8 +531,8 @@ class LinkFlowTest {
         val flow = linked()
         revoke("perdido")
         flow.refresh(Refresh.USER)
-        assertEquals(LinkState.Revoked("perdido", erased = true), flow().restore())
-        assertTrue("Sin credencial no intenta nada", flow().refresh(Refresh.USER) is LinkState.NotLinked)
+        assertEquals(LinkState.Revoked("perdido", erased = true), raw().restore())
+        assertTrue("Sin credencial no intenta nada", raw().refresh(Refresh.USER) is LinkState.NotLinked)
     }
 
     @Test
@@ -517,7 +540,7 @@ class LinkFlowTest {
         linked()
         // El aviso se guarda antes de empezar a borrar: la app se cerró con la credencial todavía ahí
         notices.saveRevocation("quitado")
-        assertEquals(LinkState.Revoked("quitado", erased = true), flow().restore())
+        assertEquals(LinkState.Revoked("quitado", erased = true), raw().restore())
         assertEquals(StoredCredential.Empty, vault.stored)
         assertEquals(1, database.erased)
     }
@@ -535,7 +558,7 @@ class LinkFlowTest {
         assertEquals(setOf("c"), store.rows("Categories").keys)
 
         cloud.requests.clear()
-        clock.advance(Duration.ofMinutes(9))
+        advance(Duration.ofMinutes(9))
         flow.refresh(Refresh.OPENED)
         assertTrue("Lo automático no llega a Turso", cloud.requests.isEmpty())
     }
@@ -547,7 +570,7 @@ class LinkFlowTest {
         rejectToken()
         flow.refresh(Refresh.OPENED)
         acceptToken()
-        clock.advance(Duration.ofMinutes(10))
+        advance(Duration.ofMinutes(10))
         val state = flow.refresh(Refresh.OPENED)
         assertTrue("$state", state is LinkState.Linked)
         assertEquals(0, database.erased)
@@ -555,7 +578,7 @@ class LinkFlowTest {
         assertNull(store.meta(SyncEngine.AUTH_FIRST_401))
         // Y el siguiente 401 vuelve a contar desde cero: no se borra por este
         rejectToken()
-        clock.advance(Duration.ofHours(2))
+        advance(Duration.ofHours(2))
         assertEquals(LinkState.NeedsToken(malformed = false, erased = false, pending = 0), flow.refresh(Refresh.OPENED))
         assertEquals(0, database.erased)
     }
@@ -567,13 +590,13 @@ class LinkFlowTest {
         store.put("Categories", "c", "UpdatedAtUtc" to "2026-11-03 10:00:00.0000000")
         rejectToken()
         flow.refresh(Refresh.OPENED)
-        clock.advance(Duration.ofMinutes(10))
+        advance(Duration.ofMinutes(10))
         assertEquals(LinkState.NeedsToken(malformed = false, erased = true, pending = 0), flow.refresh(Refresh.OPENED))
         assertEquals(1, database.erased)
         assertNull(vault.credential!!.token)
         assertEquals(id, vault.credential!!.deviceId)
         assertEquals(url, vault.credential!!.url)
-        assertEquals("No toca los archivos del equipo: no es una revocación", 0, filesErased)
+        assertEquals("Los borradores y archivos se van con la base", 1, filesErased)
 
         // También después de cerrar la app, y sin abrir una base que ya no hace falta
         val opened = database.opened
@@ -591,7 +614,7 @@ class LinkFlowTest {
         val id = vault.credential!!.deviceId
         rejectToken()
         flow.refresh(Refresh.OPENED)
-        clock.advance(Duration.ofMinutes(10))
+        advance(Duration.ofMinutes(10))
         flow.refresh(Refresh.OPENED)
 
         acceptToken()
@@ -611,7 +634,7 @@ class LinkFlowTest {
         rejectToken()
         assertEquals(LinkState.NeedsToken(malformed = false, erased = false, pending = 2), flow.refresh(Refresh.OPENED))
         repeat(3) {
-            clock.advance(Duration.ofHours(6))
+            advance(Duration.ofHours(6))
             assertEquals(LinkState.NeedsToken(malformed = false, erased = false, pending = 2), flow.refresh(Refresh.USER))
         }
         assertEquals(0, database.erased)
@@ -629,7 +652,7 @@ class LinkFlowTest {
         malformedToken()
         assertEquals(LinkState.NeedsToken(malformed = true, erased = false, pending = 0), flow.refresh(Refresh.OPENED))
         repeat(3) {
-            clock.advance(Duration.ofHours(1))
+            advance(Duration.ofHours(1))
             assertEquals(LinkState.NeedsToken(malformed = true, erased = false, pending = 0), flow.refresh(Refresh.USER))
         }
         assertEquals(0, database.erased)
@@ -665,18 +688,297 @@ class LinkFlowTest {
         assertEquals(token, vault.credential!!.token)
     }
 
+    // ----------------------------------------------------------------------------------------------------------------- otro host
+
+    private val otherHost = "consultorio-ejemplo.aws-us-east-2.turso.io"
+
     @Test
-    fun elTokenNuevoDeOtraNubeNoBajaNiBorra() {
+    fun unHostQueNoEsDeTursoNoRecibeElTokenNiAlVincularNiAlReemplazar() {
+        for (bad in listOf("https://evil.example", "evil.example", "https://consultorio-ejemplo.turso.io.evil.example", "https://eviltur" + "so.io", "http://127.0.0.1:8080", "https://localhost:8443")) {
+            val state = flow().link(bad, token, "", DeviceRole.AndroidTablet)
+            assertTrue("$bad: $state", (state as LinkState.NotLinked).problem is LinkProblem.BadUrl)
+        }
+        assertEquals(StoredCredential.Empty, vault.stored)
+        assertTrue(connected.isEmpty())
+
         val flow = linked()
+        rejectToken()
+        flow.refresh(Refresh.OPENED)
+        connected.clear()
+        val state = flow.replaceToken("token-real-pegado", "https://evil.example", "evil.example") as LinkState.NeedsToken
+        assertTrue(state.problem is LinkProblem.BadUrl)
+        assertTrue("El token no salió", connected.isEmpty())
+        assertEquals(url, vault.credential!!.url)
+        assertEquals(token, vault.credential!!.token)
+    }
+
+    @Test
+    fun otroHostDeTursoNoRecibeElTokenHastaConfirmarlo() {
+        val flow = linked()
+        rejectToken()
+        flow.refresh(Refresh.OPENED)
+        acceptToken()
+        connected.clear()
+
+        var state = flow.replaceToken("token-nuevo-de-prueba", "libsql://$otherHost") as LinkState.NeedsToken
+        assertEquals(LinkProblem.HostChange(otherHost), state.problem)
+        assertTrue("Sin confirmar no sale", connected.isEmpty())
+        assertEquals(url, vault.credential!!.url)
+
+        state = flow.replaceToken("token-nuevo-de-prueba", "libsql://$otherHost", "otro-host.example") as LinkState.NeedsToken
+        assertEquals("Confirmar otro host no sirve", LinkProblem.HostChange(otherHost), state.problem)
+        assertTrue(connected.isEmpty())
+
+        val linkedAgain = flow.replaceToken("token-nuevo-de-prueba", "libsql://$otherHost", otherHost)
+        assertTrue("$linkedAgain", linkedAgain is LinkState.Linked)
+        assertEquals("libsql://$otherHost", vault.credential!!.url)
+    }
+
+    /** Sin esto, un QR de otra nube dejaba al equipo en un callejón: la única salida era borrar. */
+    @Test
+    fun elTokenDeOtroConsultorioNoSeGuardaYElEquipoSigueComoEstaba() {
+        val flow = linked()
+        val id = vault.credential!!.deviceId
         store.put("Categories", "c", "UpdatedAtUtc" to "2026-11-03 10:00:00.0000000")
         rejectToken()
         flow.refresh(Refresh.OPENED)
         acceptToken()
         cloud.meta["clinicId"] = "otro-consultorio"
-        val state = flow.replaceToken("token-de-otra-base", "https://otra-base-ejemplo.example.com")
-        assertTrue("$state", state is LinkState.CloudProblem)
+        cloud.heartbeats.clear()
+
+        val state = flow.replaceToken("token-de-otra-base", "https://$otherHost", otherHost) as LinkState.NeedsToken
+        assertEquals(LinkProblem.OtherClinic, state.problem)
+        assertEquals(url, vault.credential!!.url)
+        assertEquals(token, vault.credential!!.token)
+        assertEquals(id, vault.credential!!.deviceId)
+        assertTrue("Ni un latido", cloud.heartbeats.isEmpty())
         assertEquals(setOf("c"), store.rows("Categories").keys)
         assertEquals(0, database.erased)
+        assertEquals("La cadencia no le quita la pantalla", state, flow.refresh(Refresh.TICK))
+
+        // Y de regreso: con el token de su propia nube
+        cloud.meta["clinicId"] = "clinica-1"
+        assertTrue(flow.replaceToken("token-bueno-de-prueba") is LinkState.Linked)
+    }
+
+    @Test
+    fun siNoSePuedeComprobarLaOtraNubeNoSeGuarda() {
+        val flow = linked()
+        rejectToken()
+        flow.refresh(Refresh.OPENED)
+        val state = flow.replaceToken("token-nuevo-de-prueba", "https://$otherHost", otherHost) as LinkState.NeedsToken
+        assertTrue("${state.problem}", state.problem is LinkProblem.CloudUnverified)
+        assertEquals(url, vault.credential!!.url)
+    }
+
+    /** Una nube ajena, sin fila de este equipo: no recibe latido, no lo pone a esperar y no lo puede borrar. */
+    @Test
+    fun unaNubeAjenaEnLaBajadaIncrementalNoDecideNada() {
+        val flow = linked()
+        store.put("Categories", "c", "UpdatedAtUtc" to "2026-11-03 10:00:00.0000000")
+        cloud.heartbeats.clear()
+        cloud.meta["clinicId"] = "otro-consultorio"
+        cloud.registry = null
+        var state = flow.refresh(Refresh.USER)
+        assertTrue("$state", state is LinkState.CloudProblem)
+        assertTrue("Sin el nombre del equipo", cloud.heartbeats.isEmpty())
+
+        revoke("perdido")
+        state = flow.refresh(Refresh.USER)
+        assertTrue("Una fila falsa no borra: $state", state is LinkState.CloudProblem)
+        assertEquals(0, database.erased)
+        assertEquals(setOf("c"), store.rows("Categories").keys)
+    }
+
+    @Test
+    fun unaNubeSinIdentidadTampocoDecideSobreUnEquipoQueYaTieneConsultorio() {
+        val flow = linked()
+        cloud.meta.remove("clinicId")
+        revoke("perdido")
+        assertTrue(flow.refresh(Refresh.USER) is LinkState.CloudProblem)
+        assertEquals(0, database.erased)
+    }
+
+    @Test
+    fun cadaProblemaDeNubeOfreceSoloLoQueSirve() {
+        fun check(change: () -> Unit, replace: Boolean, forget: Boolean) {
+            val flow = linked()
+            change()
+            val state = flow.refresh(Refresh.USER) as LinkState.CloudProblem
+            assertEquals(replace, state.canReplace)
+            assertEquals(forget, state.canForget)
+            flow.forget()
+            cloud.meta["minClientProtocol"] = "2"
+            cloud.meta["clinicId"] = "clinica-1"
+            database.erased = 0
+        }
+        check({ cloud.meta["minClientProtocol"] = "99" }, replace = false, forget = false)
+        check({ cloud.meta["clinicId"] = "otro-consultorio" }, replace = true, forget = true)
+    }
+
+    @Test
+    fun laNubeSinVerificarAlVincularDejaPegarOtraSinBorrar() {
+        cloud.meta.remove("clinicId")
+        val (flow, state) = tablet()
+        assertEquals(true, (state as LinkState.CloudProblem).canReplace)
+        assertEquals(false, state.canForget)
+        val asking = flow.requestToken() as LinkState.NeedsToken
+        assertTrue(asking.manual)
+        assertEquals(0, database.erased)
+        assertEquals(asking, flow.refresh(Refresh.TICK))
+    }
+
+    // ----------------------------------------------------------------------------------------------------------------- freno
+
+    private fun brakeOn() = ConsumptionBrake(store, clock).let {
+        it.recordUsage(ConsumptionBrake.MAX_ROWS_READ_PER_DAY + 1)
+    }
+
+    @Test
+    fun conElFrenoSeOfreceReanudarYQuitarloVuelveASincronizar() {
+        val flow = linked()
+        brakeOn()
+        clock.advance(Duration.ofMinutes(10))
+        val state = flow.refresh(Refresh.TICK) as LinkState.Linked
+        assertTrue(state.braked)
+        assertTrue(state.notice!!.contains("pausada"))
+        val resumed = flow.resumeBrake() as LinkState.Linked
+        assertFalse(resumed.braked)
+        assertFalse(resumed.notice.orEmpty(), resumed.notice.orEmpty().contains("pausada"))
+    }
+
+    @Test
+    fun conElFrenoLaRevocacionSeLeeIgualConUnaSolaLectura() {
+        val flow = linked()
+        brakeOn()
+        revoke("perdido")
+        clock.advance(Duration.ofMinutes(10))
+        cloud.requests.clear()
+        assertEquals(LinkState.Revoked("perdido", erased = true), flow.refresh(Refresh.TICK))
+        assertEquals(listOf(listOf(Statements.REGISTRY_OWN)), cloud.requests)
+        assertEquals(1, database.erased)
+    }
+
+    @Test
+    fun alEsperarAprobacionConFrenoTambienSeOfreceReanudar() {
+        val (flow, _) = tablet()
+        brakeOn()
+        val state = flow.refresh(Refresh.USER) as LinkState.WaitingApproval
+        assertTrue(state.braked)
+    }
+
+    // ----------------------------------------------------------------------------------------------------------------- lo local
+
+    private class BrokenVault : CredentialVault {
+        var broken = true
+        var stored: StoredCredential = StoredCredential.Empty
+        var cleared = 0
+
+        override fun load(): StoredCredential {
+            if (broken) throw java.io.IOException("ruta/credencial.bin")
+            return stored
+        }
+
+        override fun save(credential: DeviceCredential) {
+            stored = StoredCredential.Present(credential)
+        }
+
+        override fun clear() {
+            cleared++
+            stored = StoredCredential.Empty
+        }
+    }
+
+    private fun flowOn(broken: BrokenVault) = LinkFlow(broken, database, notices, { secure }, "0.1.0", "Equipo", { filesErased++ }, connect = { _, _ -> cloud.connection }, clock = clock)
+
+    @Test
+    fun sinPoderLeerLoGuardadoNoSeBorraNiSeVinculaNada() {
+        val broken = BrokenVault().apply { stored = StoredCredential.Present(DeviceCredential(url, token, "", "equipo", DeviceRole.AndroidMobileAdmin)) }
+        val flow = flowOn(broken)
+        assertTrue(runCatching { flow.restore() }.isFailure)
+        assertEquals(LinkState.LocalError, flow.reportLocalError())
+        assertEquals(LinkState.LocalError, flow.forget())
+        assertEquals(LinkState.LocalError, flow.link(url, token, "", DeviceRole.AndroidTablet))
+        assertEquals(0, broken.cleared)
+        assertEquals(0, database.erased)
+        assertEquals(0, filesErased)
+        assertTrue(cloud.requests.isEmpty())
+
+        // Pasajero: al reintentar sigue donde estaba, con su rol
+        broken.broken = false
+        assertTrue(flow.restore() is LinkState.WaitingApproval)
+        assertEquals(DeviceRole.AndroidMobileAdmin, flow.role)
+    }
+
+    @Test
+    fun conUnErrorLocalYaVinculadoTampocoSeBorra() {
+        val flow = linked()
+        flow.reportLocalError()
+        assertEquals(LinkState.LocalError, flow.forget())
+        assertEquals(0, database.erased)
+        assertNotNull(vault.credential)
+        assertTrue("Y se recupera", flow.refresh(Refresh.USER) is LinkState.Linked)
+    }
+
+    @Test
+    fun unErrorAlVincularRegresaALaPantallaDeVincular() {
+        val flow = flow()
+        flow.reportLocalError()
+        assertEquals(LinkState.NotLinked(), flow.refresh(Refresh.USER))
+    }
+
+    @Test
+    fun lasPantallasSinCredencialNoSeQuedanSinSalida() {
+        assertEquals(LinkState.NotLinked(), flow().requestToken())
+    }
+
+    // ----------------------------------------------------------------------------------------------------------------- lo pegado
+
+    @Test
+    fun loInvisibleAlPegarSeQuitaYLoDemasSeRechaza() {
+        val (flow, _) = flow().let { it to it.link(url, "\u00A0token\u200Bde\uFEFFprueba\u00A0", "", DeviceRole.AndroidTablet) }
+        assertEquals("tokendeprueba", vault.credential!!.token)
+        flow.forget()
+        assertEquals(LinkState.NotLinked(LinkProblem.BadToken), flow.link(url, "tokeñ-de-prueba", "", DeviceRole.AndroidTablet))
+        for (bad in listOf(url.replace("ejemplo", "ejemplo\u00A0"), url.replace("ejemplo", "ejemplo\u200B"), "https://consultorio-ejemplo.turso.io:99999", "https://consultorio-ejemplo.turso.io:8443", "https://consultorio-ejemplo.turso.io:abc")) {
+            val state = flow.link(bad, token, "", DeviceRole.AndroidTablet)
+            assertTrue("$bad: $state", (state as LinkState.NotLinked).problem is LinkProblem.BadUrl)
+        }
+    }
+
+    @Test
+    fun unaCredencialGuardadaQueYaNoSirveNoSeAtora() {
+        vault.stored = StoredCredential.Present(DeviceCredential("https://evil.example", token, "", "equipo", DeviceRole.AndroidTablet))
+        val noConnect = LinkFlow(vault, database, notices, { secure }, "0.1.0", "Equipo", { filesErased++ }, clock = clock)
+        noConnect.restore()
+        val state = noConnect.refresh(Refresh.USER) as LinkState.CloudProblem
+        assertTrue(state.canReplace)
+        assertTrue(state.canForget)
+        assertEquals("No es un error del equipo", 0, database.erased)
+    }
+
+    @Test
+    fun los10MinDel401NoSeAdelantanConLaHoraDelEquipo() {
+        val flow = linked()
+        rejectToken()
+        flow.refresh(Refresh.OPENED)
+        // La hora del equipo salta; el tiempo de verdad no
+        clock.advance(Duration.ofHours(5))
+        assertEquals(LinkState.NeedsToken(malformed = false, erased = false, pending = 0), flow.refresh(Refresh.USER))
+        assertEquals(0, database.erased)
+        elapsed += Duration.ofMinutes(10).toMillis()
+        assertEquals(LinkState.NeedsToken(malformed = false, erased = true, pending = 0), flow.refresh(Refresh.USER))
+    }
+
+    @Test
+    fun despuesDeReiniciarSoloQuedaLaHoraNormal() {
+        val flow = linked()
+        elapsed = 1_000_000
+        rejectToken()
+        flow.refresh(Refresh.OPENED)
+        elapsed = 5
+        clock.advance(Duration.ofMinutes(10))
+        assertEquals(LinkState.NeedsToken(malformed = false, erased = true, pending = 0), flow.refresh(Refresh.USER))
     }
 
     @Test
@@ -696,7 +998,7 @@ class LinkFlowTest {
     fun unaCredencialQueYaNoSeAbreBorraTodoYPideVincular() {
         linked()
         vault.stored = StoredCredential.Unreadable
-        assertEquals(LinkState.NotLinked(LinkProblem.CredentialLost), flow().restore())
+        assertEquals(LinkState.NotLinked(LinkProblem.CredentialLost), raw().restore())
         assertEquals(1, database.erased)
         assertEquals(StoredCredential.Empty, vault.stored)
     }

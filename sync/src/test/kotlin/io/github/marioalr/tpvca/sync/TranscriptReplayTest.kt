@@ -10,6 +10,10 @@ import io.github.marioalr.tpvca.sync.engine.SyncOutcome
 import io.github.marioalr.tpvca.sync.engine.SyncStore
 import io.github.marioalr.tpvca.sync.engine.SyncTrigger
 import io.github.marioalr.tpvca.sync.hrana.HranaClient
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -38,7 +42,9 @@ class TranscriptReplayTest {
         assertFalse("Nunca DDL", replay.sqlSeen.any { it.contains("CREATE ", ignoreCase = true) || it.contains("ALTER ", ignoreCase = true) })
         val literal = Contracts.dir.resolve("hrana").listFiles { f -> f.extension == "jsonl" }!!
             .flatMap { Transcript.load(it.nameWithoutExtension).exchanges.flatMap { e -> e.statements.map { s -> s.sql } } }.toSet()
-        assertEquals("Solo el SQL de las grabaciones, más la del plan", emptySet<String>(), replay.sqlSeen - literal - Statements.META_ALL)
+        val contract = Json.parseToJsonElement(Contracts.file("hrana/statements.json").readText()).jsonObject.getValue("statements").jsonArray
+            .map { it.jsonObject.getValue("sql").jsonPrimitive.content }.toSet()
+        assertEquals("Solo el SQL del contrato", emptySet<String>(), replay.sqlSeen - literal - contract)
     }
 
     /** Una base que ya bajó todo antes, con la identidad de la grabación. */
@@ -87,7 +93,21 @@ class TranscriptReplayTest {
             assertEquals("<id:1>", store.meta(SyncEngine.CLINIC_ID))
             assertEquals("<id:2>", store.meta(SyncEngine.GENERATION))
             assertEquals("T1", store.meta(SyncEngine.DEVICE_CODE))
+            assertEquals("AndroidTablet", store.meta(SyncEngine.DEVICE_ROLE))
             assertNull("Sin diferencias de manifiesto", store.meta(SyncEngine.READ_ONLY))
+        }
+    }
+
+    /** La fila que grabó la PC es de un equipo con rol de PC: en Android no baja nada y no borra nada. */
+    @Test
+    fun laFilaGrabadaDeLaPcEsOtroRol() {
+        RecordingReplay(Transcript.load("first-download")).use { replay ->
+            replay.registryRow = replay.recordedRegistryRow()
+            val store = InMemorySyncStore()
+            assertEquals(SyncOutcome.WrongRole("WindowsDesktop"), engine(replay, store).sync(SyncTrigger.USER))
+            assertTrue(replay.failures.joinToString("\n"), replay.failures.isEmpty())
+            assertEquals("Ninguna petición de la grabación", emptyList<Int>(), replay.consumed)
+            assertEquals(listOf(Statements.META_ALL, Statements.REGISTRY_OWN), replay.extrasServed)
         }
     }
 

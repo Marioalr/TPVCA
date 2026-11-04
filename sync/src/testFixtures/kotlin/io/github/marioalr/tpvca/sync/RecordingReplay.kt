@@ -21,8 +21,9 @@ import okhttp3.mockwebserver.RecordedRequest
  * con lo grabado, salvo lo que no le toca a esta app, que se declara una por una:
  *
  * - [skipped]: los intercambios que son de la PC (la sonda con DDL, el latido de K3, su registro), con el motivo.
- * - Las dos lecturas de Kotlin que la grabación no tiene en ese lugar ([extras]): `SELECT Key, Value FROM _tpvc_meta` y `registry.own`.
- *   Se responden con los datos de la misma grabación (las claves del primer saludo) más el `schema.json`.
+ * - Las dos lecturas de Kotlin que las grabaciones no tienen (revisión 21): `meta.all`, que no aparece en ninguna, y `registry.own`
+ *   suelta, que solo aparece dentro del registro de la PC y con su rol. `meta.all` se responde con las claves del primer saludo grabado más
+ *   el `schema.json`, y `registry.own` con [registryRow].
  *
  * Fuera de eso, cualquier diferencia es una falla, y también un SQL que no empiece con SELECT, BEGIN, COMMIT o ROLLBACK.
  */
@@ -47,7 +48,7 @@ class RecordingReplay(
     }
 
     /** Lo que responde `registry.own`. */
-    var registryRow: List<JsonElement> = listOf(text("T1"), NULL, NULL)
+    var registryRow: List<JsonElement> = listOf(text("T1"), text("AndroidTablet"), NULL, NULL)
     var manifest: String = SyncContract.bundledSchemaText()
 
     val url: String get() = server.url("/").toString().trimEnd('/')
@@ -118,7 +119,7 @@ class RecordingReplay(
 
     private fun executeOk(request: JsonElement): JsonElement = when (request.jsonObject.getValue("stmt").jsonObject.sql) {
         Statements.META_ALL -> result(listOf("Key", "Value"), metaRows())
-        else -> result(listOf("DeviceCode", "RevokedAtUtc", "RevokedReason"), listOf(registryRow))
+        else -> result(listOf("DeviceCode", "Role", "RevokedAtUtc", "RevokedReason"), listOf(registryRow))
     }
 
     private fun metaRows(): List<List<JsonElement>> = buildList {
@@ -129,6 +130,15 @@ class RecordingReplay(
         for ((key, value) in firstHandshake) {
             if (key != "now" && key != "wm") add(listOf(text(key), value))
         }
+    }
+
+    /** La fila de `registry.own` tal como la grabó la PC al registrarse: la de un equipo con rol de PC. */
+    fun recordedRegistryRow(): List<JsonElement> {
+        val exchange = transcript.exchanges.first { e -> e.statements.any { it.sql == Statements.REGISTRY_OWN } }
+        val index = exchange.statements.indexOfFirst { it.sql == Statements.REGISTRY_OWN }
+        val steps = Json.parseToJsonElement(exchange.responseText).jsonObject.getValue("results").jsonArray.first().jsonObject
+            .getValue("response").jsonObject.getValue("result").jsonObject.getValue("step_results").jsonArray
+        return steps[index].jsonObject.getValue("rows").jsonArray.first().jsonArray
     }
 
     private fun handshakeRow(exchange: Exchange): Map<String, JsonElement>? {

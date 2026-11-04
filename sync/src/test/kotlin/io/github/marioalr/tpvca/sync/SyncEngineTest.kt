@@ -107,8 +107,60 @@ class SyncEngineTest {
     fun laPantallaDeDesarrolloBajaSinAprobacionPeroNoRevocado() {
         cloud.registry = null
         completed(engine(config.copy(allowUnapproved = true)).sync(SyncTrigger.USER))
-        cloud.registry = listOf(HranaValue.Text("C1"), HranaValue.Text("2026-11-03 10:00:00.000"), HranaValue.Text("perdido"))
+        cloud.registry = listOf(HranaValue.Text("C1"), HranaValue.Text("AndroidMobileAdmin"), HranaValue.Text("2026-11-03 10:00:00.000"), HranaValue.Text("perdido"))
         assertEquals(SyncOutcome.Revoked("perdido", wiped = true), engine(config.copy(allowUnapproved = true)).sync(SyncTrigger.USER))
+    }
+
+    private fun role(name: String?) {
+        cloud.registry = listOf(HranaValue.Text("C1"), name?.let(HranaValue::Text) ?: HranaValue.Null, HranaValue.Null, HranaValue.Null)
+    }
+
+    @Test
+    fun elRolDeUnEquipoAndroidSeGuarda() {
+        for (name in listOf("AndroidMobileAdmin", "AndroidTablet")) {
+            role(name)
+            completed(engine().sync(SyncTrigger.USER))
+            assertEquals(name, store.meta(SyncEngine.DEVICE_ROLE))
+            assertEquals("C1", store.meta(SyncEngine.DEVICE_CODE))
+        }
+    }
+
+    @Test
+    fun conOtroRolElPrimerArranqueNoBaja() {
+        for (name in listOf("WindowsDesktop", "RolDelFuturo", "2", null)) {
+            role(name)
+            cloud.requests.clear()
+            val outcome = engine().sync(SyncTrigger.USER)
+            assertEquals(SyncOutcome.WrongRole(name), outcome)
+            assertEquals(outcome.message, store.meta(SyncEngine.LAST_ERROR))
+            assertEquals("Se detiene en su fila", 2, cloud.requests.size)
+            assertNull(store.meta(SyncEngine.DEVICE_ROLE))
+            assertEquals(0, ConsumptionBrake(store, clock).fullPullsToday)
+        }
+    }
+
+    @Test
+    fun conOtroRolLaIncrementalNoAplicaNadaNiBorra() {
+        firstSyncDone()
+        store.put("Categories", "c", "UpdatedAtUtc" to stamp(1))
+        val cursor = store.meta(SyncEngine.CURSOR_PREFIX + "Categories")
+        cloud.add("Categories", "nueva", stamp(2), later)
+        role("WindowsDesktop")
+        assertEquals(SyncOutcome.WrongRole("WindowsDesktop"), engine().sync())
+        assertEquals(setOf("c"), store.rows("Categories").keys)
+        assertEquals(cursor, store.meta(SyncEngine.CURSOR_PREFIX + "Categories"))
+    }
+
+    @Test
+    fun conOtroRolLaPantallaDeDesarrolloTampocoBaja() {
+        role("WindowsDesktop")
+        assertEquals(SyncOutcome.WrongRole("WindowsDesktop"), engine(config.copy(allowUnapproved = true)).sync(SyncTrigger.USER))
+    }
+
+    @Test
+    fun revocadoGanaAlRol() {
+        cloud.registry = listOf(HranaValue.Text("X1"), HranaValue.Text("WindowsDesktop"), HranaValue.Text("2026-11-03 10:00:00.000"), HranaValue.Text("rechazado"))
+        assertEquals(SyncOutcome.Revoked("rechazado", wiped = true), engine().sync(SyncTrigger.USER))
     }
 
     @Test
@@ -601,7 +653,7 @@ class SyncEngineTest {
     fun revocadoSeBorra() {
         firstSyncDone()
         store.put("Categories", "c", "UpdatedAtUtc" to stamp(1))
-        cloud.registry = listOf(HranaValue.Text("C1"), HranaValue.Text("2026-11-03 17:00:00.000"), HranaValue.Text("quitado"))
+        cloud.registry = listOf(HranaValue.Text("C1"), HranaValue.Text("AndroidMobileAdmin"), HranaValue.Text("2026-11-03 17:00:00.000"), HranaValue.Text("quitado"))
         assertEquals(SyncOutcome.Revoked("quitado", wiped = true), engine().sync())
         assertEquals(0, store.rows("Categories").size)
         assertEquals("Una página de la nube que ya venía no se aplica", null, store.meta(SyncEngine.FIRST_DOWNLOAD_DONE))
@@ -612,10 +664,10 @@ class SyncEngineTest {
         firstSyncDone()
         store.pending = 2
         store.put("Categories", "c", "UpdatedAtUtc" to stamp(1))
-        cloud.registry = listOf(HranaValue.Text("C1"), HranaValue.Text("2026-11-03 17:00:00.000"), HranaValue.Text("quitado"))
+        cloud.registry = listOf(HranaValue.Text("C1"), HranaValue.Text("AndroidMobileAdmin"), HranaValue.Text("2026-11-03 17:00:00.000"), HranaValue.Text("quitado"))
         assertEquals(SyncOutcome.Revoked("quitado", wiped = false), engine().sync())
         assertEquals(1, store.rows("Categories").size)
-        cloud.registry = listOf(HranaValue.Text("C1"), HranaValue.Text("2026-11-03 17:00:00.000"), HranaValue.Text("perdido"))
+        cloud.registry = listOf(HranaValue.Text("C1"), HranaValue.Text("AndroidMobileAdmin"), HranaValue.Text("2026-11-03 17:00:00.000"), HranaValue.Text("perdido"))
         assertEquals(SyncOutcome.Revoked("perdido", wiped = true), engine().sync())
         assertEquals(0, store.rows("Categories").size)
     }

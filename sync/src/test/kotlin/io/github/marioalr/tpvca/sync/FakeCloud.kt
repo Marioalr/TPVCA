@@ -24,7 +24,7 @@ class FakeCloud {
     val tables = LinkedHashMap<String, MutableList<Row>>()
     val assets = LinkedHashMap<String, List<ByteArray>>()
     var profile: Row? = null
-    var registry: List<HranaValue>? = listOf(HranaValue.Text("C1"), HranaValue.Null, HranaValue.Null)
+    var registry: List<HranaValue>? = listOf(HranaValue.Text("C1"), HranaValue.Text("AndroidMobileAdmin"), HranaValue.Null, HranaValue.Null)
     var noMetaTable = false
 
     /** Lo que se pidió: una lista de SQL por petición. */
@@ -102,7 +102,7 @@ class FakeCloud {
             sql == Statements.GENERATION -> ResultSet(listOf(rowOf("generation" to meta["generation"])))
             sql == Statements.PROFILE -> ResultSet(listOfNotNull(profile))
             sql == Statements.REGISTRY_OWN -> ResultSet(
-                listOfNotNull(registry?.let { mapOf("DeviceCode" to it[0], "RevokedAtUtc" to it[1], "RevokedReason" to it[2]) }),
+                listOfNotNull(registry?.let { mapOf("DeviceCode" to it[0], "Role" to it[1], "RevokedAtUtc" to it[2], "RevokedReason" to it[3]) }),
             )
             sql == Statements.ASSET_META -> {
                 val parts = assets[statement.args[0].text]

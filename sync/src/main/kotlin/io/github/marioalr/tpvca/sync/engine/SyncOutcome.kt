@@ -32,6 +32,13 @@ sealed class SyncOutcome(open val message: String?) {
     /** Sin fila en `DeviceRegistry`: la PC todavía no aprueba este equipo. */
     data object NotApproved : SyncOutcome("Este equipo espera que la PC lo apruebe en Equipos vinculados.")
 
+    /**
+     * Su fila dice un rol que no es de un equipo Android (una PC, o uno que esta versión no conoce). No baja nada y no borra nada: lo
+     * corrige la PC. Los permisos por rol llegan con K3.
+     */
+    data class WrongRole(val role: String?) :
+        SyncOutcome("La PC registró este equipo con otro rol${role?.takeIf { it.isNotEmpty() }?.let { " ($it)" }.orEmpty()}. Revíselo en Equipos vinculados.")
+
     /** Con `RevokedAtUtc`. [wiped]: se borró la base. Sin borrar solo si hay cambios sin subir que no deben perderse (K5). */
     data class Revoked(val reason: String?, val wiped: Boolean) :
         SyncOutcome("Este equipo se quitó de los equipos vinculados.")

@@ -1,6 +1,7 @@
 package io.github.marioalr.tpvca.sync.engine
 
 import io.github.marioalr.tpvca.domain.Clinic
+import io.github.marioalr.tpvca.domain.devices.DeviceRole
 import io.github.marioalr.tpvca.sync.ProtocolDate
 import io.github.marioalr.tpvca.sync.Statements
 import io.github.marioalr.tpvca.sync.SyncContract
@@ -187,8 +188,15 @@ class SyncEngine(
             if (!mustKeep) store.wipeEverything()
             throw Stop(SyncOutcome.Revoked(reason, wiped = !mustKeep))
         }
+        // §7.3: el rol sale de su fila, como el nombre del enum de la PC. Todavía no cambia ningún permiso
+        val roleName = row.text("Role")
+        val role = DeviceRole.entries.firstOrNull { it.name == roleName }
+        if (role !in ANDROID_ROLES) throw Stop(SyncOutcome.WrongRole(roleName))
         val code = row.text("DeviceCode")
-        if (code != null && store.meta(DEVICE_CODE) != code) store.apply(StoreChanges(meta = mapOf(DEVICE_CODE to code)))
+        store.apply(StoreChanges(meta = buildMap {
+            put(DEVICE_ROLE, role!!.name)
+            if (code != null) put(DEVICE_CODE, code)
+        }))
     }
 
     /**
@@ -787,6 +795,7 @@ class SyncEngine(
         const val CLINIC_ID = "Cloud:ClinicId"
         const val GENERATION = "Cloud:Generation"
         const val DEVICE_CODE = "Cloud:DeviceCode"
+        const val DEVICE_ROLE = "Cloud:DeviceRole"
         const val MANIFEST_CONTRACT = "Cloud:ManifestContract"
         const val READ_ONLY = "Cloud:ReadOnly"
         const val CLOCK_OFFSET_MS = "Cloud:ClockOffsetMs"
@@ -799,6 +808,7 @@ class SyncEngine(
         const val FULL_IN_PROGRESS = "Sync:FullPullInProgress"
         const val SUMMARY_DAY = "Sync:SummaryDay"
 
+        private val ANDROID_ROLES = setOf(DeviceRole.AndroidTablet, DeviceRole.AndroidMobileAdmin)
         private const val NO_GENERATION = "none"
         private const val REASON_LOST = "perdido"
 

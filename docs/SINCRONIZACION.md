@@ -18,14 +18,15 @@ llega con K3 y la cola de salida con K5.
 
 Sin escribir nada en la nube y en este orden (§7.3):
 
-1. **Las claves:** `SELECT Key, Value FROM _tpvc_meta;`. Sin la tabla o sin `schema`, "Sincronice primero la PC" (`SchemaMissing`). Con
+1. **Las claves** (`meta.all`). Sin la tabla o sin `schema`, "Sincronice primero la PC" (`SchemaMissing`). Con
    `minClientProtocol` mayor que el de la app, "Actualice la app" (`ClientOutdated`). Sin `clinicId`, `fullUploadAtUtc` o
    `generationReady`, la nube todavía no está lista (`CloudNotReady`). Con otro `clinicId` no baja nada (`OtherCloud`).
 2. **El manifiesto:** `_tpvc_meta.manifest` contra el `schema.json` incluido en la app. Si difieren en cualquier sentido (lo que agregó una
    PC más nueva o lo que le falta a la nube), la app queda en **solo lectura** con "Actualice la app" (`Completed.readOnly`). Los datos
    siguen bajando; lo que la app no conoce se ignora. Se repite al cambiar `SyncContract.REVISION`.
 3. **Su fila de `DeviceRegistry`** (`registry.own`). Sin fila, espera a que la PC la apruebe (`NotApproved`); con `RevokedAtUtc`, ver "401 y
-   revocación".
+   revocación". Con un `Role` que no es `AndroidTablet` ni `AndroidMobileAdmin` no baja nada ni borra nada (`WrongRole`). El rol todavía no
+   cambia ningún permiso: eso es de K3.
 4. **La marca de agua**, antes de leer: la hora del servidor menos 5 s (`handshake`), en la misma petición que el perfil. Se guarda tal cual.
 5. **La descarga:** una tabla por petición en el orden de `schema.json`, luego `SyncTombstones`, sin omitir lo propio, cada página seguida
    del `SELECT` de la generación. Después el perfil y las imágenes del membrete que falten.
@@ -88,8 +89,9 @@ scripts/check-secrets.sh
 
 - **Grabaciones** (`TranscriptReplayTest`, `RecordingReplay`): `MockWebServer` reproduce `first-download`, `incremental`, `generation-change`,
   `blocked`, `unauthorized` y `key-ties`. Cada petición se compara con la grabada por significado, salvo el SQL, que es literal. Lo que le
-  toca solo a la PC se salta por número con su motivo, y hay dos lecturas de Kotlin que la grabación no tiene ahí: `SELECT Key, Value` y
-  `registry.own`. Se responden con los datos de la misma grabación.
+  toca solo a la PC se salta por número con su motivo. Las grabaciones todavía no tienen dos lecturas de Kotlin: `meta.all` no aparece en
+  ninguna y `registry.own` suelta solo aparece dentro del registro de la PC, con su rol. El arnés las responde: `meta.all` con las claves
+  del primer saludo grabado y `schema.json`, `registry.own` con una fila de tablet.
 - **Motor** (`SyncEngineTest`, con `FakeCloud` y un `SyncStore` en memoria) y **base** (`RoomSchemaContractTest` compara las tablas reales con el
   manifiesto; `RoomSyncStoreTest` corre la grabación sobre Room).
 - **SQL** (`StatementsContractTest`): cada instrucción de `Statements` contra `statements.json` y las grabaciones; una instrucción nueva en el
@@ -116,5 +118,5 @@ compilaciones de depuración.
 4. **Sincronizar** muestra el resultado, las tablas con sus filas, el último error, el freno y las filas apartadas.
 
 La nube debe tener identidad: la PC ya hizo su «Sincronización completa» en esa base. Como K2 no vincula, esta pantalla baja sin fila en
-`DeviceRegistry` (`allowUnapproved`); una fila revocada sigue deteniéndola, y **borra la base local**. Solo `https://`:
+`DeviceRegistry` (`allowUnapproved`); un `tpvc.dev.deviceId` de una PC da `WrongRole`, y una fila revocada sigue deteniéndola y **borra la base local**. Solo `https://`:
 `usesCleartextTraffic=false` no deja usar `FakeTursoHost` por `http://` desde el equipo.

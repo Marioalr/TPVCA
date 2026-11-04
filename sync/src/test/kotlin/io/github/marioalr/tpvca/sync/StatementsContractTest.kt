@@ -5,7 +5,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -24,9 +23,9 @@ class StatementsContractTest {
     }
 
     /** Las que usa K2. Si `statements.json` trae una nueva, esta prueba falla hasta decidir de qué paso es. */
-    private val usedByK2 = setOf("handshake", "generation", "profile", "registry.own", "asset.meta", "asset.chunk")
+    private val usedByK2 = setOf("meta.all", "handshake", "generation", "profile", "registry.own", "asset.meta", "asset.chunk")
     private val laterSteps = mapOf(
-        "meta.schema" to "sin uso: SELECT Key, Value ya trae la huella",
+        "meta.schema" to "sin uso: meta.all ya trae la huella",
         "heartbeat.readNonce" to "K3",
         "heartbeat.write" to "K3",
         "heartbeat.writeAfterPush" to "K5",
@@ -53,6 +52,7 @@ class StatementsContractTest {
 
     @Test
     fun lasLecturasSonLasLiterales() {
+        assertEquals(statements["meta.all"], Statements.META_ALL)
         assertEquals(statements["handshake"], Statements.HANDSHAKE)
         assertEquals(statements["generation"], Statements.GENERATION)
         assertEquals(statements["profile"], Statements.PROFILE)
@@ -68,12 +68,6 @@ class StatementsContractTest {
             assertEquals(statements["page.$table"], Statements.pageSql(table, size, skipOwnRows = true))
             assertTrue("La página sin omitir lo propio de $table está en las grabaciones", Statements.pageSql(table, size, skipOwnRows = false) in recorded)
         }
-    }
-
-    @Test
-    fun laUnicaFueraDelContratoEsLaDelPlan() {
-        assertFalse("Si la PC ya agregó SELECT Key, Value a statements.json, use esa", Statements.META_ALL in statements.values)
-        assertEquals("SELECT Key, Value FROM _tpvc_meta;", Statements.META_ALL)
     }
 
     @Test

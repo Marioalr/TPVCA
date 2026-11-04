@@ -7,13 +7,12 @@ import io.github.marioalr.tpvca.sync.hrana.Statement
  * El SQL que manda esta app, **literal** de `contracts/hrana/`: escrito de otra forma, SQLite puede recorrer la tabla completa y
  * Turso cobra cada fila. `StatementsContractTest` lo compara con `statements.json` y con las grabaciones.
  *
- * La única excepción es [META_ALL], de §7.3 del plan, que todavía no está en `statements.json`.
  * Aquí solo hay lecturas: K2 no escribe nada en Turso, y ningún paso de esta app corre DDL.
  */
 object Statements {
     /**
-     * Paso 1 del primer arranque (plan §7.3). Es la única lectura que trae `_tpvc_meta.manifest`; lleva ~150 KB, así que solo se hace
-     * al primer arranque y cuando cambia la revisión de la app.
+     * `meta.all`: paso 1 del primer arranque (plan §7.3). Es la única lectura que trae `_tpvc_meta.manifest`; lleva ~150 KB, así que solo
+     * se hace al primer arranque y cuando cambia la revisión de la app.
      */
     const val META_ALL: String = "SELECT Key, Value FROM _tpvc_meta;"
 
@@ -35,7 +34,7 @@ object Statements {
     const val PROFILE: String = "SELECT * FROM ClinicProfiles WHERE Id = 1;"
 
     /** `registry.own`. */
-    const val REGISTRY_OWN: String = "SELECT DeviceCode, RevokedAtUtc, RevokedReason FROM DeviceRegistry WHERE DeviceId = ?;"
+    const val REGISTRY_OWN: String = "SELECT DeviceCode, Role, RevokedAtUtc, RevokedReason FROM DeviceRegistry WHERE DeviceId = ?;"
 
     /** `asset.meta`. */
     const val ASSET_META: String = "SELECT ByteCount, ChunkCount FROM ClinicAssets WHERE Hash = ?;"

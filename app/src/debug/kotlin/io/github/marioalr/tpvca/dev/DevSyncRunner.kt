@@ -26,6 +26,7 @@ data class DevStatus(
     val brakeTripped: Boolean,
     val parked: Int,
     val clinicId: String?,
+    val deviceRole: String?,
 )
 
 /**
@@ -76,6 +77,7 @@ class DevSyncRunner(context: Context) {
             brakeTripped = brake.isTripped,
             parked = store.parkedRows().size,
             clinicId = store.meta(SyncEngine.CLINIC_ID),
+            deviceRole = store.meta(SyncEngine.DEVICE_ROLE),
         )
     }
 }

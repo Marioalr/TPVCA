@@ -118,7 +118,7 @@ private fun DevSyncScreen(runner: DevSyncRunner) {
 @Composable
 private fun DevStatusBlock(status: DevStatus) {
     HorizontalDivider()
-    Text("Equipo: ${status.deviceId}", style = MaterialTheme.typography.bodySmall)
+    Text("Equipo: ${status.deviceId} (${status.deviceRole ?: "sin rol"})", style = MaterialTheme.typography.bodySmall)
     Text("Consultorio: ${status.clinicId ?: "—"}", style = MaterialTheme.typography.bodySmall)
     Text("Última buena: ${status.lastSuccess ?: "—"}", style = MaterialTheme.typography.bodySmall)
     Text("Último error: ${status.lastError ?: "—"}", style = MaterialTheme.typography.bodySmall)

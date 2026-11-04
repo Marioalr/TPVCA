@@ -213,6 +213,7 @@ private fun VitalGrid(vitals: List<VitalSummary>, modifier: Modifier = Modifier,
     })
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LabCard(workspace: TabletWorkspace, labs: List<LabResultRow>) {
     val colors = LocalTpvcColors.current
@@ -234,7 +235,8 @@ private fun LabCard(workspace: TabletWorkspace, labs: List<LabResultRow>) {
                     if (lab.laboratory.isNotBlank()) TCaption(lab.laboratory)
                     if (lab.notes.isNotBlank()) TText(lab.notes, size = TType.caption)
                     TCaption("En la nube · se baja al abrirlo")
-                }
+                    // Abajo: en los 400 dp de la columna, al lado dejarían al título una sílaba por renglón
+                    FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 TButton(
                     if (opening == lab.syncId) "Abriendo…" else "Abrir",
                     {
@@ -250,6 +252,8 @@ private fun LabCard(workspace: TabletWorkspace, labs: List<LabResultRow>) {
                     description = "Abrir el resultado: ${lab.title}",
                 )
                 TButton("Quitar", {}, icon = TIcons.Trash, nextVersion = true)
+                    }
+                }
             }
         }
         if (labs.isEmpty()) TCaption("Sin resultados. Agregue el PDF del laboratorio o fotos de las hojas.")

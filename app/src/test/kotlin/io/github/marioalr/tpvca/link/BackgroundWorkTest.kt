@@ -35,6 +35,17 @@ class BackgroundWorkTest {
     private val linkedTablet = LinkState.Linked(DeviceRole.AndroidTablet, "T1", "Consultorio")
 
     @Test
+    fun unCambioDeRolActualizaLaCadencia() {
+        val seen = ArrayList<DeviceRole?>()
+        val follower = WorkFollower { _, role -> seen += role }
+        follower.onState(linkedTablet, DeviceRole.AndroidTablet)
+        follower.onState(linkedTablet.copy(notice = "otra revisión"), DeviceRole.AndroidTablet)
+        assertEquals("El mismo estado y rol no se repite", listOf<DeviceRole?>(DeviceRole.AndroidTablet), seen)
+        follower.onState(linkedTablet, DeviceRole.AndroidMobileAdmin)
+        assertEquals(listOf<DeviceRole?>(DeviceRole.AndroidTablet, DeviceRole.AndroidMobileAdmin), seen)
+    }
+
+    @Test
     fun lasRestriccionesSonLasDelPlan() {
         val tablet = BackgroundWork.periodicRequest(DeviceRole.AndroidTablet)
         assertEquals(TimeUnit.MINUTES.toMillis(60), tablet.workSpec.intervalDuration)

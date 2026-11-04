@@ -77,12 +77,7 @@ class AppGraph(context: Context) {
         onState = { state ->
             if (state is LinkState.Linked) gate.reopen()
             states.value = state
-            // Los estados que se repiten no vuelven a tocar WorkManager; un cambio de rol sí: otra cadencia
-            val followed = state::class to currentRole()
-            if (followed != lastFollowed) {
-                lastFollowed = followed
-                runCatching { BackgroundWork.follow(app, state, currentRole()) }
-            }
+            follower.onState(state, currentRole())
         },
         elapsedMillis = SystemClock::elapsedRealtime,
         onSyncing = { syncing.value = it },
@@ -94,7 +89,7 @@ class AppGraph(context: Context) {
         writeGuard = { write -> gate.write(gate.ticket()) { write() } },
     )
 
-    private var lastFollowed: Pair<kotlin.reflect.KClass<out LinkState>, DeviceRole?>? = null
+    private val follower = WorkFollower { state, role -> runCatching { BackgroundWork.follow(app, state, role) } }
 
     private fun currentRole(): DeviceRole? = flow.role
 

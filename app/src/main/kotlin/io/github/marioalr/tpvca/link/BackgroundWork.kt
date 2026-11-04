@@ -91,6 +91,19 @@ object BackgroundWork {
     private const val PURGE_MARGIN_MILLIS = 60_000L
 }
 
+/** Los estados que se repiten no vuelven a tocar WorkManager; un cambio de rol sí, porque es otra cadencia. */
+class WorkFollower(private val follow: (LinkState, DeviceRole?) -> Unit) {
+    private var last: Pair<kotlin.reflect.KClass<out LinkState>, DeviceRole?>? = null
+
+    @Synchronized
+    fun onState(state: LinkState, role: DeviceRole?) {
+        val key = state::class to role
+        if (key == last) return
+        last = key
+        follow(state, role)
+    }
+}
+
 /**
  * Una sincronización de fondo: respeta el freno, la cuota y el token (`SyncTrigger.AUTOMATIC`), y nunca es la primera descarga. Lo que falló por la red o por algo pasajero se reintenta con lo que quedó en la cola.
  */

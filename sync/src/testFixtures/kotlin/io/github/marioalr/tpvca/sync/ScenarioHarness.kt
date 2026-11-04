@@ -112,10 +112,10 @@ class ScenarioHarness(private val file: File, private val pc: RealPcControl? = n
             }
             compare(where, step.getValue("expect").jsonObject, snapshot())
             if (differences.isNotEmpty()) return differences
-            // Con la nube adelantada, cada equipo marca con el desfase que midió, y dos mediciones difieren por la latencia y hasta por los 250 ms de tolerancia. Dos ediciones seguidas no
-            // tienen un orden fijo si van más cerca que eso: la del escenario sería una moneda al aire en una máquina lenta (pasó en la CI). No cambia lo esperado, solo separa los pasos
+            // Cada equipo marca con el desfase que midió, y dos mediciones difieren por la latencia: dos ediciones de pasos seguidos, a 5 ms, no tendrían un orden fijo en una máquina lenta (pasó en la CI, tres veces).
+            // Con la PC simulada se fija el desfase después de cada sincronización (`pinClockOffset`). Con la de verdad no se puede tocar el de ella: ahí se separan los pasos. No cambia lo esperado
             if (op == "serverClock") skewedClock = true
-            Thread.sleep(if (skewedClock) SKEWED_STEP_MILLIS else 5)
+            Thread.sleep(if (pc == null) 5 else if (skewedClock) SKEWED_STEP_MILLIS else if (op in WRITES) WRITE_STEP_MILLIS else 5)
         }
         return differences
     }
@@ -221,10 +221,22 @@ class ScenarioHarness(private val file: File, private val pc: RealPcControl? = n
         }
         cloud.armCut(cut)
         try {
-            return resultOf(device, device.engine(step["pushBatchSize"]?.jsonPrimitive?.int).sync(SyncTrigger.USER))
+            return resultOf(device, device.engine(step["pushBatchSize"]?.jsonPrimitive?.int).sync(SyncTrigger.USER).also { pinClockOffset(device) })
         } finally {
             cloud.armCut(null)
         }
+    }
+
+    /**
+     * La medición sigue probada (si se aleja de la verdad es una diferencia), pero se guarda el valor exacto: los equipos del escenario comparten reloj y una marca no debe depender de cuánto tardó la petición. Solo con la nube
+     * simulada, que es la que conoce la hora exacta.
+     */
+    private fun pinClockOffset(device: Device) {
+        if (pc != null) return
+        val measured = device.store.meta(SyncEngine.CLOCK_OFFSET_MS)?.toLongOrNull() ?: return
+        val exact = cloud.clockOffsetSeconds * 1000
+        if (kotlin.math.abs(measured - exact) > CLOCK_MEASURE_TOLERANCE_MS) differences += "${device.name} midió un desfase de $measured ms y es de $exact ms"
+        device.store.apply(StoreChanges(meta = mapOf(SyncEngine.CLOCK_OFFSET_MS to exact.toString())))
     }
 
     private fun resultOf(device: Device, outcome: SyncOutcome): JsonElement =
@@ -299,7 +311,7 @@ class ScenarioHarness(private val file: File, private val pc: RealPcControl? = n
                 ),
             )
             enqueueAll()
-            return resultOf(device, device.engine().sync(SyncTrigger.USER))
+            return resultOf(device, device.engine().sync(SyncTrigger.USER).also { pinClockOffset(device) })
         }
 
         private fun meta(key: String, value: String) {
@@ -371,6 +383,7 @@ class ScenarioHarness(private val file: File, private val pc: RealPcControl? = n
             device.store.apply(StoreChanges(saved = lost, meta = mapOf(SyncEngine.GENERATION to next)))
             enqueueAll()
             val outcome = device.engine().sync(SyncTrigger.USER)
+            pinClockOffset(device)
             meta("generationReady", next)
             return JsonObject(mapOf("ok" to JsonPrimitive(outcome is SyncOutcome.Completed)))
         }
@@ -522,6 +535,9 @@ class ScenarioHarness(private val file: File, private val pc: RealPcControl? = n
 
     private companion object {
         const val SKEWED_STEP_MILLIS = 750L
+        const val WRITE_STEP_MILLIS = 300L
+        const val CLOCK_MEASURE_TOLERANCE_MS = 30_000L
+        val WRITES = setOf("create", "edit", "delete", "sheetRow", "newPatient", "sell", "cancelSale", "closeBatch", "rawWrite", "regularizeFolios")
 
         /** El código de cada equipo: A es la primera PC y B la primera tablet. */
         val CODES = listOf("P1" to "A", "T1" to "B")

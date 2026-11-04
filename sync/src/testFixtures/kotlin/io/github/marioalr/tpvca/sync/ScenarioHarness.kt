@@ -112,7 +112,10 @@ class ScenarioHarness(private val file: File, private val pc: RealPcControl? = n
             }
             compare(where, step.getValue("expect").jsonObject, snapshot())
             if (differences.isNotEmpty()) return differences
-            Thread.sleep(5)
+            // Con la nube adelantada, cada equipo marca con el desfase que midió, y dos mediciones difieren por la latencia y hasta por los 250 ms de tolerancia. Dos ediciones seguidas no
+            // tienen un orden fijo si van más cerca que eso: la del escenario sería una moneda al aire en una máquina lenta (pasó en la CI). No cambia lo esperado, solo separa los pasos
+            if (op == "serverClock") skewedClock = true
+            Thread.sleep(if (skewedClock) SKEWED_STEP_MILLIS else 5)
         }
         return differences
     }
@@ -375,6 +378,8 @@ class ScenarioHarness(private val file: File, private val pc: RealPcControl? = n
 
     private var backupOfA: List<Any?>? = null
 
+    private var skewedClock = false
+
     // ------------------------------------------------------------------------------------------------------ la foto
 
     private fun canonicalValue(table: String, column: String, raw: Any?, syncId: String): String? {
@@ -516,6 +521,8 @@ class ScenarioHarness(private val file: File, private val pc: RealPcControl? = n
     }
 
     private companion object {
+        const val SKEWED_STEP_MILLIS = 750L
+
         /** El código de cada equipo: A es la primera PC y B la primera tablet. */
         val CODES = listOf("P1" to "A", "T1" to "B")
         val ANY_GUID = Regex("\\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\b")

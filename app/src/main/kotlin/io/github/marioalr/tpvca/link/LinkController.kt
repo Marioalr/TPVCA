@@ -130,7 +130,7 @@ class LinkController(
 
     private var afterSave: Job? = null
 
-    /** Después de guardar: sube a los 4 s del último cambio (§3.3). Varios guardados seguidos son una sola sincronización. K4b, K6 y K7 lo llaman. */
+    /** Después de guardar: sube a los 4 s del último cambio (§3.3). Varios guardados seguidos son una sola sincronización. K6 lo llama; K4b y K7 también lo harán. */
     fun noteLocalWrite() {
         afterSave?.cancel()
         afterSave = scope.launch(io) {
@@ -148,7 +148,10 @@ class LinkController(
      */
     suspend fun quickSync(waitMillis: Long = QUICK_SYNC_MILLIS): Boolean {
         val running = scope.async(io) {
-            guarded { flow.refresh(Refresh.BACKGROUND) }
+            guarded {
+                flow.refresh(Refresh.BACKGROUND)
+                noteProgress()
+            }
             flow.quickSyncHanging = false
         }
         val finished = withTimeoutOrNull(waitMillis) { running.await() } != null
@@ -157,6 +160,14 @@ class LinkController(
         if (running.isCompleted) flow.quickSyncHanging = false
         return finished
     }
+
+    /** Los casos de uso que escriben: fuera del hilo principal. `null` sin credencial. */
+    fun writes() = flow.writes()
+
+    /** Borradores, avisos y lo de «Volver a aplicar»: lo que se queda en este equipo. */
+    fun localSide() = flow.localSide()
+
+    fun reapplySaved() = flow.reapplySaved()
 
     fun confirmExportDelivered() = launch { flow.confirmExportDelivered() }
 

@@ -102,6 +102,8 @@ object ClinicMappers {
         reason = e.reason,
         status = e.status,
         notes = e.notes,
+        patientRecordNumber = e.patientRecordNumber,
+        patientPhone = e.patientPhone,
     )
 
     fun patient(c: PatientListColumns): Patient = Patient(
@@ -154,6 +156,11 @@ object ClinicMappers {
         zoonosis = e.zoonosis,
         lastDiagnosis = e.lastDiagnosis,
         vitalSigns = e.vitalSigns,
+        bloodType = e.bloodType,
+        sexualPartnersCount = e.sexualPartnersCount,
+        isPeriodHeavy = e.isPeriodHeavy,
+        clinicalNotes = e.clinicalNotes,
+        activePrescription = prescriptions(e.activePrescriptionJson),
     )
 
     fun consultation(e: PatientConsultationEntity): Consultation {

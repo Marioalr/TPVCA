@@ -1,7 +1,7 @@
 # Sincronización: motor de lectura (K2), vinculación y seguridad (K3) y motor de escritura (K5)
 
 Cómo baja la app los datos de Turso. Es el mismo protocolo v2 de la PC (`Services/TursoSyncService*.cs`, plan §7.3); cuando este
-documento y la PC difieren, manda la PC. **Ninguna instrucción es DDL:** el esquema es de la PC. Desde K5 el motor sube la cola de salida, pero **ninguna pantalla escribe todavía**: los botones de K4b siguen deshabilitados y a `WriteEngine` solo lo llaman las pruebas.
+documento y la PC difieren, manda la PC. **Ninguna instrucción es DDL:** el esquema es de la PC. Desde K5 el motor sube la cola de salida, pero **solo la tablet escribe** (K6: expedientes y citas); los botones de K4b del celular siguen deshabilitados.
 
 | Pieza | Dónde | Qué hace |
 |---|---|---|
@@ -178,7 +178,7 @@ Con la app cerrada, ver «Segundo plano».
 ## Lo que usan las pantallas del celular (K4)
 
 - **Cadencia:** la de K3, al abrir y cada 120 s al frente. `LinkController` dice en `lastSuccess` cuándo terminó bien la última (`Status:LastSuccessUtc`, de la base) y sube `dataVersion` al cambiar: las pantallas vuelven a leer. `syncing` es la insignia de la cabecera; tocarla es `Refresh.USER`.
-- **Ninguna pantalla escribe:** los botones de K4b están visibles y deshabilitados.
+- **Las pantallas que escriben son las de la tablet (K6):** en el celular, los botones de K4b están visibles y deshabilitados.
 - **Lecturas:** `ClinicDao` y `ClinicReader` en `:data`, siempre en un hilo de fondo, con los índices de `SCREEN_INDICES` en `scripts/generate-room-entities.py` (solo de esta base; no están en el manifiesto) y límites en lo que crece: 50 recientes, consultas de 20 en 20, 20 movimientos. **Las fechas `clinicLocal` y `dateOnly` nunca se convierten de zona:** se leen como están guardadas. Solo se lee con el estado `Linked`.
 - **Resultados de laboratorio:** `LabFileDownloader` a pedido, por una conexión aparte (`LinkFlow.fileConnection`), con el SQL de `lab-files.json`, y `LabFileCache`: AES-GCM con la llave `tpvca.laboratorio` del Keystore, en `noBackupFilesDir/laboratorio`, LRU de 200 MB. Nada baja en segundo plano, así que el freno de 300 MB al día no aplica aquí («abrir a pedido no se frena»).
 - **Lo que queda en claro:** para ver, `cache/vista/<uuid>/`, fuera del `FileProvider`: se borra al cerrar la vista, al pasar la app a segundo plano y al volver. Para compartir, `cache/compartidos/<uuid>/`, lo único que ve el `FileProvider` (`.documentos`), sin exportar; la intención solo lleva `EXTRA_STREAM` con permiso de lectura de ese archivo y el nombre no trae datos del paciente. **Lo que sigue quedando:** lo compartido no se puede borrar al irse a la otra app, que lo lee después. Se borra a los 15 min también con la app cerrada (`tpvc-compartidos`, K5). Revocar lo borra. Android puede vaciar la caché antes.
@@ -224,7 +224,11 @@ Con la app cerrada, ver «Segundo plano».
 
 **Existencias:** 8.20 sigue sin hacerse en la PC. `CurrentStock` y `OpenedUnitsRemaining` son valores con LWW. **Un inventario mal contado nunca impide cobrar:** FEFO y lo que falta sale sin lote, en negativo. Cancelar y cerrar con los `SyncId` deterministas de `uuid5.json`: dos equipos que hacen lo mismo escriben la misma fila. **Se cancela por el `SyncId` del ticket** (`findSale` busca por folio): un folio se puede repetir. Un ticket de antes (`LedgerVersion` 0) con piezas sueltas devuelve cada cosa una sola vez: la devolución por producto suma solo los renglones de paquetes, con su mismo `SyncId` y, sin salidas, sin lote; y las piezas regresan al paquete abierto (3 piezas, 10 por paquete, 8 abiertas: `CurrentStock` + 1, quedan 1 suelta y un movimiento `return:pieces:<renglón>`). Un `return:` o `return:pieces:` que ya existe cuenta como hecho, también el de un equipo con la versión de antes. **Un renglón es de piezas solo con `IsIndividualUnits` en 1 y un producto de más de una pieza por paquete;** sin marca siempre son paquetes (revisión 22): con `LedgerVersion` 1, si sus salidas no dan su cantidad pide sincronizar. Un ticket con importe y sin renglones no se cancela («Sincronice primero»); vender nunca se detiene por esto. Un producto que ya no existe se salta y el ticket se cancela igual; la devolución por piezas solo va a un lote que exista y siga abierto. Cerrar un lote toca el producto solo si escribe una parte.
 
-**Avisos (8.23):** los empalmes y posibles duplicados de lo que llega quedan en `Status:Notices` (solo llaves, no viaja). La pantalla es de K4b. `LinkController.quickSync` (3 s) y `noteLocalWrite` (4 s) están listos para K4b, K6 y K7.
+**Avisos (8.23):** los empalmes y posibles duplicados de lo que llega quedan en `Status:Notices` (solo llaves, no viaja) y lo descartado con «Entendido» en `Status:NoticesDismissed`. `LocalSide.notices` los lee con los datos de ahora y los depura, como `SyncNotices.LoadAsync`. La pantalla es el inicio de Pacientes de la tablet. `LinkController.quickSync` (3 s, antes de agendar y de crear un expediente) y `noteLocalWrite` (4 s, después de cada guardado) los usa la tablet.
+
+**Borradores (K6):** lo que se está capturando (el alta o edición y el formulario de una cita) vive en la memoria de `TabletWorkspace`, que no se va al girar, y en `Draft:*` de `DbMeta`, **dentro de la base cifrada**: sobrevive a que Android cierre el proceso y a un cambio de generación, y el borrado de todo se lo lleva. Nada de esto va al estado que Android restaura ni viaja. El borrador lleva la foto de cuando se abrió el formulario: al recuperarlo, una edición sigue escribiendo solo lo que cambió. Un alta lleva su `SyncId`: si esa fila ya existe, el borrador sobra y no se crea otra.
+
+**«Volver a aplicar» y «Descartar» (K6):** en la pantalla Sincronización de la tablet (se abre desde el estado de la barra de abajo). Descartar quita las copias, sus marcas de espera y sus avisos; no toca la cola de salida.
 
 **Migración:** la base pasa a la versión 2 con `MIGRATION_1_2`, que solo agrega `SyncOutbox` y `SyncSavedChanges`: lo que ya bajó no se toca ni se baja otra vez. `RoomWriteTest` la prueba con una base de la versión 1.
 

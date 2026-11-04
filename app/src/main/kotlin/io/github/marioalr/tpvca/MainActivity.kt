@@ -25,6 +25,8 @@ import io.github.marioalr.tpvca.ui.link.CameraQrReader
 import io.github.marioalr.tpvca.ui.link.LinkActions
 import io.github.marioalr.tpvca.ui.phone.PhoneApp
 import io.github.marioalr.tpvca.ui.phone.PhoneStatus
+import io.github.marioalr.tpvca.ui.tablet.TabletApp
+import io.github.marioalr.tpvca.ui.tablet.TabletChrome
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -65,6 +67,15 @@ class MainActivity : FragmentActivity() {
                 actions = actions,
                 qrReader = { onText, onNoPermission -> CameraQrReader(onText, onNoPermission) },
                 designedLinkScreen = true,
+                tablet = { linked ->
+                    val lastSuccess by controller.lastSuccess.collectAsStateWithLifecycle()
+                    val syncing by controller.syncing.collectAsStateWithLifecycle()
+                    val dataVersion by controller.dataVersion.collectAsStateWithLifecycle()
+                    TabletApp(
+                        graph.tablet,
+                        TabletChrome(PhoneStatus(linked.notice, linked.braked, lastSuccess, syncing, linked.clinicName), dataVersion, BuildConfig.VERSION_NAME, controller::refreshNow, controller::resumeBrake),
+                    )
+                },
                 phone = { linked ->
                     val lastSuccess by controller.lastSuccess.collectAsStateWithLifecycle()
                     val syncing by controller.syncing.collectAsStateWithLifecycle()

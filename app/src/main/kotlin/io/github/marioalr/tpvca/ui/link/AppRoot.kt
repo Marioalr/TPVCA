@@ -34,8 +34,10 @@ fun AppRoot(
     layout: HomeLayout,
     actions: LinkActions,
     qrReader: QrReader,
-    /** Las pantallas del celular (K4): solo con el rol aprobado de celular. La tablet sigue con el inicio sencillo hasta K6. */
+    /** Las pantallas del celular (K4): solo con el rol aprobado de celular. */
     phone: (@Composable (LinkState.Linked) -> Unit)? = null,
+    /** La tablet, copia de la PC (K6): solo con el rol aprobado de tablet. */
+    tablet: (@Composable (LinkState.Linked) -> Unit)? = null,
     /** La primera pantalla del celular sin vincular es la del diseño (`Vincular`), no el inicio de K0. */
     designedLinkScreen: Boolean = false,
 ) {
@@ -51,6 +53,8 @@ fun AppRoot(
             is LinkState.NotLinked -> NotLinked(state, deviceSecure, versionName, contractRevision, layout, actions, qrReader, designedLinkScreen)
             is LinkState.Linked -> if (phone != null && state.role == DeviceRole.AndroidMobileAdmin) {
                 Light { phone(state) }
+            } else if (tablet != null && state.role == DeviceRole.AndroidTablet) {
+                TpvcTheme { tablet(state) }
             } else TpvcTheme {
                 HomeScreen(versionName, contractRevision, layout, link = HomeLink.Linked(state.role, state.code, state.clinicName, state.notice, state.braked), onResumeBrake = actions::resumeBrake)
             }

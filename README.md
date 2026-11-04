@@ -27,10 +27,10 @@ según ese rol (`DevicePermissions`, la misma matriz que `Models/TursoConfig.cs`
 | `:sync` | Kotlin/JVM | El contrato de sincronización (`SyncSchema`, `SyncContract.REVISION`), el cliente Hrana, el motor de lectura y la vinculación con la revocación y las reglas del 401 ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)). Después: motor de escritura y consulta entre equipos. |
 | `:domain` | Kotlin/JVM | Reglas portadas de la PC con sus vectores (K1, lo del celular): roles y permisos (`DevicePermissions`), búsqueda, negocio e inventario, pacientes y agenda, receta y ticket. Cada vector → función → estado en [`docs/REGLAS.md`](docs/REGLAS.md). Después: cuenta, folios, dosis y cobro. |
 | `:data` | Biblioteca de Android | Room con SQLCipher: entidades generadas de `schema.json` y `RoomSyncStore`. La llave de la base y la credencial, envueltas con el Keystore. Las lecturas de las pantallas (`ClinicDao`, `ClinicReader`) y la caché cifrada de laboratorio. |
-| `:app` | App de Android | Compose + Material 3, tema con la paleta de la PC (claro, oscuro, ámbar y personalizado), el inicio, las pantallas de vincular, el bloqueo de la app y las del celular (`ui/phone`, con la receta y el ticket en PDF en `documents`). |
+| `:app` | App de Android | Compose + Material 3, tema con la paleta de la PC (claro, oscuro, ámbar y personalizado), el inicio, las pantallas de vincular, el bloqueo de la app, las del celular (`ui/phone`, con la receta y el ticket en PDF en `documents`) y las de la tablet (`ui/tablet`; la agenda en `ui/agenda`, para que K4b la use). |
 
 `:sync` y `:domain` son Kotlin puro: sus pruebas corren en la JVM, sin Android. Las compilaciones de depuración traen además una
-pantalla de desarrollo para probar la sincronización con una base de prueba; la de publicación no la trae.
+pantalla de desarrollo para probar la sincronización con una base de prueba y las demostraciones del celular y la tablet con datos inventados; la de publicación no las trae.
 
 Pila: Jetpack Compose con Material 3, Room + SQLCipher, OkHttp, kotlinx.serialization y WorkManager. Interfaz en español
 (es-MX), importes con `BigDecimal` y `HALF_EVEN`, y la zona `America/Mexico_City`.
@@ -45,8 +45,8 @@ Pila: Jetpack Compose con Material 3, Room + SQLCipher, OkHttp, kotlinx.serializ
 | **K3** | Vinculación y seguridad: pegar o escanear la URL y el token, aprobación de la PC, Keystore, SQLCipher, bloqueo y revocación ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)) | ✅ Hecho |
 | **K4** | Celular: negocio, inventario, pacientes y agenda de solo lectura, compartir receta y ticket, con el diseño aprobado ([`docs/diseno-celular/`](docs/diseno-celular/)). **Primera versión del celular** | ✅ Hecho |
 | K4b | Celular: agendar con aviso de empalme y registrar entradas de mercancía | Pendiente |
-| **K5** | Motor de escritura: cola de salida, LWW, cerca de generación, combinación de pacientes, movimientos, folios y WorkManager | Hecho: ninguna pantalla escribe todavía ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)) |
-| K6 | Inicio, ficha, agenda, alta y edición de pacientes | Pendiente |
+| **K5** | Motor de escritura: cola de salida, LWW, cerca de generación, combinación de pacientes, movimientos, folios y WorkManager | Hecho ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)) |
+| **K6** | Tablet: inicio, ficha, agenda con aviso de empalme, alta y edición con aviso de duplicado, avisos y «Volver a aplicar» (`ui/tablet`). La consulta y lo demás se ven deshabilitados | ✅ Hecho |
 | K7 | Consulta completa: receta, insumos, servicios, cuenta, terminar y cobrar, también sin conexión | Pendiente |
 | K8 | Consulta entre equipos. **Con K5–K8, primera versión de la tablet** | Pendiente |
 | K9 | Punto de venta en la tablet | Pendiente |

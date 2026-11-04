@@ -28,6 +28,8 @@ import io.github.marioalr.tpvca.sync.link.LinkNotices
 import io.github.marioalr.tpvca.sync.link.LinkState
 import io.github.marioalr.tpvca.sync.link.Revocation
 import io.github.marioalr.tpvca.ui.phone.PhoneEnv
+import io.github.marioalr.tpvca.ui.tablet.TabletEnv
+import io.github.marioalr.tpvca.ui.tablet.TabletWorkspace
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -77,6 +79,8 @@ class AppGraph(context: Context) {
         onState = { state ->
             if (state is LinkState.Linked) gate.reopen()
             states.value = state
+            // Sin vinculación no se queda nada de pacientes en la memoria. La base ya se borró con sus borradores
+            if ((state is LinkState.NotLinked || state is LinkState.Revoked) && tabletLazy.isInitialized()) tabletScope.launch { tabletLazy.value.clearMemory() }
             follower.onState(state, currentRole())
         },
         elapsedMillis = SystemClock::elapsedRealtime,
@@ -117,6 +121,26 @@ class AppGraph(context: Context) {
         documents = SharedDocuments(app, gate, onShared = { runCatching { BackgroundWork.scheduleSharedPurge(app) } }),
         labFiles = LabFiles(labCache, gate) { flow.fileConnection() },
     )
+
+    private val tabletScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    /** La tablet: vive con la app, no con la pantalla. Lo que se captura sobrevive a girar. Se crea hasta que hace falta. */
+    val tablet: TabletWorkspace get() = tabletLazy.value
+
+    private val tabletLazy = lazy {
+        TabletWorkspace(
+            TabletEnv(
+                phone,
+                writes = { controller.writes() },
+                local = { controller.localSide() },
+                reapplySaved = { controller.reapplySaved() },
+                quickSync = { controller.quickSync() },
+                noteLocalWrite = { controller.noteLocalWrite() },
+                refreshNow = { controller.refreshNow() },
+            ),
+            tabletScope,
+        )
+    }
 
     /** Al volver: lo compartido que ya pasó de su tiempo y lo que quedó de una vista si el proceso murió. */
     fun onForeground() {

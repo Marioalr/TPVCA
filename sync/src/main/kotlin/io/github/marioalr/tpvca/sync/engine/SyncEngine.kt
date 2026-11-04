@@ -28,10 +28,10 @@ data class SyncEngineConfig(
     /** El `clinicId` de la credencial (K3). Sin él, se adopta el de la nube la primera vez. */
     val expectedClinicId: String? = null,
     /**
-     * Solo para la pantalla de desarrollo (K2 no vincula): baja aunque la PC no haya aprobado este equipo. Una fila revocada sigue
-     * deteniéndolo. En K3 desaparece, cuando exista la aprobación.
+     * El rol que eligió este equipo al vincularse: una fila con el otro rol de Android también se detiene en `WrongRole`. Sin él (la
+     * pantalla de desarrollo) basta con que sea un rol de Android.
      */
-    val allowUnapproved: Boolean = false,
+    val expectedRole: DeviceRole? = null,
     /** Para las pruebas: un mismo tamaño de página en todas las tablas. */
     val pageSizeOverride: Int? = null,
 )
@@ -175,24 +175,22 @@ class SyncEngine(
 
     /** Sin fila o con `RevokedAtUtc`, no baja datos (regla «Equipos» de `schema.json`). */
     private fun checkRegistry(result: ResultSet) {
-        val row = result.rows.firstOrNull()
-        if (row == null) {
-            if (!config.allowUnapproved) throw Stop(SyncOutcome.NotApproved)
-            return
-        }
-        val revokedAt = row.text("RevokedAtUtc")
-        if (!revokedAt.isNullOrEmpty()) {
-            val reason = row.text("RevokedReason")
+        val row = result.rows.firstOrNull() ?: throw Stop(SyncOutcome.NotApproved)
+        val code = row.text("DeviceCode")
+        // Rechazar deja una fila con código X y ya revocada: basta con cualquiera de las dos para no bajar nada
+        val rejected = code?.startsWith(REJECTED_CODE_PREFIX) == true
+        if (!row.text("RevokedAtUtc").isNullOrEmpty() || rejected) {
+            val reason = row.text("RevokedReason") ?: if (rejected) SyncOutcome.Revoked.REASON_REJECTED else null
             // "Quitado" sube antes lo pendiente (K5); "perdido" borra sin subir nada
-            val mustKeep = store.pendingChanges() > 0 && reason != REASON_LOST
+            val mustKeep = store.pendingChanges() > 0 && reason != SyncOutcome.Revoked.REASON_LOST
             if (!mustKeep) store.wipeEverything()
             throw Stop(SyncOutcome.Revoked(reason, wiped = !mustKeep))
         }
-        // §7.3: el rol sale de su fila, como el nombre del enum de la PC. Todavía no cambia ningún permiso
+        // §7.3: el rol sale de su fila, como el nombre del enum de la PC
         val roleName = row.text("Role")
-        val role = DeviceRole.entries.firstOrNull { it.name == roleName }
-        if (role !in ANDROID_ROLES) throw Stop(SyncOutcome.WrongRole(roleName))
-        val code = row.text("DeviceCode")
+        val role = DeviceRole.fromName(roleName)
+        if (role !in ANDROID_ROLES) throw Stop(SyncOutcome.WrongRole(roleName, config.expectedRole))
+        if (config.expectedRole != null && role != config.expectedRole) throw Stop(SyncOutcome.WrongRole(roleName, config.expectedRole))
         store.apply(StoreChanges(meta = buildMap {
             put(DEVICE_ROLE, role!!.name)
             if (code != null) put(DEVICE_CODE, code)
@@ -810,7 +808,7 @@ class SyncEngine(
 
         private val ANDROID_ROLES = setOf(DeviceRole.AndroidTablet, DeviceRole.AndroidMobileAdmin)
         private const val NO_GENERATION = "none"
-        private const val REASON_LOST = "perdido"
+        private const val REJECTED_CODE_PREFIX = "X"
 
         /** Vaciar por otra generación no toca el freno, la identidad ni las pausas. */
         val KEPT_META_ON_CLEAR = listOf(ConsumptionBrake.META_PREFIX, "Cloud:", "Pause:", "Status:")

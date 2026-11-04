@@ -16,6 +16,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.URI
+import java.net.URISyntaxException
 import java.util.Locale
 import java.util.TreeMap
 import java.util.concurrent.TimeUnit
@@ -45,7 +46,8 @@ interface HranaConnection {
 
 /**
  * Cliente Hrana v2 por HTTP con OkHttp: `POST {url}/v2/pipeline` con `Authorization: Bearer`, sin baton, solo `https://`.
- * Reproduce `Services/TursoClient.cs`. El cuerpo de error nunca incluye el token, ni el token va en una URL.
+ * Reproduce `Services/TursoClient.cs`. El token nunca va en una URL, y ni el token ni la URL salen en un error: todo lo que llega del
+ * servidor o de la red pasa por [Redactor] antes de volverse un mensaje, y la excepción de la red no se conserva como causa.
  */
 class HranaClient(
     url: String,
@@ -55,6 +57,7 @@ class HranaClient(
 ) : HranaConnection {
     private val pipelineUrl = PipelineUrl.normalize(url)
     private val bearer = cleanToken(token)
+    private val secrets = listOf(token, bearer, url, pipelineUrl, URI(pipelineUrl).host.orEmpty())
     private val userAgent = "TPVC-Android/$appVersion"
     private val http = http.newBuilder().followRedirects(false).followSslRedirects(false).build()
 
@@ -103,13 +106,14 @@ class HranaClient(
                 status = response.code
                 text = response.body.string()
             }
-        } catch (e: InterruptedIOException) {
-            throw HranaException(HranaException.TIMEOUT, "Tiempo de espera agotado al conectar con Turso.", cause = e)
-        } catch (e: IOException) {
-            throw HranaException(HranaException.NETWORK_ERROR, "No se pudo conectar con Turso: ${e.message}. Verifique la conexión a internet o la URL.", cause = e)
+        } catch (_: InterruptedIOException) {
+            throw HranaException(HranaException.TIMEOUT, "Tiempo de espera agotado al conectar con Turso.")
+        } catch (_: IOException) {
+            // El texto de la excepción está en inglés y repite el host («Unable to resolve host …»): aquí no se usa
+            throw HranaException(HranaException.NETWORK_ERROR, "No se pudo conectar con Turso. Verifique la conexión a internet o la URL.")
         }
 
-        if (status !in 200..299) throw HranaException.fromHttp(status, text)
+        if (status !in 200..299) throw HranaException.fromHttp(status, Redactor.clean(text, secrets))
         val root = try {
             Json.parseToJsonElement(text).jsonObject
         } catch (e: IllegalArgumentException) {
@@ -145,7 +149,7 @@ class HranaClient(
 
     private fun throwServiceError(error: JsonElement): Nothing {
         val obj = error.jsonObject
-        val message = obj["message"]?.jsonPrimitive?.content ?: "Error desconocido en Turso"
+        val message = Redactor.clean(obj["message"]?.jsonPrimitive?.content ?: "Error desconocido en Turso", secrets)
         throw HranaException.fromResult(obj["code"]?.takeUnless { it is JsonNull }?.jsonPrimitive?.content, message)
     }
 
@@ -209,10 +213,16 @@ object PipelineUrl {
         }.trimEnd('/')
         if (!clean.lowercase(Locale.ROOT).endsWith("/v2/pipeline")) clean += "/v2/pipeline"
 
-        val uri = URI(clean)
+        // El mensaje de URISyntaxException repite el texto pegado: aquí no se repite
+        val uri = try {
+            URI(clean)
+        } catch (_: URISyntaxException) {
+            throw IllegalArgumentException("La URL de la base de datos de Turso no es válida. Cópiela completa del panel de Turso.")
+        }
+        require(uri.userInfo == null) { "La URL lleva un usuario o una contraseña: use la URL de la base y el token por separado." }
         val host = uri.host.orEmpty()
         val loopback = host.equals("localhost", ignoreCase = true) || host == "127.0.0.1"
-        require('.' in host || loopback) { "La dirección «$host» parece ser solo el nombre de la base: Turso pide la URL completa." }
+        require('.' in host || loopback) { "La dirección parece ser solo el nombre de la base: Turso pide la URL completa." }
         require(uri.scheme.equals("https", ignoreCase = true) || loopback) {
             "La dirección usa http:// sin cifrar: el token de Turso viajaría en claro. Use la URL libsql:// o https:// que da Turso."
         }

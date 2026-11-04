@@ -70,6 +70,14 @@ Paquetes: `io.github.marioalr.tpvca.domain` + `search`, `business`, `patients`, 
 
 Pruebas: `ValuesGoldenTest` y `SyncRulesGoldenTest`. Cómo se usan al bajar: [`SINCRONIZACION.md`](SINCRONIZACION.md).
 
+## Portados en K3 (en `:sync`)
+
+| Vector | Kotlin | Casos | Estado |
+|---|---|---|---|
+| `link-qr.json` | `LinkCode.encode`, `decode` | 7/7 | ✅ |
+
+Prueba: `LinkCodeGoldenTest`. Cómo se usa: [`SINCRONIZACION.md`](SINCRONIZACION.md).
+
 ## Pendientes (con el paso que los porta)
 
 | Vector | Paso | Qué es |
@@ -79,8 +87,7 @@ Pruebas: `ValuesGoldenTest` y `SyncRulesGoldenTest`. Cómo se usan al bajar: [`S
 | `field-stamps.json` | K5 | Marcas por campo del expediente |
 | `patient-merge.json` | K5 | Combinación de dos versiones de un expediente |
 | `duplicate-patients.json` | K5 | Aviso de posibles expedientes duplicados después de bajar |
-| `folios.json` | K3 | Folios con y sin conexión |
-| `link-qr.json` | K3 | El QR de vinculación |
+| `folios.json` | K5 | Folios con y sin conexión (toma un número de la nube: es escritura) |
 | `lab-files.json` | K4 | Bajar un resultado de laboratorio por trozos (con el cliente de K2) |
 | `date-mask.json` | K6 | El campo de fecha dd/mm/aaaa |
 | `cie10-catalog.json` | K7 | El catálogo CIE-10 |

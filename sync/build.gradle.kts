@@ -44,4 +44,8 @@ tasks.test {
     // Las pruebas leen los mismos archivos de contracts/ que la PC
     inputs.dir(contractsDir).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("contracts")
     systemProperty("tpvca.contracts", contractsDir.asFile.absolutePath)
+    // NoLogsTest revisa que el código de la app no escriba en la bitácora
+    val sources = listOf("sync", "data", "domain", "app").map { rootProject.layout.projectDirectory.dir("$it/src/main") }
+    sources.forEach { inputs.dir(it).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("main-${it.asFile.parentFile.parentFile.name}") }
+    systemProperty("tpvca.root", rootProject.layout.projectDirectory.asFile.absolutePath)
 }

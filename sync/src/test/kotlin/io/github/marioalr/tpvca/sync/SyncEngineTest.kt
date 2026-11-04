@@ -1,5 +1,6 @@
 package io.github.marioalr.tpvca.sync
 
+import io.github.marioalr.tpvca.domain.devices.DeviceRole
 import io.github.marioalr.tpvca.sync.engine.ConsumptionBrake
 import io.github.marioalr.tpvca.sync.engine.ManifestDiff
 import io.github.marioalr.tpvca.sync.engine.ParkDirection
@@ -103,14 +104,6 @@ class SyncEngineTest {
         assertEquals(2, cloud.requests.size)
     }
 
-    @Test
-    fun laPantallaDeDesarrolloBajaSinAprobacionPeroNoRevocado() {
-        cloud.registry = null
-        completed(engine(config.copy(allowUnapproved = true)).sync(SyncTrigger.USER))
-        cloud.registry = listOf(HranaValue.Text("C1"), HranaValue.Text("AndroidMobileAdmin"), HranaValue.Text("2026-11-03 10:00:00.000"), HranaValue.Text("perdido"))
-        assertEquals(SyncOutcome.Revoked("perdido", wiped = true), engine(config.copy(allowUnapproved = true)).sync(SyncTrigger.USER))
-    }
-
     private fun role(name: String?) {
         cloud.registry = listOf(HranaValue.Text("C1"), name?.let(HranaValue::Text) ?: HranaValue.Null, HranaValue.Null, HranaValue.Null)
     }
@@ -152,9 +145,40 @@ class SyncEngineTest {
     }
 
     @Test
-    fun conOtroRolLaPantallaDeDesarrolloTampocoBaja() {
-        role("WindowsDesktop")
-        assertEquals(SyncOutcome.WrongRole("WindowsDesktop"), engine(config.copy(allowUnapproved = true)).sync(SyncTrigger.USER))
+    fun unaFilaDeTabletEnUnCelularNoBajaNiBorra() {
+        val phone = config.copy(expectedRole = DeviceRole.AndroidMobileAdmin)
+        role("AndroidTablet")
+        val outcome = engine(phone).sync(SyncTrigger.USER)
+        assertEquals(SyncOutcome.WrongRole("AndroidTablet", DeviceRole.AndroidMobileAdmin), outcome)
+        assertEquals("Se detiene en su fila", 2, cloud.requests.size)
+        assertNull(store.meta(SyncEngine.FIRST_DOWNLOAD_DONE))
+        assertEquals(0, ConsumptionBrake(store, clock).fullPullsToday)
+    }
+
+    @Test
+    fun unaFilaDeCelularEnUnaTabletNoBajaNiBorra() {
+        firstSyncDone()
+        store.put("Categories", "c", "UpdatedAtUtc" to stamp(1))
+        val cursor = store.meta(SyncEngine.CURSOR_PREFIX + "Categories")
+        cloud.add("Categories", "nueva", stamp(2), later)
+        role("AndroidMobileAdmin")
+        val tablet = config.copy(expectedRole = DeviceRole.AndroidTablet)
+        assertEquals(SyncOutcome.WrongRole("AndroidMobileAdmin", DeviceRole.AndroidTablet), engine(tablet).sync())
+        assertEquals(setOf("c"), store.rows("Categories").keys)
+        assertEquals(cursor, store.meta(SyncEngine.CURSOR_PREFIX + "Categories"))
+    }
+
+    @Test
+    fun elRolQueEligioSigueBajando() {
+        role("AndroidTablet")
+        completed(engine(config.copy(expectedRole = DeviceRole.AndroidTablet)).sync(SyncTrigger.USER))
+        assertEquals("AndroidTablet", store.meta(SyncEngine.DEVICE_ROLE))
+    }
+
+    @Test
+    fun unaFilaConCodigoXEsUnRechazoAunqueNoTengaFecha() {
+        cloud.registry = listOf(HranaValue.Text("X1"), HranaValue.Text("AndroidTablet"), HranaValue.Null, HranaValue.Null)
+        assertEquals(SyncOutcome.Revoked("rechazado", wiped = true), engine().sync(SyncTrigger.USER))
     }
 
     @Test

@@ -22,14 +22,14 @@ class StatementsContractTest {
         }.toSet()
     }
 
-    /** Las que usa K2. Si `statements.json` trae una nueva, esta prueba falla hasta decidir de qué paso es. */
-    private val usedByK2 = setOf("meta.all", "handshake", "generation", "profile", "registry.own", "asset.meta", "asset.chunk")
+    /** Las que usan K2 y K3. Si `statements.json` trae una nueva, esta prueba falla hasta decidir de qué paso es. */
+    private val usedByK2 = setOf(
+        "meta.all", "handshake", "generation", "profile", "registry.own", "asset.meta", "asset.chunk", "heartbeat.readNonce", "heartbeat.write",
+    )
     private val laterSteps = mapOf(
         "meta.schema" to "sin uso: meta.all ya trae la huella",
-        "heartbeat.readNonce" to "K3",
-        "heartbeat.write" to "K3",
         "heartbeat.writeAfterPush" to "K5",
-        "registry.primary" to "K3",
+        "registry.primary" to "K9b: Equipos vinculados en la tablet; vincular no lo necesita",
         "asset.exists" to "K9b",
         "asset.writeChunk" to "K9b",
         "asset.writeMeta" to "K9b",
@@ -57,6 +57,8 @@ class StatementsContractTest {
         assertEquals(statements["generation"], Statements.GENERATION)
         assertEquals(statements["profile"], Statements.PROFILE)
         assertEquals(statements["registry.own"], Statements.REGISTRY_OWN)
+        assertEquals(statements["heartbeat.readNonce"], Statements.HEARTBEAT_READ_NONCE)
+        assertEquals(statements["heartbeat.write"], Statements.HEARTBEAT_WRITE)
         assertEquals(statements["asset.meta"], Statements.ASSET_META)
         assertEquals(statements["asset.chunk"], Statements.ASSET_CHUNK)
     }

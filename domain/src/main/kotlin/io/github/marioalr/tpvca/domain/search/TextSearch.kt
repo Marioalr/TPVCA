@@ -1,11 +1,13 @@
 package io.github.marioalr.tpvca.domain.search
 
+import io.github.marioalr.tpvca.domain.model.Product
+import io.github.marioalr.tpvca.domain.text.MexicanText
 import java.text.Normalizer
 
 /**
  * Búsqueda sin acentos, igual a `Services/TextSearch.cs` de la PC. Vectores: `contracts/golden/text-search.json`.
  *
- * Por ahora solo [normalize], [matches] y [findBestMatchIndex]; `RankProducts` llega con su vector (`rank-products.json`).
+ * [rankProducts] (el Punto de venta y los insumos de un servicio) con `rank-products.json`.
  */
 object TextSearch {
     /**
@@ -49,5 +51,42 @@ object TextSearch {
             if (containsMatch < 0 && text.contains(q)) containsMatch = i
         }
         return if (wordMatch >= 0) wordMatch else containsMatch
+    }
+
+    /** Cuántas sugerencias da [rankProducts] si no se pide otra cosa. */
+    const val PRODUCT_SUGGESTION_LIMIT = 8
+
+    /**
+     * Productos que coinciden (sin acentos): grupo 0 el código normalizado igual, 1 el nombre que empieza así, 2 el genérico que
+     * empieza así, 3 una palabra del nombre o del genérico que empieza así y 4 lo que lo contiene en nombre, genérico, código o
+     * ubicación. Orden: grupo, los que tienen existencias antes y el nombre con `Collator` es-MX; [limit] como mucho. No mira si
+     * el producto está activo. Sin texto, ninguno.
+     */
+    fun rankProducts(products: Iterable<Product>, query: String?, limit: Int = PRODUCT_SUGGESTION_LIMIT): List<Product> {
+        val q = normalize(query)
+        if (q.isEmpty()) return emptyList()
+        val names = MexicanText.nameOrder()
+        return products
+            .mapNotNull { p ->
+                val name = normalize(p.name)
+                val generic = normalize(p.genericName)
+                val code = normalize(p.code)
+                val rank = when {
+                    code == q -> 0
+                    name.startsWith(q) -> 1
+                    generic.startsWith(q) -> 2
+                    " $name".contains(" $q") || " $generic".contains(" $q") -> 3
+                    matches(q, p.name, p.genericName, p.code, p.location) -> 4
+                    else -> -1
+                }
+                if (rank >= 0) p to rank else null
+            }
+            .sortedWith(
+                compareBy<Pair<Product, Int>> { it.second }
+                    .thenBy { it.first.currentStock <= 0 }
+                    .thenComparing({ it.first.name }, names),
+            )
+            .take(limit)
+            .map { it.first }
     }
 }

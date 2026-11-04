@@ -22,8 +22,12 @@ dependencies {
 }
 
 val contractsDir = rootProject.layout.projectDirectory.dir("contracts")
+val docsDir = rootProject.layout.projectDirectory.dir("docs")
 
 tasks.test {
     inputs.dir(contractsDir).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("contracts")
     systemProperty("tpvca.contracts", contractsDir.asFile.absolutePath)
+    // GoldenCoverageTest revisa que docs/REGLAS.md nombre cada vector
+    inputs.file(docsDir.file("REGLAS.md")).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("reglas")
+    systemProperty("tpvca.docs", docsDir.asFile.absolutePath)
 }

@@ -904,9 +904,9 @@ class TabletAppTest {
     @Test
     fun laCitaRecuperadaTomaLosDatosDeAhoraDelPaciente() {
         appointmentDraft(anaId())
-        show()
+        // Un solo proceso: dos que recuperan el mismo borrador se pisarían
         val fresh = TabletWorkspace(env(), scope)
-        fresh.restoreDrafts()
+        show(fresh)
         waitFor { fresh.appointment.patient?.fullName == "Paciente Ana Ejemplo Ruiz" }
         assertEquals("EXP-2026-014", fresh.appointment.patient!!.recordNumber)
         assertEquals("5500000001", fresh.appointment.patient!!.phone)
@@ -917,9 +917,8 @@ class TabletAppTest {
         val id = anaId()
         appointmentDraft(id)
         deactivate(id)
-        show()
         val fresh = TabletWorkspace(env(), scope)
-        fresh.restoreDrafts()
+        show(fresh)
         waitFor { fresh.appointment.error != null }
         assertNull(fresh.appointment.patient)
         assertEquals("Motivo escrito", fresh.appointment.reason)

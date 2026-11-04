@@ -20,7 +20,7 @@ class StringsTest {
         assertEquals("Vincular con la PC", context.getString(R.string.home_link_button))
         assertEquals("Versión 0.1.0", context.getString(R.string.home_version, BuildConfig.VERSION_NAME))
         assertEquals(
-            "Entiende la revisión 22 del contrato de sincronización",
+            "Entiende la revisión 23 del contrato de sincronización",
             context.getString(R.string.home_contract_revision, SyncContract.REVISION),
         )
     }

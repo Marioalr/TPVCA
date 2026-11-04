@@ -44,7 +44,7 @@ object BusinessCsv {
     private val GENERATED = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
 
     /** El BOM con que se escribe el archivo, para Excel (`Encoding.UTF8` de `File.WriteAllTextAsync`). */
-    const val BOM = "﻿"
+    val BOM: String = 0xFEFF.toChar().toString()
 
     fun build(report: BusinessCsvReport): String {
         val sb = StringBuilder()

@@ -78,6 +78,18 @@ Pruebas: `ValuesGoldenTest` y `SyncRulesGoldenTest`. Cómo se usan al bajar: [`S
 
 Prueba: `LinkCodeGoldenTest`. Cómo se usa: [`SINCRONIZACION.md`](SINCRONIZACION.md).
 
+## Portados en K4
+
+| Vector | Kotlin | Casos | Estado |
+|---|---|---|---|
+| `lab-files.json` | `LabFileRules.chunks`, `chunkCount`, `sha256`, `STATE_SQL`, `READ_CHUNKS_SQL` y los topes de bajar; `LabFileDownloader` (en `:sync`) | 6/6 (de `sql`, lo de bajar: `state` y `readChunks`) | 🟡 Lo de bajar. Subir es de la tablet: **K7** |
+
+Prueba: `LabFilesGoldenTest`. Lo demás de K4 no trae vector nuevo: arma lo portado para las pantallas, con pruebas propias (`BusinessPanelTest`):
+
+- `BusinessCsv` (`BusinessReportRules.ToCsv` de la PC, que no está en un vector) y `BusinessPanel` (`BusinessViewModel.Recompute`).
+- `InventoryListRules`, `MovementRules` y `HomeAgendaRules`: cómo se combinan `alerts.json`, `agenda.json` y `appointment-overlap.json` en cada pantalla, y el signo del Kardex con la `note` de `InventoryMovements.Delta`.
+- `PrescriptionSheet.indicationsOf`, `doctorFontPx` (`ConsultationDetailViewModel.Indications`, `LetterheadHtml.DoctorFontPx`).
+
 ## Pendientes (con el paso que los porta)
 
 | Vector | Paso | Qué es |
@@ -88,7 +100,6 @@ Prueba: `LinkCodeGoldenTest`. Cómo se usa: [`SINCRONIZACION.md`](SINCRONIZACION
 | `patient-merge.json` | K5 | Combinación de dos versiones de un expediente |
 | `duplicate-patients.json` | K5 | Aviso de posibles expedientes duplicados después de bajar |
 | `folios.json` | K5 | Folios con y sin conexión (toma un número de la nube: es escritura) |
-| `lab-files.json` | K4 | Bajar un resultado de laboratorio por trozos (con el cliente de K2) |
 | `date-mask.json` | K6 | El campo de fecha dd/mm/aaaa |
 | `cie10-catalog.json` | K7 | El catálogo CIE-10 |
 | `cie10-search.json` | K7 | La búsqueda del diagnóstico |
@@ -121,8 +132,9 @@ Prueba: `LinkCodeGoldenTest`. Cómo se usa: [`SINCRONIZACION.md`](SINCRONIZACION
   que `Ordinal`).
 - **Hoy**: ninguna regla lee el reloj; reciben el día o la hora del consultorio. `Clinic.today(instante)` da el día en
   America/Mexico_City (o UTC−6 si el equipo no trae esa zona).
-- **Expresiones regulares**: con `(?U)` para que `\w`, `\d`, `\s` y `\b` sean de Unicode como en .NET (y no cambien entre el
-  JDK 17 de la CI y uno más nuevo, que cambió `\b`).
+- **Expresiones regulares**: con `NetRegex.of` para que `\w`, `\d`, `\s` y `\b` sean de Unicode como en .NET: en el JDK agrega `(?U)` (y no cambian entre el JDK 17 de la CI y
+  uno más nuevo, que cambió `\b`); en Android no, porque ICU ya es Unicode y **rechaza `(?U)` al compilar**. Nunca se escribe `(?U)` a mano: las pruebas de la JVM no lo notan
+  (`DomainRegexDeviceTest`, en un equipo).
 
 ## Diferencias que hubo que resolver
 

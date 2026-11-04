@@ -1,6 +1,7 @@
 package io.github.marioalr.tpvca
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.compose.setContent
@@ -21,6 +22,8 @@ import io.github.marioalr.tpvca.ui.home.HomeLayout
 import io.github.marioalr.tpvca.ui.link.AppRoot
 import io.github.marioalr.tpvca.ui.link.CameraQrReader
 import io.github.marioalr.tpvca.ui.link.LinkActions
+import io.github.marioalr.tpvca.ui.phone.PhoneApp
+import io.github.marioalr.tpvca.ui.phone.PhoneStatus
 
 /** `FragmentActivity` porque `BiometricPrompt` lo pide. */
 class MainActivity : FragmentActivity() {
@@ -30,7 +33,10 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val controller = (application as TpvcaApplication).graph.controller
+        // La miniatura de Recientes nunca muestra pacientes. Antes de la API 33 lo hace FLAG_SECURE en esas pantallas (PatientDataWindow)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) setRecentsScreenshotEnabled(false)
+        val graph = (application as TpvcaApplication).graph
+        val controller = graph.controller
         // Se crea aquí: BiometricPrompt no se puede crear ya empezada la actividad
         prompt = BiometricPrompt(
             this,
@@ -54,6 +60,19 @@ class MainActivity : FragmentActivity() {
                 layout = HomeLayout.from(windowSizeClass.widthSizeClass),
                 actions = actions,
                 qrReader = { onText, onNoPermission -> CameraQrReader(onText, onNoPermission) },
+                designedLinkScreen = true,
+                phone = { linked ->
+                    val lastSuccess by controller.lastSuccess.collectAsStateWithLifecycle()
+                    val syncing by controller.syncing.collectAsStateWithLifecycle()
+                    val dataVersion by controller.dataVersion.collectAsStateWithLifecycle()
+                    PhoneApp(
+                        env = graph.phone,
+                        status = PhoneStatus(linked.notice, linked.braked, lastSuccess, syncing, linked.clinicName),
+                        dataVersion = dataVersion,
+                        onSync = controller::refreshNow,
+                        onResumeBrake = controller::resumeBrake,
+                    )
+                },
             )
         }
     }

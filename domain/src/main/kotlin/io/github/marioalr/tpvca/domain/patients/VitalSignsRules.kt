@@ -6,6 +6,7 @@ import io.github.marioalr.tpvca.domain.text.NetDecimal
 import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import io.github.marioalr.tpvca.domain.text.NetRegex
 
 /**
  * Los signos vitales: el IMC y el aviso mientras se capturan, el texto de la nota (`Services/Rules/VitalSignsRules.cs`,
@@ -132,7 +133,7 @@ object VitalSignsRules {
 
     // Sin distinguir mayúsculas y con \d y \s de Unicode, como .NET. Un número con dígitos que no son ASCII coincide pero no se
     // lee (decimal.TryParse solo lee 0-9): queda sin dato, igual que en la PC.
-    private fun vital(pattern: String) = Regex("(?iU)$pattern")
+    private fun vital(pattern: String) = NetRegex.of(pattern, "i")
 
     private val TA = vital("(?:T/?A|TA|PA|Presi[oó]n):\\s*(\\d{2,3})\\s*/\\s*(\\d{2,3})")
     private val FC = vital("FC:\\s*(\\d{2,3})")

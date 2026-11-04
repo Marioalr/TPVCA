@@ -48,12 +48,14 @@ class GoldenCoverageTest {
         "stamping.json" to "SyncRulesGoldenTest",
         "lww.json" to "SyncRulesGoldenTest",
         "link-qr.json" to "LinkCodeGoldenTest",
+        "lab-files.json" to "LabFilesGoldenTest",
     )
 
     /** Portados en parte: archivo → los tipos de caso que faltan y su paso (la prueba del archivo los salta por nombre). */
     private val partial = mapOf(
         "patient-identity.json" to "K6 (alta y edición: parse-name, compose-name, birth-date, email, validate)",
         "lww.json" to "K5 (server-upsert y server-tombstone: corren el SQL de la subida en SQLite)",
+        "lab-files.json" to "K7 (subir y lo de la PC principal: el celular solo baja)",
     )
 
     /** Los vectores pendientes: archivo → el paso que los porta. */
@@ -64,7 +66,6 @@ class GoldenCoverageTest {
         "patient-merge.json" to "K5",
         "duplicate-patients.json" to "K5",
         "folios.json" to "K5",
-        "lab-files.json" to "K4",
         "date-mask.json" to "K6",
         "cie10-catalog.json" to "K7",
         "cie10-search.json" to "K7",

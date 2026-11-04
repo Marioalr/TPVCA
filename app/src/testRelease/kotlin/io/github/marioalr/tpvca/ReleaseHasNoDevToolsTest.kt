@@ -8,7 +8,7 @@ import org.junit.Test
 class ReleaseHasNoDevToolsTest {
     @Test
     fun laPantallaDeDesarrolloNoExiste() {
-        val classes = listOf("io.github.marioalr.tpvca.dev.DevSyncActivity", "io.github.marioalr.tpvca.dev.DevSyncRunner")
+        val classes = listOf("io.github.marioalr.tpvca.dev.DevSyncActivity", "io.github.marioalr.tpvca.dev.DevSyncRunner", "io.github.marioalr.tpvca.dev.PhoneDemoActivity", "io.github.marioalr.tpvca.dev.PhoneDemoSeed")
         for (name in classes) {
             assertEquals(name, null, runCatching { Class.forName(name) }.getOrNull())
         }

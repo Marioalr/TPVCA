@@ -2,6 +2,7 @@ package io.github.marioalr.tpvca.domain.search
 
 import io.github.marioalr.tpvca.domain.model.Product
 import io.github.marioalr.tpvca.domain.text.MexicanText
+import io.github.marioalr.tpvca.domain.text.NetRegex
 
 /**
  * El renglón de un medicamento en la receta (`Services/PrescriptionNaming.cs`, pedido del médico del 2026-10-21): la marca con
@@ -9,17 +10,18 @@ import io.github.marioalr.tpvca.domain.text.MexicanText
  * sin paréntesis. De v1.23.0 a v1.45 era al revés ([legacyMedicineLine]): esos renglones se siguen reconociendo.
  * Vectores: `contracts/golden/catalog-matching.json`.
  *
- * Las expresiones llevan `(?U)` para que `\w`, `\d`, `\s` y `\b` sean de Unicode como en .NET (y no cambien entre el JDK 17 de
+ * Las expresiones van con `NetRegex` para que `\w`, `\d`, `\s` y `\b` sean de Unicode como en .NET (y no cambien entre el JDK 17 de
  * la CI y uno más nuevo).
  */
 object PrescriptionNaming {
-    private val STRENGTH = Regex(
-        "(?iU)(?<![\\w/.,])(?<num>\\d+(?:[.,]\\d+)?(?:\\s*/\\s*\\d+(?:[.,]\\d+)?)*)\\s*(?<unit>mcg|µg|ug|mg|g|ui|%)" +
+    private val STRENGTH = NetRegex.of(
+        "(?<![\\w/.,])(?<num>\\d+(?:[.,]\\d+)?(?:\\s*/\\s*\\d+(?:[.,]\\d+)?)*)\\s*(?<unit>mcg|µg|ug|mg|g|ui|%)" +
             "(?:\\s*/\\s*(?<per>\\d+(?:[.,]\\d+)?\\s*)?(?<perUnit>ml|g))?(?![\\w])",
+        "i",
     )
 
-    private val SLASH = Regex("(?U)\\s*/\\s*")
-    private val SPACES = Regex("(?U)\\s+")
+    private val SLASH = NetRegex.of("\\s*/\\s*")
+    private val SPACES = NetRegex.of("\\s+")
     private val PARENTHESES = Regex("\\([^()]*\\)")
 
     // La forma farmacéutica: lo que se busca en la presentación y en el nombre, y cómo se escribe en la receta
@@ -40,7 +42,7 @@ object PrescriptionNaming {
         "\\bsobres?\\b" to "sobres",
         "\\bparches?\\b" to "parches",
         "\\b(aerosol|spray|inhalador)\\b" to "aerosol",
-    ).map { (pattern, form) -> Regex("(?iU)$pattern") to form }
+    ).map { (pattern, form) -> NetRegex.of(pattern, "i") to form }
 
     /** Lo de afuera ([line]) y lo de adentro del paréntesis ([activeIngredient], `null` si no lleva). */
     data class MedicineLineParts(val line: String, val activeIngredient: String?) {

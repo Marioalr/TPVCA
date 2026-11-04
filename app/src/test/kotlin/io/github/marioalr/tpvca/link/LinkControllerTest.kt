@@ -189,6 +189,27 @@ class LinkControllerTest {
     }
 
     @Test
+    fun alTerminarBienDiceCuandoYLasPantallasVuelvenALeer() {
+        registryRow = listOf("C-1", "AndroidMobileAdmin", null, null)
+        controller.onForeground()
+        scope.runCurrent()
+        assertNull(controller.lastSuccess.value)
+        assertEquals(0L, controller.dataVersion.value)
+        controller.link("https://consultorio-ejemplo.turso.io", "token-de-prueba", "", DeviceRole.AndroidMobileAdmin)
+        scope.runCurrent()
+        controller.refreshNow()
+        scope.runCurrent()
+        assertTrue(controller.state.value is LinkState.Linked)
+        assertTrue(controller.lastSuccess.value != null)
+        assertTrue(controller.dataVersion.value > 0L)
+        val version = controller.dataVersion.value
+        // Sin otra sincronización que termine bien, nadie vuelve a leer
+        scope.advanceTimeBy(LinkController.TICK_MILLIS + 1)
+        assertEquals(version, controller.dataVersion.value)
+        controller.onBackground()
+    }
+
+    @Test
     fun laPuertaSigueAlRolAprobadoYNoAlPedido() {
         registryRow = listOf("C1", "AndroidMobileAdmin", null, null)
         controller.onForeground()

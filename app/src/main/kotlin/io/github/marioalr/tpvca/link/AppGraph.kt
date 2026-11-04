@@ -9,15 +9,21 @@ import android.provider.Settings
 import io.github.marioalr.tpvca.BuildConfig
 import io.github.marioalr.tpvca.data.LocalStore
 import io.github.marioalr.tpvca.data.SqlCipher
+import io.github.marioalr.tpvca.data.clinic.ClinicReader
 import io.github.marioalr.tpvca.data.security.EncryptedCredentialVault
 import io.github.marioalr.tpvca.data.security.EncryptedLocalDatabase
 import io.github.marioalr.tpvca.data.security.KeystoreSecretWrapper
+import io.github.marioalr.tpvca.data.security.LabFileCache
 import io.github.marioalr.tpvca.data.security.WrappedFile
+import io.github.marioalr.tpvca.documents.DeviceFiles
+import io.github.marioalr.tpvca.documents.LabFiles
+import io.github.marioalr.tpvca.documents.SharedDocuments
 import io.github.marioalr.tpvca.sync.hrana.HranaClient
 import io.github.marioalr.tpvca.sync.link.LinkFlow
 import io.github.marioalr.tpvca.sync.link.LinkNotices
 import io.github.marioalr.tpvca.sync.link.LinkState
 import io.github.marioalr.tpvca.sync.link.Revocation
+import io.github.marioalr.tpvca.ui.phone.PhoneEnv
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,28 +42,31 @@ class AppGraph(context: Context) {
 
     private val states = MutableStateFlow<LinkState?>(null)
 
+    private val syncing = MutableStateFlow(false)
+    private val labCache = LabFileCache(File(app.noBackupFilesDir, "laboratorio"), KeystoreSecretWrapper(app, "tpvca.laboratorio"))
+    private val deviceFiles = DeviceFiles(app, labCache)
+    private val assetsDir = File(app.filesDir, "membrete")
+
+    private val database = EncryptedLocalDatabase(
+        app,
+        LocalStore.DATABASE_NAME,
+        WrappedFile(File(security, "llave-base.bin"), KeystoreSecretWrapper(app, "tpvca.base")),
+        assetsDir,
+        SqlCipher::factory,
+    )
+
     private val flow = LinkFlow(
         vault = EncryptedCredentialVault(WrappedFile(File(security, "credencial.bin"), KeystoreSecretWrapper(app, "tpvca.credencial"))),
-        database = EncryptedLocalDatabase(
-            app,
-            LocalStore.DATABASE_NAME,
-            WrappedFile(File(security, "llave-base.bin"), KeystoreSecretWrapper(app, "tpvca.base")),
-            File(app.filesDir, "membrete"),
-            SqlCipher::factory,
-        ),
+        database = database,
         notices = PreferencesLinkNotices(app),
         deviceLock = { keyguard.isDeviceSecure },
         appVersion = BuildConfig.VERSION_NAME,
         deviceName = deviceName(app),
-        eraseFiles = {
-            app.filesDir.listFiles()?.forEach { it.deleteRecursively() }
-            app.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
-            // La base de la app ya se borró; lo que queda aquí es de las bibliotecas (los eventos locales de datatransport)
-            app.databaseList().forEach(app::deleteDatabase)
-        },
+        eraseFiles = deviceFiles::erase,
         connect = { url, token -> HranaClient(url, token, BuildConfig.VERSION_NAME, http) },
         onState = { states.value = it },
         elapsedMillis = SystemClock::elapsedRealtime,
+        onSyncing = { syncing.value = it },
     )
 
     val controller = LinkController(
@@ -67,6 +76,21 @@ class AppGraph(context: Context) {
         { keyguard.isDeviceSecure },
         CoroutineScope(SupervisorJob() + Dispatchers.Default),
         Dispatchers.IO,
+        syncingFlow = syncing,
+    )
+
+    /** Lo que leen y comparten las pantallas del celular. Abre la base hasta que haga falta. */
+    val phone = PhoneEnv(
+        reader = ClinicReader(
+            {
+                // Una lectura que llega tarde, ya revocado el equipo, no vuelve a crear una base
+                check(states.value is LinkState.Linked) { "Sin vincular no hay datos." }
+                database.database().clinic()
+            },
+            { assetsDir },
+        ),
+        documents = SharedDocuments(app),
+        labFiles = LabFiles(labCache) { flow.fileConnection() },
     )
 
     private companion object {

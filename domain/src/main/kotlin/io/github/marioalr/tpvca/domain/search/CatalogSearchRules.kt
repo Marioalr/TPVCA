@@ -3,6 +3,7 @@ package io.github.marioalr.tpvca.domain.search
 import io.github.marioalr.tpvca.domain.model.Patient
 import io.github.marioalr.tpvca.domain.model.Product
 import io.github.marioalr.tpvca.domain.text.MexicanText
+import io.github.marioalr.tpvca.domain.text.NetRegex
 
 /**
  * El buscador de pacientes del inicio (`Services/Rules/PatientSearchRules.cs`). Vectores: `contracts/golden/rank-patients.json`.
@@ -107,7 +108,7 @@ object CatalogSearchRules {
 
     // Revisión 20: solo dígitos ASCII. Como .NET: `.` es todo menos \n (`[^\n]`), `$` el final o antes de un \n final (`(?d)`)
     // y `\s` de Unicode (`(?U)`)
-    private val QUANTITY_PREFIX = Regex("(?dU)^\\s*([0-9]{1,3})\\s*\\*\\s*([^\\n]*)$")
+    private val QUANTITY_PREFIX = NetRegex.of("^\\s*([0-9]{1,3})\\s*\\*\\s*([^\\n]*)$", "d")
 
     /** "3*para" → (3, "para"); sin asterisco, (1, el texto tal cual); "0*para" → (1, "para"). */
     fun parseQuantityPrefix(text: String?): Pair<Int, String> {

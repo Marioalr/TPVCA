@@ -49,6 +49,13 @@ class ManifestTest {
         assertEquals(emptyList<String>(), components.filter { "datatransport" in it })
     }
 
+    @Test
+    fun elProveedorDeDocumentosNoSeExporta() {
+        val provider = context.packageManager.resolveContentProvider(context.packageName + ".documentos", 0)!!
+        assertEquals(false, provider.exported)
+        assertEquals(true, provider.grantUriPermissions)
+    }
+
     /** Plan §4.8: ni a la nube de Google ni a otro equipo. Una copia clonaría el `DeviceId` y no podría abrir nada sin el Keystore. */
     @Test
     fun lasReglasDeRespaldoExcluyenTodo() {

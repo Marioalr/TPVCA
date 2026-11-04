@@ -169,7 +169,17 @@ Con la app cerrada no corre nada: WorkManager es de K5.
 - `takeNewIdentity` vacía los datos sincronizados sin revisar si hay algo pendiente.
 - `rechazado` con algo pendiente se conserva como `quitado` (`SyncEngine.checkRegistry`). Decidir si es lo correcto.
 
-**Para K4:** la miniatura de Recientes puede mostrar pantallas de pacientes. K4 debe decidir si esas pantallas llevan `FLAG_SECURE`.
+**La miniatura de Recientes (lo dejó K3 para K4):** desde la API 33, `setRecentsScreenshotEnabled(false)` en `MainActivity`, siempre, sin bloquear las capturas de pantalla; antes de la 33, `FLAG_SECURE` en las pantallas con datos de pacientes (`PatientDataWindow`: Inicio, Pacientes, Ficha, Agenda, Producto, Corte, Ticket y la vista del PDF). `SecureWindow` cuenta quién lo pide, porque al cambiar de pantalla entra la nueva antes de que salga la anterior. Con API < 33 no se ha probado en un equipo.
+
+## Lo que usan las pantallas del celular (K4)
+
+- **Cadencia:** la de K3, al abrir y cada 120 s al frente. `LinkController` dice en `lastSuccess` cuándo terminó bien la última (`Status:LastSuccessUtc`, de la base) y sube `dataVersion` al cambiar: las pantallas vuelven a leer. `syncing` es la insignia de la cabecera; tocarla es `Refresh.USER`.
+- **Solo baja y escribe su latido:** ninguna pantalla escribe. Los botones de K4b están visibles y deshabilitados.
+- **Lecturas:** `ClinicDao` y `ClinicReader` en `:data`, siempre en un hilo de fondo, con los índices de `SCREEN_INDICES` en `scripts/generate-room-entities.py` (solo de esta base; no están en el manifiesto) y límites en lo que crece: 50 recientes, consultas de 20 en 20, 20 movimientos. **Las fechas `clinicLocal` y `dateOnly` nunca se convierten de zona:** se leen como están guardadas. Solo se lee con el estado `Linked`.
+- **Resultados de laboratorio:** `LabFileDownloader` a pedido, por una conexión aparte (`LinkFlow.fileConnection`), con el SQL de `lab-files.json`, y `LabFileCache`: AES-GCM con la llave `tpvca.laboratorio` del Keystore, en `noBackupFilesDir/laboratorio`, LRU de 200 MB. Nada baja en segundo plano, así que el freno de 300 MB al día no aplica aquí («abrir a pedido no se frena»).
+- **Compartir:** `SharedDocuments`, en `cache/compartidos/<uuid>/`, lo único que ve el `FileProvider` (`.documentos`), sin exportar. La intención solo lleva `EXTRA_STREAM` con permiso de lectura de ese archivo, y el nombre no trae datos del paciente (`Receta.pdf`). Se borran a la hora y al limpiar el equipo: `DeviceFiles.erase`, el `eraseFiles` de `LinkFlow`, que también borra la caché de laboratorio con su llave.
+- **Receta y ticket en PDF:** `PrescriptionPdf` y `TicketPdf` con `PdfDocument`.
+- **Datos inventados:** `PhoneDemoActivity` y `PhoneDemoSeed` en `src/debug`: entrada aparte en el lanzador, con su propia base y sin nube. `ReleaseHasNoDevToolsTest` revisa que no estén en la de publicación.
 
 ## Cómo se prueba
 
@@ -184,6 +194,7 @@ scripts/check-secrets.sh
   del Keystore, porque la biblioteca nativa y el AndroidKeyStore no existen en Robolectric. **No comprueban que el archivo quede cifrado.**
 - **En un equipo o emulador** (no corre en la CI): `./gradlew :data:connectedDebugAndroidTest` corre `SqlCipherDeviceTest`, con SQLCipher y el Keystore de verdad, y
   `./gradlew :app:connectedDebugAndroidTest` corre `QrDecodingDeviceTest`: ML Kit de verdad sobre la imagen de un QR como el de la PC, generada con ZXing (solo en esa prueba). Comprueba la lectura, **no la cámara**.
+- **Pantallas del celular:** `PhoneAppTest` en Robolectric con los datos inventados; `ClinicReaderTest` con 5,000 pacientes, 3,000 productos, 15,000 consultas y 20,000 ventas; en un equipo, `DocumentPdfDeviceTest` y `DomainRegexDeviceTest` (el PDF de verdad y las expresiones con ICU, que la JVM no puede comprobar) y `ClinicReaderDeviceTest` (los tiempos con SQLCipher).
 - **Grabaciones** (`TranscriptReplayTest`, `RecordingReplay`): `MockWebServer` reproduce `first-download`, `incremental`, `generation-change`,
   `blocked`, `unauthorized` y `key-ties`. Cada petición se compara con la grabada por significado, salvo el SQL, que es literal. Lo que le
   toca solo a la PC se salta por número con su motivo. Las grabaciones todavía no tienen dos lecturas de Kotlin: `meta.all` no aparece en

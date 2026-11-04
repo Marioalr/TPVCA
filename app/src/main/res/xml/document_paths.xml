@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Solo la carpeta de lo que el médico comparte: la base, la credencial y el resto de la caché quedan fuera del FileProvider. -->
+<paths>
+    <cache-path name="compartidos" path="compartidos/" />
+</paths>

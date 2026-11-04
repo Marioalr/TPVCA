@@ -19,6 +19,7 @@ import io.github.marioalr.tpvca.sync.link.LinkState
 import io.github.marioalr.tpvca.ui.home.HomeLayout
 import io.github.marioalr.tpvca.ui.home.HomeLink
 import io.github.marioalr.tpvca.ui.home.HomeScreen
+import io.github.marioalr.tpvca.ui.phone.VincularScreen
 import io.github.marioalr.tpvca.ui.theme.TpvcTheme
 import io.github.marioalr.tpvca.ui.theme.TpvcThemes
 
@@ -33,6 +34,10 @@ fun AppRoot(
     layout: HomeLayout,
     actions: LinkActions,
     qrReader: QrReader,
+    /** Las pantallas del celular (K4): solo con el rol aprobado de celular. La tablet sigue con el inicio sencillo hasta K6. */
+    phone: (@Composable (LinkState.Linked) -> Unit)? = null,
+    /** La primera pantalla del celular sin vincular es la del diseño (`Vincular`), no el inicio de K0. */
+    designedLinkScreen: Boolean = false,
 ) {
     when (gate) {
         Gate.Loading -> Light { Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { Box(Modifier.fillMaxSize()) } }
@@ -43,8 +48,10 @@ fun AppRoot(
         }
         Gate.Open -> when (state) {
             null -> Unit
-            is LinkState.NotLinked -> NotLinked(state, deviceSecure, versionName, contractRevision, layout, actions, qrReader)
-            is LinkState.Linked -> TpvcTheme {
+            is LinkState.NotLinked -> NotLinked(state, deviceSecure, versionName, contractRevision, layout, actions, qrReader, designedLinkScreen)
+            is LinkState.Linked -> if (phone != null && state.role == DeviceRole.AndroidMobileAdmin) {
+                Light { phone(state) }
+            } else TpvcTheme {
                 HomeScreen(versionName, contractRevision, layout, link = HomeLink.Linked(state.role, state.code, state.clinicName, state.notice, state.braked), onResumeBrake = actions::resumeBrake)
             }
             is LinkState.WaitingApproval -> Light { WaitingScreen(state, actions) }
@@ -72,13 +79,26 @@ private fun NotLinked(
     layout: HomeLayout,
     actions: LinkActions,
     qrReader: QrReader,
+    designedLinkScreen: Boolean,
 ) {
     // Un problema al vincular regresa al formulario
     var step by remember(state.problem) { mutableStateOf(if (state.problem != null) LinkStep.Form else LinkStep.Home) }
     val defaultRole = if (layout == HomeLayout.Narrow) DeviceRole.AndroidMobileAdmin else DeviceRole.AndroidTablet
     var role by remember { mutableStateOf(defaultRole) }
     when (step) {
-        LinkStep.Home -> TpvcTheme {
+        LinkStep.Home -> if (designedLinkScreen && layout == HomeLayout.Narrow) {
+            Light {
+                VincularScreen(
+                    deviceSecure,
+                    actions,
+                    onScan = {
+                        role = DeviceRole.AndroidMobileAdmin
+                        step = LinkStep.Scan
+                    },
+                    onPaste = { step = LinkStep.Form },
+                )
+            }
+        } else TpvcTheme {
             HomeScreen(versionName, contractRevision, layout, onLink = { step = LinkStep.Form })
         }
         LinkStep.Form -> Light {

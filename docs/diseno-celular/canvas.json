@@ -1,0 +1,171 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Agenda.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "title": "Agenda",
+      "w": 390,
+      "x": 0,
+      "y": 964
+    },
+    "Artboard-8kc4.dc.html": {
+      "h": 245,
+      "title": "Artboard 5",
+      "w": 252,
+      "x": 961,
+      "y": 948
+    },
+    "Artboard-bthu.dc.html": {
+      "h": 184,
+      "title": "Artboard 4",
+      "w": 227,
+      "x": 1183,
+      "y": -300
+    },
+    "Artboard-cscf.dc.html": {
+      "h": 600,
+      "title": "Artboard 9",
+      "w": 800,
+      "x": 1431,
+      "y": 213
+    },
+    "Artboard-d2gl.dc.html": {
+      "h": 316,
+      "title": "Artboard 8",
+      "w": 557,
+      "x": -87,
+      "y": 878
+    },
+    "Artboard-gb7b.dc.html": {
+      "h": 120,
+      "title": "Artboard 7",
+      "w": 237,
+      "x": 383,
+      "y": 738
+    },
+    "Artboard-pbsp.dc.html": {
+      "h": 120,
+      "title": "Artboard 1",
+      "w": 120,
+      "x": 33,
+      "y": 878
+    },
+    "Artboard-t5fq.dc.html": {
+      "h": 316,
+      "title": "Artboard 6",
+      "w": 362,
+      "x": 1377,
+      "y": 878
+    },
+    "Artboard-uy7s.dc.html": {
+      "h": 246,
+      "title": "Artboard 3",
+      "w": 399,
+      "x": -553,
+      "y": -202
+    },
+    "Artboard-yhep.dc.html": {
+      "h": 120,
+      "title": "Artboard 2",
+      "w": 319,
+      "x": -735,
+      "y": 235
+    },
+    "Ficha.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "title": "Ficha del paciente (solo consulta)",
+      "w": 390,
+      "x": 1410,
+      "y": 0
+    },
+    "Inventario.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "title": "Inventario",
+      "w": 390,
+      "x": 470,
+      "y": 964
+    },
+    "Main.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "title": "Inicio",
+      "w": 390,
+      "x": 470,
+      "y": 0
+    },
+    "Negocio.dc.html": {
+      "h": 2440,
+      "is_interactive": true,
+      "title": "Negocio (sección oculta: deslizar hacia arriba en Inicio)",
+      "w": 390,
+      "x": 1880,
+      "y": 0
+    },
+    "Pacientes.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "title": "Pacientes",
+      "w": 390,
+      "x": 940,
+      "y": 0
+    },
+    "Producto.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "title": "Producto: existencias y lotes",
+      "w": 390,
+      "x": 940,
+      "y": 964
+    },
+    "Vincular.dc.html": {
+      "h": 844,
+      "title": "Vincular con la PC",
+      "w": 390,
+      "x": 0,
+      "y": 0
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-11-03T17:05:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "titulo": {
+      "kind": "title1",
+      "maxW": 1800,
+      "text": "TPVC en el celular — propuesta",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    }
+  },
+  "order": [
+    "Vincular.dc.html",
+    "Main.dc.html",
+    "Pacientes.dc.html",
+    "Ficha.dc.html",
+    "Agenda.dc.html",
+    "Inventario.dc.html",
+    "Producto.dc.html",
+    "Negocio.dc.html",
+    "Artboard-pbsp.dc.html",
+    "Artboard-yhep.dc.html",
+    "Artboard-uy7s.dc.html",
+    "Artboard-bthu.dc.html",
+    "Artboard-8kc4.dc.html",
+    "Artboard-t5fq.dc.html",
+    "Artboard-gb7b.dc.html",
+    "Artboard-d2gl.dc.html",
+    "Artboard-cscf.dc.html"
+  ],
+  "pages": [],
+  "title": "TPVC celular: propuesta de interfaz"
+}

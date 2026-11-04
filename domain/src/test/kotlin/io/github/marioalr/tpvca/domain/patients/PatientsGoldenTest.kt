@@ -281,4 +281,26 @@ class PatientsGoldenTest {
             }
         }
     }
+
+    /** Revisión de K4: abierta, una consulta dice todo, con cada renglón, sin el recorte de 160 caracteres del historial. */
+    @Test
+    fun laNotaCompletaNoSeRecorta() {
+        val plan = "Primera indicación\r\n" + "x".repeat(300) + "\nÚltima indicación"
+        val c = io.github.marioalr.tpvca.domain.model.Consultation(
+            chiefComplaint = "Motivo uno\nMotivo dos",
+            vitalSigns = "TA: 120/80 | Temp: 36.5\nGlucosa: 95",
+            diagnosis = "J02.9",
+            treatmentPlan = plan,
+            notes = "Nota",
+            prescriptions = listOf(io.github.marioalr.tpvca.domain.model.PrescriptionItem("Tempra", "1 tableta", "Caja"), io.github.marioalr.tpvca.domain.model.PrescriptionItem(" ", "nada")),
+            labStudies = listOf("BH"),
+        )
+        val full = PatientChartRules.fullNote(c).associate { it.label to it.value }
+        org.junit.Assert.assertEquals(plan.replace("\r\n", "\n"), full["Plan"])
+        org.junit.Assert.assertEquals("Motivo uno\nMotivo dos", full["Motivo"])
+        org.junit.Assert.assertEquals("TA: 120/80 · Temp: 36.5\nGlucosa: 95", full["Signos"])
+        org.junit.Assert.assertEquals("Tempra · Caja: 1 tableta", full["Receta"])
+        org.junit.Assert.assertEquals("BH", full["Laboratorio"])
+        org.junit.Assert.assertEquals(false, "Exploración" in full)
+    }
 }

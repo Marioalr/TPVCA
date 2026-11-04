@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Vincular con la PC</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:Inter,system-ui,sans-serif;color:#0F172A}
+a{color:#0369A1;text-decoration:none}a:hover{color:#075985}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F8FAFC; display: flex; flex-direction: column; padding: 32px 24px 24px; gap: 24px; font-family: Inter, system-ui, sans-serif; color: #0F172A">
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <span style="width: 48px; height: 48px; border-radius: 14px; background: #0369A1; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px">TPVC</span>
+    <h1 style="margin: 8px 0 0; font-size: 24px; font-weight: 700">Vincular con la PC</h1>
+    <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #475569">El celular usa los mismos datos del consultorio. La PC tiene que aprobarlo antes de que baje algo.</p>
+  </div>
+
+  <ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px">
+    <li style="display: flex; gap: 12px; align-items: flex-start">
+      <span style="width: 24px; height: 24px; border-radius: 12px; background: #E0F2FE; color: #0369A1; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0">1</span>
+      <span style="font-size: 14px; line-height: 1.45">En la PC abra <b>Configuración › Nube y dispositivos</b> y pulse <b>Vincular celular</b>.</span>
+    </li>
+    <li style="display: flex; gap: 12px; align-items: flex-start">
+      <span style="width: 24px; height: 24px; border-radius: 12px; background: #E0F2FE; color: #0369A1; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0">2</span>
+      <span style="font-size: 14px; line-height: 1.45">Escanee el código que muestra la PC.</span>
+    </li>
+  </ol>
+
+  <div style="flex: 1; min-height: 220px; border-radius: 20px; background: #0F172A; position: relative; display: flex; align-items: center; justify-content: center">
+    <div style="width: 200px; height: 200px; border: 3px solid #FFFFFF; border-radius: 16px; opacity: 0.9"></div>
+    <span style="position: absolute; bottom: 16px; font-size: 13px; color: #CBD5E1">Apunte la cámara al código de la PC</span>
+  </div>
+
+  <button style="min-height: 48px; border-radius: 12px; border: 1px solid #CBD5E1; background: #FFFFFF; font: 600 15px Inter, sans-serif; color: #0F172A; cursor: pointer">Pegar la dirección y la clave</button>
+
+  <div style="display: flex; gap: 10px; align-items: flex-start; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 12px 14px">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+    <span style="font-size: 12px; line-height: 1.5; color: #475569">Para vincular, el celular debe tener bloqueo de pantalla. La app se abre con su huella o PIN.</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

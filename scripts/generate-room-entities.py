@@ -14,6 +14,14 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCHEMA = json.loads((ROOT / "contracts/sync/schema.json").read_text(encoding="utf-8"))
 OUT = ROOT / "data/src/main/kotlin/io/github/marioalr/tpvca/data/entity/SyncedEntities.kt"
 TYPES = {"TEXT": "String", "INTEGER": "Long", "REAL": "Double", "BLOB": "ByteArray"}
+# Solo de esta base (no están en el manifiesto ni en la nube): lo que necesitan las listas de las pantallas del celular (K4)
+SCREEN_INDICES = {
+    "Patients": [["LastVisit"]],
+    "Appointments": [["Date"]],
+    "PatientConsultations": [["PatientRecordSyncId", "Date"]],
+    "Sales": [["Date"]],
+    "InventoryMovements": [["Date"], ["ProductSyncId", "Date"]],
+}
 
 
 def prop(name):
@@ -50,6 +58,7 @@ for table in SCHEMA["tables"]:
     names.append(name)
     # Sin llaves foráneas; un índice en cada referencia para los borrados en cascada que hace el motor
     indices = "".join(f'Index("{r["column"]}"), ' for r in table["references"])
+    indices += "".join("Index(" + ", ".join(f'"{c}"' for c in columns) + "), " for columns in SCREEN_INDICES.get(table["table"], []))
     lines += ["", f'@Entity(tableName = "{table["table"]}", indices = [{indices.rstrip(", ")}])', f"data class {name}("]
     for i, column in enumerate(table["columns"]):
         lines.append(field(column, primary=i == 0))

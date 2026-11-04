@@ -50,6 +50,16 @@ data class PrescriptionSheet(
             "Consumir abundantes líquidos, mantener reposo relativo, completar el esquema prescrito y acudir de inmediato a valoración " +
                 "médica o urgencias si presenta fiebre persistente, dificultad respiratoria o reacciones adversas."
 
+        /** Lo que guarda la PC cuando el plan solo dijo que siga la receta (`SavedTreatmentPlanPlaceholder`). */
+        private const val SAVED_PLAN_PLACEHOLDER = "Tratamiento e indicaciones médicas según receta."
+
+        /** Las medidas generales de una receta anterior (`ConsultationDetailViewModel.Indications`): su plan o, sin plan, las de siempre. */
+        fun indicationsOf(treatmentPlan: String?): String =
+            if (treatmentPlan.isNullOrBlank() || treatmentPlan.trim() == SAVED_PLAN_PLACEHOLDER) DEFAULT_INDICATIONS else treatmentPlan.trim()
+
+        /** El tamaño de la letra del nombre del médico en la hoja (`LetterheadHtml.DoctorFontPx`): más chica si es muy largo, para que quepa en un renglón. */
+        fun doctorFontPx(name: String): Int = kotlin.math.floor(600.0 / (maxOf(1, name.trim().length) * 0.55)).toInt().coerceIn(16, 30)
+
         private val DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy")
         private val HUNDRED = BigDecimal(100)
 

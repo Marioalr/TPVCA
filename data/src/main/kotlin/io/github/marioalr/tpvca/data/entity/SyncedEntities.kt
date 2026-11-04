@@ -36,7 +36,7 @@ data class ClinicalServiceEntity(
     @ColumnInfo(name = "Price") val price: String,
 )
 
-@Entity(tableName = "Patients", indices = [])
+@Entity(tableName = "Patients", indices = [Index("LastVisit")])
 data class PatientRecordEntity(
     @PrimaryKey @ColumnInfo(name = "SyncId") val syncId: String,
     @ColumnInfo(name = "UpdatedAtUtc") val updatedAtUtc: String,
@@ -95,7 +95,7 @@ data class PatientRecordEntity(
     @ColumnInfo(name = "Zoonosis") val zoonosis: String,
 )
 
-@Entity(tableName = "Appointments", indices = [Index("PatientRecordSyncId")])
+@Entity(tableName = "Appointments", indices = [Index("PatientRecordSyncId"), Index("Date")])
 data class PatientAppointmentEntity(
     @PrimaryKey @ColumnInfo(name = "SyncId") val syncId: String,
     @ColumnInfo(name = "UpdatedAtUtc") val updatedAtUtc: String,
@@ -114,7 +114,7 @@ data class PatientAppointmentEntity(
     @ColumnInfo(name = "PatientRecordSyncId") val patientRecordSyncId: String,
 )
 
-@Entity(tableName = "PatientConsultations", indices = [Index("PatientRecordSyncId")])
+@Entity(tableName = "PatientConsultations", indices = [Index("PatientRecordSyncId"), Index("PatientRecordSyncId", "Date")])
 data class PatientConsultationEntity(
     @PrimaryKey @ColumnInfo(name = "SyncId") val syncId: String,
     @ColumnInfo(name = "UpdatedAtUtc") val updatedAtUtc: String,
@@ -238,7 +238,7 @@ data class ProductBatchEntity(
     @ColumnInfo(name = "ProductSyncId") val productSyncId: String,
 )
 
-@Entity(tableName = "Sales", indices = [])
+@Entity(tableName = "Sales", indices = [Index("Date")])
 data class SaleEntity(
     @PrimaryKey @ColumnInfo(name = "SyncId") val syncId: String,
     @ColumnInfo(name = "UpdatedAtUtc") val updatedAtUtc: String,
@@ -278,7 +278,7 @@ data class SaleItemEntity(
     @ColumnInfo(name = "ClinicalServiceSyncId") val clinicalServiceSyncId: String?,
 )
 
-@Entity(tableName = "InventoryMovements", indices = [Index("BatchSyncId"), Index("ProductSyncId"), Index("SaleItemSyncId")])
+@Entity(tableName = "InventoryMovements", indices = [Index("BatchSyncId"), Index("ProductSyncId"), Index("SaleItemSyncId"), Index("Date"), Index("ProductSyncId", "Date")])
 data class InventoryMovementEntity(
     @PrimaryKey @ColumnInfo(name = "SyncId") val syncId: String,
     @ColumnInfo(name = "UpdatedAtUtc") val updatedAtUtc: String,

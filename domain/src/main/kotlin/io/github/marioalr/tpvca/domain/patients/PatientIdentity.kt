@@ -3,6 +3,7 @@ package io.github.marioalr.tpvca.domain.patients
 import io.github.marioalr.tpvca.domain.search.TextSearch
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
+import io.github.marioalr.tpvca.domain.text.NetRegex
 
 /**
  * Lo que la ficha deriva de la identidad del paciente (`Models/PatientRecord.cs`): edad y su texto, iniciales, teléfono con
@@ -61,7 +62,7 @@ object PatientIdentity {
     }
 
     // "ext", "ext.", "extension" o "x" (sin letra antes) o "#", seguidos de un dígito, hasta el final (sobre el texto normalizado)
-    private val EXTENSION = Regex("(?U)(?:(?<![a-z])(?:extension|ext\\.?|x)|#)\\s*[0-9].*$", RegexOption.DOT_MATCHES_ALL)
+    private val EXTENSION = NetRegex.of("(?:(?<![a-z])(?:extension|ext\\.?|x)|#)\\s*[0-9].*$", options = setOf(RegexOption.DOT_MATCHES_ALL))
 
     /** Los dígitos ASCII del teléfono sin su extensión (`DuplicatePatientRules.PhoneDigitsOf`, revisión 20). */
     fun phoneDigitsOf(phone: String?): String =

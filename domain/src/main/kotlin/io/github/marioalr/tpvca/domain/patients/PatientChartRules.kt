@@ -163,6 +163,33 @@ object PatientChartRules {
             .map { it.first }
     }
 
+    /**
+     * Toda la nota de una consulta, sin recortar: lo que se ve al abrirla. [buildTimeline] solo trae el primer renglón de cada cosa, cortado a 160 caracteres.
+     */
+    fun fullNote(c: Consultation): List<TimelineLine> {
+        val lines = mutableListOf<TimelineLine>()
+        fun add(label: String, value: String?) {
+            val text = value.orEmpty().replace("\r\n", "\n").trim()
+            if (text.isNotEmpty()) lines.add(TimelineLine(label, text))
+        }
+        add("Motivo", c.chiefComplaint)
+        add("Interrogatorio", c.systemsReview)
+        add("Signos", c.vitalSigns.replace(" | ", " · "))
+        add("Exploración", c.physicalExamination)
+        add("Diagnóstico", c.diagnosis)
+        add(
+            "Receta",
+            c.prescriptions.filter { it.medicineName.isNotBlank() }.joinToString("\n") { p ->
+                p.medicineName.trim() + p.sheetDetail + if (p.dosage.isNullOrBlank()) "" else ": " + p.dosage.trim()
+            },
+        )
+        add("Laboratorio", c.labStudies.joinToString(" · "))
+        add("Indicaciones de laboratorio", c.labIndications)
+        add("Plan", c.treatmentPlan)
+        add("Nota", c.notes)
+        return lines
+    }
+
     /** El primer renglón no vacío, sin espacios a los lados; con más de 160 caracteres, los primeros 157 y "…". */
     fun firstLine(text: String): String {
         val line = text.replace("\r\n", "\n").split('\n').map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: ""

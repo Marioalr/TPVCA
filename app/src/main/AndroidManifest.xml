@@ -29,6 +29,17 @@
             </intent-filter>
         </activity>
 
+        <!-- Compartir la receta, el ticket y el CSV: sin exportar, con permiso solo para el archivo que se manda (document_paths.xml). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.documentos"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/document_paths" />
+        </provider>
+
         <!--
             Sin telemetría de ML Kit. Estas tres piezas de datatransport llegan con la biblioteca y son las que suben sus eventos (FIREBASE_ML_SDK) desde
             este proceso a firebaselogging.googleapis.com. Sin ellas no hay backend ni trabajo que suba nada. ML Kit sigue leyendo: QrDecodingDeviceTest.

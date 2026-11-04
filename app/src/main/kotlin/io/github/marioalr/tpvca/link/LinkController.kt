@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.time.Instant
 
 /**
  * Lo que la interfaz le pide a la vinculación, fuera del hilo principal, y la cadencia con la app al frente (§3.3). El trabajo en segundo
@@ -27,6 +28,8 @@ class LinkController(
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher,
     private val tickMillis: Long = TICK_MILLIS,
+    /** `true` mientras el motor sincroniza: lo pone `LinkFlow`. */
+    private val syncingFlow: MutableStateFlow<Boolean> = MutableStateFlow(false),
 ) {
     val state: StateFlow<LinkState?> = states
     val locked: StateFlow<Boolean> = appLock.locked
@@ -36,6 +39,19 @@ class LinkController(
 
     private val mutableSecure = MutableStateFlow(deviceLock.isSecure())
     val deviceSecure: StateFlow<Boolean> = mutableSecure
+
+    /** La insignia de la cabecera del celular: sincronizando ahora. */
+    val syncing: StateFlow<Boolean> = syncingFlow
+
+    private val mutableLastSuccess = MutableStateFlow<Instant?>(null)
+
+    /** La última sincronización que terminó bien (K4, la insignia y «hace 2 min»). Sigue ahí al abrir: es de la base. */
+    val lastSuccess: StateFlow<Instant?> = mutableLastSuccess
+
+    private val mutableDataVersion = MutableStateFlow(0L)
+
+    /** Sube cada vez que bajó algo: las pantallas vuelven a leer. */
+    val dataVersion: StateFlow<Long> = mutableDataVersion
 
     private var restored = false
     private var loop: Job? = null
@@ -47,7 +63,10 @@ class LinkController(
         loop = scope.launch(io) {
             guarded {
                 restoreOnce()
+                // Lo que ya se sabe, sin esperar a la red
+                noteProgress()
                 flow.refresh(Refresh.OPENED)
+                noteProgress()
             }
             while (isActive) {
                 delay(tickMillis)
@@ -55,6 +74,7 @@ class LinkController(
                     // Si abrir lo guardado falló, aquí se vuelve a intentar
                     restoreOnce()
                     flow.refresh(Refresh.TICK)
+                    noteProgress()
                 }
             }
         }
@@ -70,6 +90,15 @@ class LinkController(
         if (restored) return
         flow.restore()
         restored = true
+    }
+
+    /** Fuera del hilo principal: lee la base. Sin cambios, nadie vuelve a leer. */
+    private fun noteProgress() {
+        val last = flow.lastSuccess()
+        if (last != mutableLastSuccess.value) {
+            mutableLastSuccess.value = last
+            mutableDataVersion.value += 1
+        }
     }
 
     fun link(url: String, token: String, clinicName: String, role: DeviceRole) {
@@ -90,6 +119,7 @@ class LinkController(
     fun refreshNow() = launch {
         restoreOnce()
         flow.refresh(Refresh.USER)
+        noteProgress()
     }
 
     fun forget() = launch { flow.forget() }

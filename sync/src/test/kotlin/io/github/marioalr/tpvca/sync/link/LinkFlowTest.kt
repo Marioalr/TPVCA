@@ -48,6 +48,7 @@ class LinkFlowTest {
         var current = InMemorySyncStore()
         var erased = 0
         var opened = 0
+        var eraseOrder: MutableList<String>? = null
 
         override fun store(): SyncStore {
             opened++
@@ -56,6 +57,7 @@ class LinkFlowTest {
 
         override fun erase() {
             erased++
+            eraseOrder?.add("base")
             current = InMemorySyncStore()
         }
     }
@@ -99,7 +101,10 @@ class LinkFlowTest {
         { secure },
         "0.1.0",
         "Galaxy Tab S9",
-        { filesErased++ },
+        {
+            filesErased++
+            eraseOrder.add("archivos")
+        },
         connect = { u, t ->
             connected += u to t
             cloud.connection as HranaConnection
@@ -109,7 +114,10 @@ class LinkFlowTest {
         newNonce = { "nonce-${++ids}" },
         onState = { published += it },
         elapsedMillis = { elapsed },
+        onEraseStarting = { eraseOrder.add("puerta") },
     )
+
+    private val eraseOrder = mutableListOf<String>()
 
     /** Pasa el tiempo de verdad: la hora y el reloj que no se puede adelantar. */
     private fun advance(by: Duration) {
@@ -491,6 +499,29 @@ class LinkFlowTest {
         cloud.registry = null
         flow.link(url, token, "", DeviceRole.AndroidTablet)
         assertNotEquals("Su fila rechazada no se borra nunca: entra con otro", rejectedId, vault.credential!!.deviceId)
+    }
+
+    /** Revisión de K4: primero se cierra la puerta de las pantallas y después se borra; una lectura o un documento tardío ya no entran. */
+    @Test
+    fun primeroSeCierraLaPuertaYDespuesSeBorra() {
+        database.eraseOrder = eraseOrder
+        val flow = linked()
+        revoke("quitado")
+        flow.refresh(Refresh.USER)
+        assertEquals(listOf("puerta", "base", "archivos"), eraseOrder)
+    }
+
+    @Test
+    fun conDos401TambienSeCierraLaPuertaAntes() {
+        database.eraseOrder = eraseOrder
+        val (flow, _) = tablet()
+        approve("AndroidMobileAdmin", "C1")
+        flow.refresh(Refresh.USER)
+        rejectToken()
+        flow.refresh(Refresh.OPENED)
+        advance(Duration.ofMinutes(10))
+        flow.refresh(Refresh.OPENED)
+        assertEquals(listOf("puerta", "base", "archivos"), eraseOrder)
     }
 
     @Test

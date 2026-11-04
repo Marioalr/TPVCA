@@ -3,6 +3,7 @@ package io.github.marioalr.tpvca.ui.link
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.os.Build
 import android.view.WindowManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -116,9 +117,25 @@ fun SecureWindow() {
     val context = LocalContext.current
     DisposableEffect(context) {
         val window = context.findActivity()?.window
+        secureHolders += 1
         window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+        onDispose {
+            secureHolders -= 1
+            if (secureHolders == 0) window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
     }
+}
+
+/** Cuántas pantallas lo piden ahora: al pasar de una a otra, primero entra la nueva y después sale la anterior. Solo en el hilo principal. */
+private var secureHolders = 0
+
+/**
+ * Datos de pacientes y la miniatura de Recientes (decisión de K4): desde la API 33 `setRecentsScreenshotEnabled(false)` en `MainActivity` la quita sin estorbar las
+ * capturas. Antes de la 33 no existe esa opción, así que las pantallas con datos de pacientes llevan `FLAG_SECURE`.
+ */
+@Composable
+fun PatientDataWindow() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) SecureWindow()
 }
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {

@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": "2026-01-15 17:00:00.0000000",
-  "contract": 20,
+  "contract": 21,
   "notes": [
     "Equipos vinculados y a quién se le ofrece «Enviar a…» (ConsultationHandoffService.MergeDevices, ToDevice y HandoffTargets). Entrada: las filas de RegisteredDevices (latidos) y de DeviceRegistry como las devuelven las instrucciones check.peers.* de hrana/statements.json, la hora de la nube y este equipo. Salida: un equipo por latido (en su orden) y después los registrados sin latido.",
     "Rol, código y quitado salen de DeviceRegistry; un Android sin fila espera aprobación (no recibe nada); una PC sin fila conserva el rol de su latido. En línea = latido hace menos de 3 min. Recibe consultas (isAvailable) si HandoffProtocol >= 1, o sin él (PC v1.17–v1.26) si AppVersion >= 1.17.0, y no está quitado ni esperando aprobación.",

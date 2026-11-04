@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 20,
+  "contract": 21,
   "notes": [
     "Posibles expedientes duplicados (Services/Rules/DuplicatePatientRules, paso 8.23, H3). No hay CURP: dos expedientes pueden ser el mismo paciente si su nombre normalizado es igual y además tienen la misma BirthDate (solo la fecha) o los mismos últimos 10 dígitos de Phone. 'compare' da el motivo: None, BirthDate, Phone o BirthDateAndPhone.",
     "name: la normalización de la búsqueda (Services/TextSearch.Normalize: quitar espacios de los extremos, NFD, quitar las marcas sin espacio (categoría Mn: acentos, diéresis, la tilde de la ñ), minúsculas invariantes, NFC) y luego los espacios seguidos como uno (separa todo lo que char.IsWhiteSpace de .NET o Char.isWhitespace() de Kotlin toman por espacio, también el tabulador y el espacio duro U+00A0). Nada más: un guion o un punto siguen contando.",

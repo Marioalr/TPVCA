@@ -255,7 +255,7 @@ class BusinessGoldenTest {
         "profit" to m2(s.profit),
         "marginPercent" to pct(s.marginPercent),
         "tickets" to json(s.tickets),
-        "averageTicket" to pct(s.averageTicket),
+        "averageTicket" to (s.averageTicket?.let(::m2) ?: JsonNull),
         "estimatedCostLines" to json(s.estimatedCostLines),
         "missingCostLines" to json(s.missingCostLines),
         "costNote" to json(BusinessReportRules.estimatedCostNote(s.estimatedCostLines, s.missingCostLines)),

@@ -60,13 +60,20 @@ Paquetes: `io.github.marioalr.tpvca.domain` + `search`, `business`, `patients`, 
 | `prescription-html-fields.json` | `PrescriptionLayout.of`: qué valor va en cada lugar de la hoja (los `data-field` del HTML de la PC), el papel, la alerta de alergias y los iconos del pie | 4/4 | ✅ |
 | `ticket-text.json` | `TicketText.lines`, `build`, `wrap` | 4/4 | ✅ |
 
+## Portados en K2 (en `:sync`, donde se usan)
+
+| Vector | Kotlin | Casos | Estado |
+|---|---|---|---|
+| `values.json` | `ValueCodec.encode`, `decode`; `HranaValue.fromJson` | 50/50 | ✅ |
+| `stamping.json` | `SyncRules.nextLocalStamp` | 8/8 | ✅ |
+| `lww.json` | `SyncRules.remoteRowWins`, `remoteTombstoneDeletes`, `afterRejectedUpsert`, `serverRowAppliesAfterReject` (17 casos). Los 16 de `server-upsert` y `server-tombstone` corren el SQL de la subida en SQLite: **K5** | 17/33 | 🟡 Lo de la bajada |
+
+Pruebas: `ValuesGoldenTest` y `SyncRulesGoldenTest`. Cómo se usan al bajar: [`SINCRONIZACION.md`](SINCRONIZACION.md).
+
 ## Pendientes (con el paso que los porta)
 
 | Vector | Paso | Qué es |
 |---|---|---|
-| `values.json` | K2 | Los valores de Hrana en el cable (codificar y leer cada tipo de C#): es del cliente Hrana, no de formato en pantalla |
-| `stamping.json` | K2 | La marca de tiempo local (`UpdatedAtUtc`) con el desfase del reloj |
-| `lww.json` | K2 y K5 | Gana el más reciente: al bajar (K2) y en la subida con la cerca de generación (K5) |
 | `uuid5.json` | K5 | SyncId deterministas (UUIDv5) |
 | `canonical-json.json` | K5 | Forma canónica de los JSON sincronizados |
 | `field-stamps.json` | K5 | Marcas por campo del expediente |

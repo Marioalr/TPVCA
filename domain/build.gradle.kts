@@ -30,4 +30,8 @@ tasks.test {
     // GoldenCoverageTest revisa que docs/REGLAS.md nombre cada vector
     inputs.file(docsDir.file("REGLAS.md")).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("reglas")
     systemProperty("tpvca.docs", docsDir.asFile.absolutePath)
+    // values, stamping y lww corren en :sync: la cobertura revisa que su prueba exista
+    val syncTests = rootProject.layout.projectDirectory.dir("sync/src/test/kotlin/io/github/marioalr/tpvca/sync")
+    inputs.dir(syncTests).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("syncTests")
+    systemProperty("tpvca.syncTests", syncTests.asFile.absolutePath)
 }

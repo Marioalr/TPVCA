@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 20,
+  "contract": 21,
   "notes": [
     "Los signos de la consulta (Services/Rules/VitalSignsRules.cs): el IMC mientras se captura, el aviso de valores fuera de rango y el texto que se guarda en la nota. Lo que se captura llega como texto; cómo se lee de vuelta ese texto está en vitals-evolution.json.",
     "bmi: peso y talla con coma o punto decimal, cultura invariante; con los dos y talla mayor que 0, la talla en metros (revisión 20, VitalSignsRules.HeightInMeters: más de 3 son centímetros y se divide entre 100 en decimal; es la misma regla con que vitals-evolution.json lee la nota; antes la captura no la convertía y 170 daba '0.0 kg/m² (Bajo peso)'), imc = peso / talla² en decimal y 'F1 kg/m² (clasificación)' (F1 de decimal: el punto medio hacia arriba); si no, 'Valores no disponibles'. bmi-category (OMS): < 18.5 'Bajo peso', < 25 'Peso normal', < 30 'Sobrepeso', < 35 'Obesidad Grado I', si no 'Obesidad Grado II+'.",

@@ -1,5 +1,5 @@
 {
-  "contract": 20,
+  "contract": 21,
   "protocol": 3,
   "generatedBy": "tests/TPVC.Tests/TursoSyncEndToEndTests.HranaStatements.cs (TPVC_WRITE_GOLDEN=1 lo regenera)",
   "notes": [
@@ -13,6 +13,12 @@
       "sql": "SELECT \"Value\" FROM \"_tpvc_meta\" WHERE \"Key\" = 'schema';",
       "args": [],
       "when": "Antes de sincronizar: sin huella, la PC todavía no creó el esquema («Sincronice primero la PC») y Kotlin no hace nada."
+    },
+    {
+      "name": "meta.all",
+      "sql": "SELECT Key, Value FROM _tpvc_meta;",
+      "args": [],
+      "when": "Revisión 21: el paso 1 del primer arranque, sin DDL: clinicId, minClientProtocol, fullUploadAtUtc, generationReady y el manifiesto. Trae _tpvc_meta.manifest (unos 150 KB), así que no se repite en cada sincronización: para las claves está 'handshake'."
     },
     {
       "name": "handshake",
@@ -303,11 +309,11 @@
     },
     {
       "name": "registry.own",
-      "sql": "SELECT DeviceCode, RevokedAtUtc, RevokedReason FROM DeviceRegistry WHERE DeviceId = ?;",
+      "sql": "SELECT DeviceCode, Role, RevokedAtUtc, RevokedReason FROM DeviceRegistry WHERE DeviceId = ?;",
       "args": [
         "DeviceId"
       ],
-      "when": "El rol, el código y la revocación de este equipo. Sin fila (todavía no aprobado por la PC) o revocado, no baja datos."
+      "when": "El código, el rol (desde la revisión 21) y la revocación de este equipo: RevokedReason dice si es 'quitado', 'perdido' o 'rechazado'. Sin fila (todavía no aprobado por la PC) o revocado, no baja datos."
     },
     {
       "name": "registry.primary",

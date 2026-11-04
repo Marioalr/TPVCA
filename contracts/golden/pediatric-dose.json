@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 20,
+  "contract": 21,
   "notes": [
     "La calculadora de dosis pediátrica de la receta (Services/Rules/PediatricDoseRules.cs y Models/PediatricDoseRule, la hoja DOSIS PEDIA del Excel). La regla: medication, doseText, mlPerKg y dropsPerMl (opcionales). El peso es el texto capturado (coma o punto decimal, sin espacios a los lados, cultura invariante; lo que no se lee vale 0).",
     "ml = Math.Round(peso × mlPerKg, 1) si mlPerKg > 0 y peso > 0 (si no, null); drops = Math.Round(ml × dropsPerMl, 0) si hay ml y dropsPerMl > 0. Math.Round de double de .NET: multiplica por 10^d en double, redondea al par y divide (en Kotlin Math.rint(x * 10.0) / 10.0); así 5.25 → 5.2 y 37.5 → 38.",

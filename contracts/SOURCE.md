@@ -5,10 +5,10 @@ Copia de `contracts/` de TPVC (la app de la PC, WPF .NET 10). **No se editan aqu
 
 | Campo | Valor |
 |---|---|
-| Revisión del contrato (`sync/schema.json` → `contract`) | 20 |
+| Revisión del contrato (`sync/schema.json` → `contract`) | 21 |
 | Formato congelado desde (`SyncContract.FrozenRevision`) | 13 |
-| Commit de TPVC | `e9765e4` (main, merge del PR #42) |
-| Versión de TPVC | v1.50.0 |
+| Commit de TPVC | `811a2a6` (rama `fase-8/manifiesto-y-rol`, PR #44: `manifest` junto a la huella, `meta.all` y `Role` en `registry.own`) |
+| Versión de TPVC | v1.51.0 (el PR #44 todavía sin publicar al copiar) |
 | Fecha de la copia | 2026-11-03 |
 
 Al actualizar: correr el script, revisar `git diff --stat contracts/`, subir `SyncContract.REVISION` en `:sync` si cambió

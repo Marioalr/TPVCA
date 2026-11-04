@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 20,
+  "contract": 21,
   "notes": [
     "Services/Rules/SuggestedPurchaseRules.cs. Entran los productos con stock bajo (activo, MinStock > 0 y CurrentStock <= MinStock).",
     "Cantidad: max(2 × MinStock − CurrentStock, MinStock).",

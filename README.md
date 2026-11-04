@@ -13,7 +13,7 @@ según ese rol (`DevicePermissions`, la misma matriz que `Models/TursoConfig.cs`
 
 ## Relación con TPVC (la PC)
 
-- Cada equipo tiene su propia base (aquí Room + SQLCipher, desde K2) y se sincroniza con Turso con el protocolo v2 de la PC.
+- Cada equipo tiene su propia base (aquí Room desde K2 y cifrada con SQLCipher desde K3) y se sincroniza con Turso con el protocolo v2 de la PC.
 - **La PC es la dueña de la nube.** Esta app nunca corre DDL, nunca siembra datos y nunca escribe `_tpvc_meta` ni
   `DeviceRegistry`: vincular, aprobar y quitar equipos, cambiar la generación y regularizar folios son de la PC.
 - El código de la PC es la referencia: las reglas se portan a Kotlin y se comprueban con los mismos vectores que usa la PC
@@ -24,12 +24,13 @@ según ese rol (`DevicePermissions`, la misma matriz que `Models/TursoConfig.cs`
 
 | Módulo | Tipo | Qué tiene |
 |---|---|---|
-| `:sync` | Kotlin/JVM | El contrato de sincronización (`SyncSchema`, `SyncContract.REVISION`). Después: cliente Hrana, motor v2, consulta entre equipos y vinculación. |
+| `:sync` | Kotlin/JVM | El contrato de sincronización (`SyncSchema`, `SyncContract.REVISION`), el cliente Hrana y el motor de lectura ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)). Después: motor de escritura, consulta entre equipos y vinculación. |
 | `:domain` | Kotlin/JVM | Reglas portadas de la PC con sus vectores (K1, lo del celular): roles y permisos (`DevicePermissions`), búsqueda, negocio e inventario, pacientes y agenda, receta y ticket. Cada vector → función → estado en [`docs/REGLAS.md`](docs/REGLAS.md). Después: cuenta, folios, dosis y cobro. |
-| `:data` | Biblioteca de Android | Vacío en K0. Después: Room + SQLCipher y DAO. |
+| `:data` | Biblioteca de Android | Room: entidades generadas de `schema.json` y `RoomSyncStore`. **Sin cifrar hasta K3**, que agrega SQLCipher. Después: DAO de las pantallas. |
 | `:app` | App de Android | Compose + Material 3, tema con la paleta de la PC (claro, oscuro, ámbar y personalizado) y el inicio. |
 
-`:sync` y `:domain` son Kotlin puro: sus pruebas corren en la JVM, sin Android.
+`:sync` y `:domain` son Kotlin puro: sus pruebas corren en la JVM, sin Android. Las compilaciones de depuración traen además una
+pantalla de desarrollo para probar la sincronización con una base de prueba; la de publicación no la trae.
 
 Pila: Jetpack Compose con Material 3, Room + SQLCipher, OkHttp, kotlinx.serialization y WorkManager. Interfaz en español
 (es-MX), importes con `BigDecimal` y `HALF_EVEN`, y la zona `America/Mexico_City`.
@@ -40,7 +41,7 @@ Pila: Jetpack Compose con Material 3, Room + SQLCipher, OkHttp, kotlinx.serializ
 |---|---|---|
 | **K0** | Esqueleto con los cuatro módulos, CI, textos en español y tema | ✅ Hecho |
 | **K1** | Contrato y reglas del celular con sus vectores: búsqueda, negocio, pacientes, agenda, receta y ticket ([`docs/REGLAS.md`](docs/REGLAS.md)) | ✅ Hecho |
-| K2 | Cliente Hrana y motor de lectura: primer arranque, descarga completa, cursor por página, recálculo, generación y freno | Pendiente |
+| **K2** | Cliente Hrana y motor de lectura: primer arranque, descarga completa, cursor por página, recálculo, generación y freno ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)) | ✅ Hecho |
 | K3 | Vinculación y seguridad: pegar o escanear la URL y el token, aprobación de la PC, Keystore, SQLCipher, bloqueo y revocación | Pendiente |
 | K4 | Celular: negocio, inventario, pacientes y agenda de solo lectura, compartir receta y ticket. **Primera versión del celular** | Pendiente |
 | K4b | Celular: agendar con aviso de empalme y registrar entradas de mercancía | Pendiente |
@@ -76,7 +77,7 @@ cada push y PR.
 | compileSdk / targetSdk / minSdk | 36 (36.1) / 36 / 26 |
 | Compose BOM (ui 1.11.4, material3 1.4.0) | 2026.06.01 |
 
-Algunas bibliotecas de AndroidX más nuevas (Compose BOM 2026.08+, core 1.19, lifecycle 2.11) piden compileSdk 37; se quedan
+Algunas bibliotecas más nuevas (Compose BOM 2026.08+, core 1.19, lifecycle 2.11, OkHttp 5.5) piden compileSdk 37; se quedan
 en las últimas que compilan con 36. El resto de las versiones está en `gradle/libs.versions.toml`.
 
 ## Contratos
@@ -99,6 +100,7 @@ paso (en la prueba y en `docs/REGLAS.md`).
 
 ## Secretos
 
-Nunca se suben al repositorio la URL de la base de Turso, tokens ni llaves de firma. `.gitignore` deja fuera
+Nunca se suben al repositorio la URL de la base de Turso, tokens ni llaves de firma. La URL y el token de desarrollo van en
+`local.properties` y entran solo a la compilación de depuración ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)). `.gitignore` deja fuera
 `local.properties`, los `*.jks` y `*.keystore` y los archivos de secretos. `scripts/check-secrets.sh` (también en la CI) busca
 URL y hosts de Turso, tokens JWT y llaves privadas, y solo acepta los valores de ejemplo de `contracts/golden/link-qr.json`.

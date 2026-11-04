@@ -29,6 +29,13 @@ data class SyncSchema(
 ) {
     fun table(name: String): SyncTable? = tables.firstOrNull { it.table == name }
 
+    /** La tabla de una clase de C# (`entityType`, también el `EntityType` de las lápidas y el `principal` de las referencias). */
+    fun tableOf(entityType: String): SyncTable? = tables.firstOrNull { it.entityType == entityType }
+
+    /** Nombre → número de cada `enumType` del manifiesto. */
+    fun enums(): Map<String, Map<String, Int>> = tables.flatMap { it.columns }
+        .mapNotNull { c -> c.enumType?.let { it to c.enumValues } }.toMap()
+
     companion object {
         val json: Json = Json { ignoreUnknownKeys = true }
 

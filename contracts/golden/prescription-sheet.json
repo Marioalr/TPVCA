@@ -3,11 +3,11 @@
   "culture": "es-MX",
   "today": null,
   "now": "2026-10-12T05:30:00Z",
-  "contract": 20,
+  "contract": 21,
   "notes": [
     "Models/PrescriptionSheet.cs: lo que dice la receta (la misma hoja de la impresión, el HTML y la vista previa). La fecha de la receta es hoy en la zona del consultorio (dd/MM/aaaa).",
     "Edad (PatientRecord.FormatAge): con fecha de nacimiento, meses cumplidos; menos de 1 mes en días, menos de 24 en meses, menos de 6 años en años y meses, después solo años. Sin fecha, la edad guardada en años.",
-    "Signos: los de la consulta si los hay; si no, los del expediente, leídos con el mismo analizador. T/A 'S/D mmHg'; temperatura con 1 decimal; peso hasta 2; talla en cm hasta 1 (la talla en metros × 100); SpO2 hasta 1 y como porcentaje si viene como fracción (0.97 = 97 %). Formato de double de .NET con el punto como separador: un punto medio exacto en binario se redondea hacia arriba (36.25 da 36.3 y 9.125 da 9.13) y uno inexacto según su valor binario.",
+    "Signos: los de la consulta si los hay; si no, los del expediente, leídos con el mismo analizador. T/A 'S/D mmHg'; temperatura con 1 decimal; peso hasta 2; talla en cm hasta 1 (la talla en metros × 100); SpO2 hasta 1 y como porcentaje si viene como fracción (0.97 = 97 %). Formato de decimal de .NET con el punto como separador: un punto medio se redondea alejándose de cero (36.25 da 36.3 y 9.125 da 9.13).",
     "Alergias: cuáles; 'Negadas' si las niega (en rojo solo si tiene); 'No interrogadas' si está vacío. Sin medidas generales, el texto de siempre (PrescriptionDefaults.Indications). Un medicamento sin nombre no sale; el detalle es ' · ' + presentación.",
     "El medicamento sale como está en medicineName (recortado): con o sin el principio activo entre paréntesis (revisión 16: activeIngredient y showActiveIngredient solo dicen de dónde salió y no cambian la hoja), y un renglón de antes de v1.46, con la marca entre paréntesis, tal cual.",
     "Sin nombre del médico: 'Dr. Titular'. Sin cédula, licenseLine vacío. Todo se recorta de espacios."

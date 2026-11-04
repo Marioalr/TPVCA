@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 20,
+  "contract": 21,
   "notes": [
     "Forma canónica (Services/Rules/CanonicalJson y PatientSheetCanonical, paso 8.22): para saber si dos versiones de un expediente dicen lo mismo sin depender de cómo las escribió cada equipo. 'expected' es el texto canónico.",
     "json: sin espacios; llaves de objeto ordenadas por unidades UTF-16 (String.compareTo de Kotlin), y si una se repite se queda el último valor; texto con solo \\\" \\\\ y los caracteres de control escapados (\\b \\f \\n \\r \\t; los demás \\u00xx en minúsculas), lo demás tal cual; números en decimal sin exponente, sin ceros de más en la fracción ni punto final, y 0 sin signo (BigDecimal.stripTrailingZeros().toPlainString(), con 0 para el cero); true, false y null tal cual.",

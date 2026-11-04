@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 20,
+  "contract": 21,
   "notes": [
     "La fecha dd/mm/aaaa con las diagonales solas (Helpers/DateMaskText.cs, fase 7): qué queda en el cuadro y dónde queda el cursor al escribir, pegar, borrar con retroceso o suprimir. 'expected' null = la tecla no cambia nada (no entra). La selección se ajusta al texto antes de todo.",
     "insert: entran dígitos ASCII y '/' ('-' y '.' cuentan como '/'), lo demás se quita; si no queda nada, null. Una '/' sola sobre una que ya está la salta; sin día o mes antes no entra. Lo escrito reemplaza la selección y el texto se acomoda en día/mes/año (2, 2 y 4 dígitos): un dígito que no cabe en el día o el mes empieza la parte siguiente con su diagonal, salvo que esa parte ya esté cerrada por una diagonal posterior (null); una tercera diagonal o un quinto dígito del año dan null. Al completar el día o el mes al final aparece su diagonal y el cursor pasa sobre ella.",

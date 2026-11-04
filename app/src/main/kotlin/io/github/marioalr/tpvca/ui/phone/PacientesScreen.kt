@@ -162,6 +162,7 @@ fun PacientesScreen(env: PhoneEnv, dataVersion: Long, nav: PhoneNav) {
 @Composable
 private fun PatientListRow(item: PatientListItem, onClick: () -> Unit) {
     val patient = item.row.patient
+    val big = isBigText()
     Row(
         Modifier.fillMaxWidth().heightIn(min = 68.dp).clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -171,8 +172,9 @@ private fun PatientListRow(item: PatientListItem, onClick: () -> Unit) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             PText(patient.fullName, size = 15.sp, weight = FontWeight.Medium)
             PText(item.detail, size = 12.sp, color = PhoneColors.Muted)
+            if (big && patient.hasAllergies) Pill("Alergias", PhoneColors.Danger, PhoneColors.DangerSoft)
         }
-        if (patient.hasAllergies) Pill("Alergias", PhoneColors.Danger, PhoneColors.DangerSoft)
+        if (!big && patient.hasAllergies) Pill("Alergias", PhoneColors.Danger, PhoneColors.DangerSoft)
     }
 }
 

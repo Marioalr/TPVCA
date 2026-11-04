@@ -33,6 +33,18 @@ object Statements {
     /** `profile`. */
     const val PROFILE: String = "SELECT * FROM ClinicProfiles WHERE Id = 1;"
 
+    /** `heartbeat.readNonce`. */
+    const val HEARTBEAT_READ_NONCE: String = "SELECT InstanceNonce FROM RegisteredDevices WHERE DeviceId = ?;"
+
+    /** `heartbeat.write`: la única escritura de K3. `LastSeenUtc` lo pone la nube. */
+    const val HEARTBEAT_WRITE: String = "INSERT INTO RegisteredDevices (DeviceId, DeviceName, DeviceRole, AppVersion, Platform, SyncProtocol, " +
+        "HandoffProtocol, ContractRevision, PendingCount, OldestPendingUtc, InstanceNonce, LastSeenUtc) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f','now')) " +
+        "ON CONFLICT(DeviceId) DO UPDATE SET DeviceName = excluded.DeviceName, DeviceRole = excluded.DeviceRole, AppVersion = excluded.AppVersion, " +
+        "Platform = excluded.Platform, SyncProtocol = excluded.SyncProtocol, HandoffProtocol = excluded.HandoffProtocol, " +
+        "ContractRevision = excluded.ContractRevision, PendingCount = excluded.PendingCount, OldestPendingUtc = excluded.OldestPendingUtc, " +
+        "InstanceNonce = excluded.InstanceNonce, LastSeenUtc = excluded.LastSeenUtc;"
+
     /** `registry.own`. */
     const val REGISTRY_OWN: String = "SELECT DeviceCode, Role, RevokedAtUtc, RevokedReason FROM DeviceRegistry WHERE DeviceId = ?;"
 

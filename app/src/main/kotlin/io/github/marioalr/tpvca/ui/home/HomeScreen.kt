@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.github.marioalr.tpvca.R
+import io.github.marioalr.tpvca.domain.devices.DeviceRole
 import io.github.marioalr.tpvca.ui.theme.LocalTpvcColors
 import io.github.marioalr.tpvca.ui.theme.TpvcTheme
 import io.github.marioalr.tpvca.ui.theme.TpvcThemes
@@ -52,14 +53,32 @@ object HomeTags {
     const val WIDE = "home-wide"
     const val NARROW = "home-narrow"
     const val LINK_BUTTON = "home-link-button"
+    const val LINKED = "home-linked"
+    const val RESUME = "home-resume"
 }
 
 /**
- * Inicio de K0: qué app es, su versión, la revisión del contrato que entiende y que todavía no está vinculada. «Vincular con la
- * PC» se activa en K3.
+ * Qué dice el inicio de la vinculación: [Linked] con el rol y el código de su fila de `DeviceRegistry`, y lo último que hay que avisar.
+ */
+sealed interface HomeLink {
+    data object NotLinked : HomeLink
+
+    data class Linked(val role: DeviceRole, val code: String?, val clinicName: String, val notice: String?, val braked: Boolean = false) : HomeLink
+}
+
+/**
+ * Inicio de K0: qué app es, su versión, la revisión del contrato que entiende y si está vinculada. Las pantallas del celular llegan con K4.
  */
 @Composable
-fun HomeScreen(versionName: String, contractRevision: Int, layout: HomeLayout, modifier: Modifier = Modifier) {
+fun HomeScreen(
+    versionName: String,
+    contractRevision: Int,
+    layout: HomeLayout,
+    modifier: Modifier = Modifier,
+    link: HomeLink = HomeLink.NotLinked,
+    onLink: () -> Unit = {},
+    onResumeBrake: () -> Unit = {},
+) {
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         val scroll = rememberScrollState()
         when (layout) {
@@ -72,7 +91,7 @@ fun HomeScreen(versionName: String, contractRevision: Int, layout: HomeLayout, m
                 horizontalArrangement = Arrangement.spacedBy(24.dp),
             ) {
                 HomeCard(Modifier.weight(1f)) { AppIdentity(versionName, contractRevision) }
-                HomeCard(Modifier.weight(1f)) { LinkStatus() }
+                HomeCard(Modifier.weight(1f)) { LinkStatus(link, onLink, onResumeBrake) }
             }
             HomeLayout.Narrow -> Column(
                 modifier = Modifier
@@ -84,7 +103,7 @@ fun HomeScreen(versionName: String, contractRevision: Int, layout: HomeLayout, m
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 HomeCard(Modifier.fillMaxWidth().widthIn(max = 560.dp)) { AppIdentity(versionName, contractRevision) }
-                HomeCard(Modifier.fillMaxWidth().widthIn(max = 560.dp)) { LinkStatus() }
+                HomeCard(Modifier.fillMaxWidth().widthIn(max = 560.dp)) { LinkStatus(link, onLink, onResumeBrake) }
             }
         }
     }
@@ -120,28 +139,49 @@ private fun AppIdentity(versionName: String, contractRevision: Int) {
 }
 
 @Composable
-private fun LinkStatus() {
+private fun LinkStatus(link: HomeLink, onLink: () -> Unit, onResumeBrake: () -> Unit) {
     val colors = LocalTpvcColors.current
-    Surface(color = colors.infoSubtle, contentColor = colors.infoText, shape = MaterialTheme.shapes.medium) {
-        Text(
-            text = stringResource(R.string.home_not_linked),
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(16.dp).fillMaxWidth(),
-        )
-    }
-    Text(
-        stringResource(R.string.home_link_hint),
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    Spacer(Modifier.height(8.dp))
-    // Se activa en K3 (pegar o escanear la URL y el token, y esperar la aprobación de la PC)
-    Button(
-        onClick = {},
-        enabled = false,
-        modifier = Modifier.heightIn(min = 48.dp).testTag(HomeTags.LINK_BUTTON),
-    ) {
-        Text(stringResource(R.string.home_link_button))
+    when (link) {
+        HomeLink.NotLinked -> {
+            Surface(color = colors.infoSubtle, contentColor = colors.infoText, shape = MaterialTheme.shapes.medium) {
+                Text(
+                    text = stringResource(R.string.home_not_linked),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                )
+            }
+            Text(
+                stringResource(R.string.home_link_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = onLink,
+                modifier = Modifier.heightIn(min = 48.dp).testTag(HomeTags.LINK_BUTTON),
+            ) {
+                Text(stringResource(R.string.home_link_button))
+            }
+        }
+        is HomeLink.Linked -> {
+            val role = stringResource(if (link.role == DeviceRole.AndroidMobileAdmin) R.string.role_phone else R.string.role_tablet)
+            Surface(color = colors.successSubtle, contentColor = colors.successText, shape = MaterialTheme.shapes.medium) {
+                Text(
+                    text = link.code?.let { stringResource(R.string.home_linked_as_code, role, it) } ?: stringResource(R.string.home_linked_as, role),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(16.dp).fillMaxWidth().testTag(HomeTags.LINKED),
+                )
+            }
+            if (link.clinicName.isNotEmpty()) Text(link.clinicName, style = MaterialTheme.typography.bodyMedium)
+            link.notice?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (link.braked) {
+                Button(onClick = onResumeBrake, modifier = Modifier.heightIn(min = 48.dp).testTag(HomeTags.RESUME)) {
+                    Text(stringResource(R.string.brake_resume))
+                }
+            }
+        }
     }
 }
 

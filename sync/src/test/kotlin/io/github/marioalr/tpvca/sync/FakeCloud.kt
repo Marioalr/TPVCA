@@ -27,6 +27,10 @@ class FakeCloud {
     var registry: List<HranaValue>? = listOf(HranaValue.Text("C1"), HranaValue.Text("AndroidMobileAdmin"), HranaValue.Null, HranaValue.Null)
     var noMetaTable = false
 
+    /** Los argumentos de cada latido escrito y el `InstanceNonce` de la fila, en `RegisteredDevices`. */
+    val heartbeats = ArrayList<List<HranaValue>>()
+    var rowNonce: String? = null
+
     /** Lo que se pidió: una lista de SQL por petición. */
     val requests = ArrayList<List<String>>()
 
@@ -104,6 +108,12 @@ class FakeCloud {
             sql == Statements.REGISTRY_OWN -> ResultSet(
                 listOfNotNull(registry?.let { mapOf("DeviceCode" to it[0], "Role" to it[1], "RevokedAtUtc" to it[2], "RevokedReason" to it[3]) }),
             )
+            sql == Statements.HEARTBEAT_READ_NONCE -> ResultSet(listOfNotNull(rowNonce?.let { rowOf("InstanceNonce" to it) }))
+            sql == Statements.HEARTBEAT_WRITE -> {
+                heartbeats += statement.args
+                rowNonce = statement.args[10].text
+                ResultSet(emptyList(), 1)
+            }
             sql == Statements.ASSET_META -> {
                 val parts = assets[statement.args[0].text]
                 ResultSet(listOfNotNull(parts?.let { p -> rowOf("ByteCount" to p.sumOf { it.size }, "ChunkCount" to p.size) }))

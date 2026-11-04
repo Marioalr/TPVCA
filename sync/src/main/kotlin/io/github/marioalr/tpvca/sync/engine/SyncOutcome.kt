@@ -33,15 +33,29 @@ sealed class SyncOutcome(open val message: String?) {
     data object NotApproved : SyncOutcome("Este equipo espera que la PC lo apruebe en Equipos vinculados.")
 
     /**
-     * Su fila dice un rol que no es de un equipo Android (una PC, o uno que esta versión no conoce). No baja nada y no borra nada: lo
-     * corrige la PC. Los permisos por rol llegan con K3.
+     * Su fila dice un rol que no es de un equipo Android (una PC, o uno que esta versión no conoce). No baja nada y no borra nada: lo corrige
+     * la PC. Cualquiera de los dos roles de Android sirve: `DeviceRegistry` manda, aunque este equipo haya pedido el otro.
      */
     data class WrongRole(val role: String?) :
         SyncOutcome("La PC registró este equipo con otro rol${role?.takeIf { it.isNotEmpty() }?.let { " ($it)" }.orEmpty()}. Revíselo en Equipos vinculados.")
 
-    /** Con `RevokedAtUtc`. [wiped]: se borró la base. Sin borrar solo si hay cambios sin subir que no deben perderse (K5). */
-    data class Revoked(val reason: String?, val wiped: Boolean) :
-        SyncOutcome("Este equipo se quitó de los equipos vinculados.")
+    /**
+     * Con `RevokedAtUtc`, o con código X. [wiped]: se borró la base. Sin borrar solo si hay cambios sin subir que no deben perderse (K5).
+     * [reason] es `quitado`, `perdido` o `rechazado`.
+     */
+    data class Revoked(val reason: String?, val wiped: Boolean) : SyncOutcome(
+        when (reason) {
+            REASON_REJECTED -> "La PC rechazó este equipo."
+            REASON_LOST -> "Este equipo se marcó como perdido en la PC."
+            else -> "Este equipo se quitó de los equipos vinculados."
+        },
+    ) {
+        companion object {
+            const val REASON_REMOVED = "quitado"
+            const val REASON_LOST = "perdido"
+            const val REASON_REJECTED = "rechazado"
+        }
+    }
 
     /** Otra PC reemplaza la nube con un respaldo: no se baja nada hasta `generationReady`. */
     data object GenerationPending :

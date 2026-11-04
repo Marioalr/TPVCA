@@ -24,10 +24,10 @@ según ese rol (`DevicePermissions`, la misma matriz que `Models/TursoConfig.cs`
 
 | Módulo | Tipo | Qué tiene |
 |---|---|---|
-| `:sync` | Kotlin/JVM | El contrato de sincronización (`SyncSchema`, `SyncContract.REVISION`), el cliente Hrana y el motor de lectura ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)). Después: motor de escritura, consulta entre equipos y vinculación. |
+| `:sync` | Kotlin/JVM | El contrato de sincronización (`SyncSchema`, `SyncContract.REVISION`), el cliente Hrana, el motor de lectura y la vinculación con la revocación y las reglas del 401 ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)). Después: motor de escritura y consulta entre equipos. |
 | `:domain` | Kotlin/JVM | Reglas portadas de la PC con sus vectores (K1, lo del celular): roles y permisos (`DevicePermissions`), búsqueda, negocio e inventario, pacientes y agenda, receta y ticket. Cada vector → función → estado en [`docs/REGLAS.md`](docs/REGLAS.md). Después: cuenta, folios, dosis y cobro. |
-| `:data` | Biblioteca de Android | Room: entidades generadas de `schema.json` y `RoomSyncStore`. **Sin cifrar hasta K3**, que agrega SQLCipher. Después: DAO de las pantallas. |
-| `:app` | App de Android | Compose + Material 3, tema con la paleta de la PC (claro, oscuro, ámbar y personalizado) y el inicio. |
+| `:data` | Biblioteca de Android | Room con SQLCipher: entidades generadas de `schema.json` y `RoomSyncStore`. La llave de la base y la credencial, envueltas con el Keystore. Después: DAO de las pantallas. |
+| `:app` | App de Android | Compose + Material 3, tema con la paleta de la PC (claro, oscuro, ámbar y personalizado), el inicio, las pantallas de vincular y el bloqueo de la app. |
 
 `:sync` y `:domain` son Kotlin puro: sus pruebas corren en la JVM, sin Android. Las compilaciones de depuración traen además una
 pantalla de desarrollo para probar la sincronización con una base de prueba; la de publicación no la trae.
@@ -42,7 +42,7 @@ Pila: Jetpack Compose con Material 3, Room + SQLCipher, OkHttp, kotlinx.serializ
 | **K0** | Esqueleto con los cuatro módulos, CI, textos en español y tema | ✅ Hecho |
 | **K1** | Contrato y reglas del celular con sus vectores: búsqueda, negocio, pacientes, agenda, receta y ticket ([`docs/REGLAS.md`](docs/REGLAS.md)) | ✅ Hecho |
 | **K2** | Cliente Hrana y motor de lectura: primer arranque, descarga completa, cursor por página, recálculo, generación y freno ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)) | ✅ Hecho |
-| K3 | Vinculación y seguridad: pegar o escanear la URL y el token, aprobación de la PC, Keystore, SQLCipher, bloqueo y revocación | Pendiente |
+| **K3** | Vinculación y seguridad: pegar o escanear la URL y el token, aprobación de la PC, Keystore, SQLCipher, bloqueo y revocación ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)) | ✅ Hecho |
 | K4 | Celular: negocio, inventario, pacientes y agenda de solo lectura, compartir receta y ticket. **Primera versión del celular** | Pendiente |
 | K4b | Celular: agendar con aviso de empalme y registrar entradas de mercancía | Pendiente |
 | K5 | Motor de escritura: cola de salida, LWW, cerca de generación, combinación de pacientes, movimientos, folios y WorkManager | Pendiente |
@@ -64,6 +64,7 @@ export JAVA_HOME=/opt/android-studio/jbr   # o cualquier JDK 17+
 ./gradlew lint          # lint de todos los módulos
 ./gradlew assembleDebug # app/build/outputs/apk/debug/app-debug.apk
 scripts/check-secrets.sh
+./gradlew :data:connectedDebugAndroidTest :app:connectedDebugAndroidTest # SQLCipher, Keystore y ML Kit: con un equipo o emulador; no corren en la CI
 ```
 
 La CI (`.github/workflows/ci.yml`) corre `scripts/check-secrets.sh` y `./gradlew test lint assembleDebug` con JDK 17 en

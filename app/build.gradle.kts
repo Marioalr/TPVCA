@@ -82,6 +82,31 @@ android {
     }
 }
 
+/** Solo `golden/link-qr.json` para la prueba en un equipo: los demás vectores llevan datos reales del médico y no hacen falta en ese APK. */
+abstract class CopyLinkVector : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val source: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val output: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        source.get().asFile.copyTo(output.get().file("link-qr.json").asFile, overwrite = true)
+    }
+}
+
+val copyLinkVector = tasks.register<CopyLinkVector>("copyLinkVector") {
+    source.set(rootProject.layout.projectDirectory.file("contracts/golden/link-qr.json"))
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("debug")) { variant ->
+        variant.androidTest?.sources?.assets?.addGeneratedSourceDirectory(copyLinkVector, CopyLinkVector::output)
+    }
+}
+
 dependencies {
     implementation(project(":sync"))
     implementation(project(":domain"))
@@ -89,6 +114,17 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.process)
+    implementation(libs.okhttp)
+    implementation(libs.androidx.fragment)
+    implementation(libs.androidx.biometric)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.mlkit.barcode.scanning)
+    implementation(libs.kotlinx.coroutines.core)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
@@ -96,11 +132,19 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material3.windowsizeclass)
-    debugImplementation(libs.kotlinx.coroutines.core)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
+    // Lo que solo se comprueba en un equipo: ML Kit leyendo un QR como el de la PC (./gradlew :app:connectedDebugAndroidTest)
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.zxing.core)
+
+    testImplementation(testFixtures(project(":sync")))
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.test.ext.junit)

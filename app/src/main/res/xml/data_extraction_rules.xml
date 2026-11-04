@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Nada de esta app va a la nube de Google ni pasa a otro equipo: la copia es Turso, y la credencial y la llave de la base
-     son de este equipo (plan §4.6). -->
+     son de este equipo (plan §4.6 y §4.8). Una copia clonaría el DeviceId y no podría abrir nada: las llaves del Keystore no viajan.
+     La credencial y la llave de la base van además en noBackupFilesDir, que Android nunca copia. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" />

@@ -16,6 +16,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.URI
+import java.net.URISyntaxException
 import java.util.Locale
 import java.util.TreeMap
 import java.util.concurrent.TimeUnit
@@ -45,7 +46,8 @@ interface HranaConnection {
 
 /**
  * Cliente Hrana v2 por HTTP con OkHttp: `POST {url}/v2/pipeline` con `Authorization: Bearer`, sin baton, solo `https://`.
- * Reproduce `Services/TursoClient.cs`. El cuerpo de error nunca incluye el token, ni el token va en una URL.
+ * Reproduce `Services/TursoClient.cs`. El token nunca va en una URL, y ni el token ni la URL salen en un error: todo lo que llega del
+ * servidor o de la red pasa por [Redactor] antes de volverse un mensaje, y la excepción de la red no se conserva como causa.
  */
 class HranaClient(
     url: String,
@@ -55,6 +57,7 @@ class HranaClient(
 ) : HranaConnection {
     private val pipelineUrl = PipelineUrl.normalize(url)
     private val bearer = cleanToken(token)
+    private val secrets = listOf(token, bearer, url, pipelineUrl, URI(pipelineUrl).host.orEmpty())
     private val userAgent = "TPVC-Android/$appVersion"
     private val http = http.newBuilder().followRedirects(false).followSslRedirects(false).build()
 
@@ -88,13 +91,18 @@ class HranaClient(
 
     private fun send(requests: List<JsonObject>): JsonArray {
         val body = JsonObject(mapOf("requests" to JsonArray(requests))).toString()
-        val request = Request.Builder()
-            .url(pipelineUrl)
-            .header("Authorization", "Bearer $bearer")
-            .header("Accept", "application/json")
-            .header("User-Agent", userAgent)
-            .post(body.toRequestBody(JSON_TYPE))
-            .build()
+        // Un carácter que no puede ir en un encabezado (una credencial guardada por una versión anterior): es un token mal copiado, no una caída
+        val request = try {
+            Request.Builder()
+                .url(pipelineUrl)
+                .header("Authorization", "Bearer $bearer")
+                .header("Accept", "application/json")
+                .header("User-Agent", userAgent)
+                .post(body.toRequestBody(JSON_TYPE))
+                .build()
+        } catch (_: IllegalArgumentException) {
+            throw HranaException(HranaException.TOKEN_MALFORMED, HranaException.TOKEN_MALFORMED_MESSAGE)
+        }
 
         val text: String
         val status: Int
@@ -103,13 +111,14 @@ class HranaClient(
                 status = response.code
                 text = response.body.string()
             }
-        } catch (e: InterruptedIOException) {
-            throw HranaException(HranaException.TIMEOUT, "Tiempo de espera agotado al conectar con Turso.", cause = e)
-        } catch (e: IOException) {
-            throw HranaException(HranaException.NETWORK_ERROR, "No se pudo conectar con Turso: ${e.message}. Verifique la conexión a internet o la URL.", cause = e)
+        } catch (_: InterruptedIOException) {
+            throw HranaException(HranaException.TIMEOUT, "Tiempo de espera agotado al conectar con Turso.")
+        } catch (_: IOException) {
+            // El texto de la excepción está en inglés y repite el host («Unable to resolve host …»): aquí no se usa
+            throw HranaException(HranaException.NETWORK_ERROR, "No se pudo conectar con Turso. Verifique la conexión a internet o la URL.")
         }
 
-        if (status !in 200..299) throw HranaException.fromHttp(status, text)
+        if (status !in 200..299) throw HranaException.fromHttp(status, Redactor.clean(text, secrets))
         val root = try {
             Json.parseToJsonElement(text).jsonObject
         } catch (e: IllegalArgumentException) {
@@ -145,7 +154,7 @@ class HranaClient(
 
     private fun throwServiceError(error: JsonElement): Nothing {
         val obj = error.jsonObject
-        val message = obj["message"]?.jsonPrimitive?.content ?: "Error desconocido en Turso"
+        val message = Redactor.clean(obj["message"]?.jsonPrimitive?.content ?: "Error desconocido en Turso", secrets)
         throw HranaException.fromResult(obj["code"]?.takeUnless { it is JsonNull }?.jsonPrimitive?.content, message)
     }
 
@@ -159,9 +168,15 @@ class HranaClient(
             .callTimeout(30, TimeUnit.SECONDS)
             .build()
 
+        private const val INVISIBLE = "\u200B\u200C\u200D\u2060\uFEFF"
+
+        /** Un token solo lleva ASCII visible: lo demás no puede ir en el encabezado `Authorization`. */
+        fun isValidToken(token: String): Boolean = cleanToken(token).let { clean -> clean.isNotEmpty() && clean.all { it in '!'..'~' } }
+
         /** Quita comillas, saltos de línea y un `Bearer` pegado por accidente (`TursoClient.CleanToken`). */
         fun cleanToken(token: String): String {
-            val clean = token.trim().trim('"', '\'', '`').filterNot { it == '\r' || it == '\n' || it == ' ' }
+            // También lo que no se ve al pegar: espacios duros y de ancho cero
+            val clean = token.trim().trim('"', '\'', '`').filterNot { it.isWhitespace() || it in INVISIBLE }
             return if (clean.startsWith("Bearer", ignoreCase = true)) clean.substring(6).trim('"', '\'', '`') else clean
         }
 
@@ -195,11 +210,36 @@ class HranaClient(
     }
 }
 
-/** La URL del pipeline: `libsql://` y `turso://` pasan a `https://`; `http://` solo en este mismo equipo (el servidor de pruebas). */
+/**
+ * La URL del pipeline: `libsql://` y `turso://` pasan a `https://`. Solo acepta hosts de Turso (`*.turso.io`), porque a este host va el token
+ * en un encabezado y de él se aceptan aprobaciones y revocaciones. `http://` y otros hosts, solo en este mismo equipo (el servidor de pruebas);
+ * la app además los rechaza con [forDevice], y `usesCleartextTraffic=false` no deja usar `http://`.
+ *
+ * Es más estricto que la PC, que acepta cualquier host con punto.
+ */
 object PipelineUrl {
-    fun normalize(url: String): String {
+    private const val TURSO_SUFFIX = ".turso.io"
+    private const val HTTPS_PORT = 443
+
+    fun normalize(url: String): String = parsed(url).first
+
+    /** Lo que acepta la app al vincular: sin el servidor de pruebas. @throws IllegalArgumentException con un texto que no repite lo pegado. */
+    fun forDevice(url: String): String {
+        val (clean, host) = parsed(url)
+        require(!isLoopback(host)) { NOT_TURSO }
+        return clean
+    }
+
+    /** El host en minúsculas, para compararlo y mostrarlo al confirmar un cambio de nube. */
+    fun host(url: String): String = parsed(url).second.lowercase(Locale.ROOT)
+
+    private fun isLoopback(host: String) = host.equals("localhost", ignoreCase = true) || host == "127.0.0.1"
+
+    private fun parsed(url: String): Pair<String, String> {
         var clean = url.trim().trim('"', '\'', '`').substringBefore('?')
         require(clean.isNotEmpty()) { "La URL de la base de datos de Turso no puede estar vacía." }
+        // Lo que no se ve al pegar (espacios duros, ancho cero) y los acentos: un host de Turso solo lleva ASCII
+        require(clean.all { it in '!'..'~' }) { INVALID }
         val lower = clean.lowercase(Locale.ROOT)
         clean = when {
             lower.startsWith("libsql://") -> "https://" + clean.substring(9)
@@ -209,15 +249,26 @@ object PipelineUrl {
         }.trimEnd('/')
         if (!clean.lowercase(Locale.ROOT).endsWith("/v2/pipeline")) clean += "/v2/pipeline"
 
-        val uri = URI(clean)
+        // El mensaje de URISyntaxException repite el texto pegado: aquí no se repite
+        val uri = try {
+            URI(clean)
+        } catch (_: URISyntaxException) {
+            throw IllegalArgumentException(INVALID)
+        }
+        require(uri.userInfo == null) { "La URL lleva un usuario o una contraseña: use la URL de la base y el token por separado." }
         val host = uri.host.orEmpty()
-        val loopback = host.equals("localhost", ignoreCase = true) || host == "127.0.0.1"
-        require('.' in host || loopback) { "La dirección «$host» parece ser solo el nombre de la base: Turso pide la URL completa." }
+        val loopback = isLoopback(host)
+        require('.' in host || loopback) { "La dirección parece ser solo el nombre de la base: Turso pide la URL completa." }
         require(uri.scheme.equals("https", ignoreCase = true) || loopback) {
             "La dirección usa http:// sin cifrar: el token de Turso viajaría en claro. Use la URL libsql:// o https:// que da Turso."
         }
-        return clean
+        require(loopback || host.lowercase(Locale.ROOT).endsWith(TURSO_SUFFIX)) { NOT_TURSO }
+        require(uri.port in -1..65535 && (loopback || uri.port == -1 || uri.port == HTTPS_PORT)) { "La URL lleva un puerto que no es el de Turso." }
+        return clean to host
     }
+
+    private const val INVALID = "La URL de la base de datos de Turso no es válida. Cópiela completa del panel de Turso."
+    private const val NOT_TURSO = "Esa dirección no es de Turso: el token no se manda a ninguna otra. Use la URL libsql:// o https:// que termina en turso.io."
 }
 
 /** Un error de Turso o de la red. [code] es el código de Hrana o uno de los de aquí; el texto ya es para mostrarse. */

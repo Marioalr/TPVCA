@@ -47,6 +47,7 @@ class GoldenCoverageTest {
         "values.json" to "ValuesGoldenTest",
         "stamping.json" to "SyncRulesGoldenTest",
         "lww.json" to "SyncRulesGoldenTest",
+        "link-qr.json" to "LinkCodeGoldenTest",
     )
 
     /** Portados en parte: archivo → los tipos de caso que faltan y su paso (la prueba del archivo los salta por nombre). */
@@ -62,8 +63,7 @@ class GoldenCoverageTest {
         "field-stamps.json" to "K5",
         "patient-merge.json" to "K5",
         "duplicate-patients.json" to "K5",
-        "folios.json" to "K3",
-        "link-qr.json" to "K3",
+        "folios.json" to "K5",
         "lab-files.json" to "K4",
         "date-mask.json" to "K6",
         "cie10-catalog.json" to "K7",

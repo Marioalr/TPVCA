@@ -103,14 +103,6 @@ class SyncEngineTest {
         assertEquals(2, cloud.requests.size)
     }
 
-    @Test
-    fun laPantallaDeDesarrolloBajaSinAprobacionPeroNoRevocado() {
-        cloud.registry = null
-        completed(engine(config.copy(allowUnapproved = true)).sync(SyncTrigger.USER))
-        cloud.registry = listOf(HranaValue.Text("C1"), HranaValue.Text("AndroidMobileAdmin"), HranaValue.Text("2026-11-03 10:00:00.000"), HranaValue.Text("perdido"))
-        assertEquals(SyncOutcome.Revoked("perdido", wiped = true), engine(config.copy(allowUnapproved = true)).sync(SyncTrigger.USER))
-    }
-
     private fun role(name: String?) {
         cloud.registry = listOf(HranaValue.Text("C1"), name?.let(HranaValue::Text) ?: HranaValue.Null, HranaValue.Null, HranaValue.Null)
     }
@@ -151,10 +143,43 @@ class SyncEngineTest {
         assertEquals(cursor, store.meta(SyncEngine.CURSOR_PREFIX + "Categories"))
     }
 
+    /** Con el freno, lo automático lee solo su fila. Un rol de otra PC o un token rechazado se ven igual; sin red sigue en pausa. */
     @Test
-    fun conOtroRolLaPantallaDeDesarrolloTampocoBaja() {
-        role("WindowsDesktop")
-        assertEquals(SyncOutcome.WrongRole("WindowsDesktop"), engine(config.copy(allowUnapproved = true)).sync(SyncTrigger.USER))
+    fun conElFrenoLoAutomaticoSoloLeeSuFila() {
+        firstSyncDone()
+        ConsumptionBrake(store, clock).recordUsage(ConsumptionBrake.MAX_ROWS_READ_PER_DAY + 1)
+        cloud.requests.clear()
+        assertEquals(SyncOutcome.BrakePaused, engine().sync())
+        assertEquals(listOf(listOf(Statements.REGISTRY_OWN)), cloud.requests)
+
+        cloud.registry = null
+        assertEquals("Sin fila no se detiene de otro modo", SyncOutcome.BrakePaused, engine().sync())
+
+        cloud.onStatement = { throw HranaException(HranaException.NETWORK_ERROR, "Sin red.") }
+        assertEquals(SyncOutcome.BrakePaused, engine().sync())
+
+        cloud.onStatement = { throw HranaException.fromHttp(401, "{}") }
+        assertEquals(SyncOutcome.TokenRejected(wiped = false), engine().sync())
+        cloud.requests.clear()
+        assertEquals("Con el token en pausa no llega a Turso", SyncOutcome.BrakePaused, engine().sync())
+        assertTrue(cloud.requests.isEmpty())
+    }
+
+    @Test
+    fun laBajadaIncrementalMiraElConsultorioAntesQueSuFila() {
+        firstSyncDone()
+        cloud.meta["clinicId"] = "otro-consultorio"
+        cloud.registry = null
+        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.OtherCloud)
+        cloud.registry = listOf(HranaValue.Text("T1"), HranaValue.Text("AndroidTablet"), HranaValue.Text("2026-11-03 10:00:00.000"), HranaValue.Text("perdido"))
+        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.OtherCloud)
+        assertNotNull(store.meta(SyncEngine.FIRST_DOWNLOAD_DONE))
+    }
+
+    @Test
+    fun unaFilaConCodigoXEsUnRechazoAunqueNoTengaFecha() {
+        cloud.registry = listOf(HranaValue.Text("X1"), HranaValue.Text("AndroidTablet"), HranaValue.Null, HranaValue.Null)
+        assertEquals(SyncOutcome.Revoked("rechazado", wiped = true), engine().sync(SyncTrigger.USER))
     }
 
     @Test
@@ -521,9 +546,10 @@ class SyncEngineTest {
         assertTrue(brake.isTripped)
         assertEquals("Revisó la nube y no bajó nada", before + 2, cloud.requests.size)
 
-        // Lo automático ya ni llega a Turso, y otra descarga completa espera a Reanudar aunque cambie el día
+        // Lo automático solo lee su fila, y otra descarga completa espera a Reanudar aunque cambie el día
         assertEquals(SyncOutcome.BrakePaused, engine().sync())
-        assertEquals(before + 2, cloud.requests.size)
+        assertEquals(listOf(Statements.REGISTRY_OWN), cloud.requests.last())
+        assertEquals(before + 3, cloud.requests.size)
         clock.advance(Duration.ofDays(1))
         assertEquals(SyncOutcome.BrakePaused, engine().sync(SyncTrigger.USER))
 

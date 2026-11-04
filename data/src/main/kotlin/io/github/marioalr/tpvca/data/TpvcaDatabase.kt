@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.sqlite.db.SupportSQLiteOpenHelper
 import io.github.marioalr.tpvca.data.entity.CategoryEntity
 import io.github.marioalr.tpvca.data.entity.ClinicalServiceEntity
 import io.github.marioalr.tpvca.data.entity.ClinicProfileEntity
@@ -26,9 +27,9 @@ import io.github.marioalr.tpvca.data.entity.SyncTombstoneEntity
 /**
  * La base local con Room, llaves por `SyncId` y sin llaves foráneas: lo que harían lo decide el motor con `schema.json`.
  *
- * **Todavía no va cifrada**: K2 usa Room sin SQLCipher, solo con los datos de prueba de la pantalla de desarrollo, y esa pantalla no
- * existe en la compilación de publicación. K3 agrega SQLCipher con la llave del Keystore antes de que el celular pueda vincularse con
- * datos reales.
+ * Va cifrada: quien la abre pasa la fábrica de SQLCipher ([SqlCipher]) y no hay forma de abrirla sin decir con cuál. Las pruebas de la JVM
+ * pasan la de SQLite, porque la biblioteca nativa de SQLCipher solo existe en Android. No hay migración desde una base sin cifrar: nunca se
+ * publicó una versión que la tuviera.
  */
 @Database(
     entities = [
@@ -43,7 +44,7 @@ import io.github.marioalr.tpvca.data.entity.SyncTombstoneEntity
 )
 abstract class TpvcaDatabase : RoomDatabase() {
     companion object {
-        fun open(context: Context): TpvcaDatabase =
-            Room.databaseBuilder(context.applicationContext, TpvcaDatabase::class.java, LocalStore.DATABASE_NAME).build()
+        fun open(context: Context, name: String, helperFactory: SupportSQLiteOpenHelper.Factory): TpvcaDatabase =
+            Room.databaseBuilder(context.applicationContext, TpvcaDatabase::class.java, name).openHelperFactory(helperFactory).build()
     }
 }

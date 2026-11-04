@@ -7,9 +7,9 @@ Copia de `contracts/` de TPVC (la app de la PC, WPF .NET 10). **No se editan aqu
 |---|---|
 | Revisión del contrato (`sync/schema.json` → `contract`) | 21 |
 | Formato congelado desde (`SyncContract.FrozenRevision`) | 13 |
-| Commit de TPVC | `811a2a6` (rama `fase-8/manifiesto-y-rol`, PR #44: `manifest` junto a la huella, `meta.all` y `Role` en `registry.own`) |
-| Versión de TPVC | v1.51.0 (el PR #44 todavía sin publicar al copiar) |
-| Fecha de la copia | 2026-11-03 |
+| Commit de TPVC | `6c22f85` en `main`, etiqueta `v1.51.0` (merge del PR #44: `manifest` junto a la huella, `meta.all` y `Role` en `registry.own`) |
+| Versión de TPVC | v1.51.0, publicada |
+| Fecha de la copia | 2026-11-03. Se copió de `811a2a6` antes de publicar; al correr otra vez el script desde `6c22f85` no hubo diferencia: los contratos no cambiaron |
 
 Al actualizar: correr el script, revisar `git diff --stat contracts/`, subir `SyncContract.REVISION` en `:sync` si cambió
 la revisión (la prueba `SyncContractTest` falla hasta hacerlo), y anotar aquí el commit, la versión y la fecha.

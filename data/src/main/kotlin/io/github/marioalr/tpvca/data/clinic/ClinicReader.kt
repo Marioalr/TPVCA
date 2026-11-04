@@ -72,6 +72,11 @@ class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -
 
     fun patient(syncId: String): Patient? = gate.read { dao().patient(syncId)?.let(ClinicMappers::patient) }
 
+    /** Solo si sigue activo: un expediente dado de baja o unido a otro no se abre ni se le agenda en la tablet. */
+    fun activePatient(syncId: String): Patient? = gate.read {
+        dao().patient(syncId)?.takeIf { it.isActive != 0L && it.mergedIntoSyncId == null }?.let(ClinicMappers::patient)
+    }
+
     fun consultations(patient: String, limit: Int = CONSULTATIONS_PAGE, offset: Int = 0): List<ConsultationRow> = gate.read {
         dao().consultations(patient, limit, offset).map { consultationRow(it) }
     }

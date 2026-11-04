@@ -41,6 +41,7 @@ class GoldenCoverageTest {
         "prescription-sheet.json" to "documents.DocumentsGoldenTest",
         "prescription-html-fields.json" to "documents.DocumentsGoldenTest",
         "ticket-text.json" to "documents.DocumentsGoldenTest",
+        "date-mask.json" to "patients.PatientsGoldenTest",
     )
 
     /** Los que corren en `:sync`, que es quien los usa: archivo → su prueba, junto a `Contracts` en `sync/src/test`. */
@@ -59,13 +60,11 @@ class GoldenCoverageTest {
 
     /** Portados en parte: archivo → los tipos de caso que faltan y su paso (la prueba del archivo los salta por nombre). */
     private val partial = mapOf(
-        "patient-identity.json" to "K6 (alta y edición: parse-name, compose-name, birth-date, email, validate)",
         "lab-files.json" to "K7 (subir y lo de la PC principal: el celular solo baja)",
     )
 
     /** Los vectores pendientes: archivo → el paso que los porta. */
     private val pending = mapOf(
-        "date-mask.json" to "K6",
         "cie10-catalog.json" to "K7",
         "cie10-search.json" to "K7",
         "pediatric-dose.json" to "K7",

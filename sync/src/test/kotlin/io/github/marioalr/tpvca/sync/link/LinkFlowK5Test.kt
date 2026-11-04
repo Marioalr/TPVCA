@@ -12,6 +12,7 @@ import io.github.marioalr.tpvca.sync.engine.SyncStore
 import io.github.marioalr.tpvca.sync.engine.WriteRefused
 import io.github.marioalr.tpvca.sync.engine.unsyncedChanges
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -435,6 +436,74 @@ class LinkFlowK5Test {
         assertEquals(WriteRefused.Reason.REVOKED, assertThrows(WriteRefused::class.java) { retained.create("Appointments", emptyMap()) }.reason)
         assertEquals(WriteRefused.Reason.REVOKED, assertThrows(WriteRefused::class.java) { retained.newPatient("X") }.reason)
         assertEquals(0, database.store.pendingChanges())
+    }
+
+    /** `store()` crea la base si no existe: va dentro de la puerta, y con un borrado en curso no se llama. */
+    @Test
+    fun abrirLaBaseParaEscribirVaDentroDeLaPuertaYNoDuranteUnBorrado() {
+        linked()
+        var insideGuard = false
+        var openedOutside = 0
+        var closing = false
+        val checked = object : LocalDatabase by database {
+            override fun store(): SyncStore {
+                if (!insideGuard) openedOutside++
+                return database.store()
+            }
+        }
+        lateinit var flow: LinkFlow
+        var refused = 0
+        flow = LinkFlow(
+            vault, checked, notices, { true }, "1.0.0", "Tablet", {},
+            connect = { _, _ -> cloud.connection },
+            newId = { "device-b" },
+            allowLoopback = true,
+            folios = folios,
+            writeGuard = { write ->
+                insideGuard = true
+                try {
+                    write()
+                } finally {
+                    insideGuard = false
+                }
+            },
+            onEraseStarting = {
+                if (!closing) {
+                    closing = true
+                    val created = database.created
+                    for (ask in listOf<() -> Any?>({ flow.writes() }, { flow.localSide() })) {
+                        try {
+                            ask()
+                        } catch (_: WriteRefused) {
+                            refused++
+                        }
+                    }
+                    assertEquals(created, database.created)
+                }
+            },
+        )
+        flow.restore()
+        openedOutside = 0
+        assertNotNull(flow.writes())
+        assertNotNull(flow.localSide())
+        assertEquals(0, openedOutside)
+        revoke("perdido")
+        assertTrue(flow.refresh(Refresh.USER) is LinkState.Revoked)
+        assertEquals(2, refused)
+    }
+
+    /** K6: lo mismo con los borradores: uno viejo no vuelve a abrir la base después de borrar, y el borrador se fue con ella. */
+    @Test
+    fun losBorradoresSeVanConElBorradoYUnLocalSideGuardadoYaNoAbreLaBase() {
+        val first = linked()
+        val retained = first.localSide()!!
+        retained.saveDraft("PatientForm", "lo escrito")
+        assertEquals("lo escrito", first.localSide()!!.draft("PatientForm"))
+        revoke("perdido")
+        assertTrue(first.refresh(Refresh.USER) is LinkState.Revoked)
+        assertEquals(WriteRefused.Reason.REVOKED, assertThrows(WriteRefused::class.java) { retained.draft("PatientForm") }.reason)
+        assertEquals(WriteRefused.Reason.REVOKED, assertThrows(WriteRefused::class.java) { retained.saveDraft("PatientForm", "x") }.reason)
+        assertEquals(null, database.store.meta("Draft:PatientForm"))
     }
 
     @Test

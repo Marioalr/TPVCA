@@ -143,6 +143,10 @@ dependencies {
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.zxing.core)
     androidTestImplementation(libs.androidx.work.testing)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    // La que trae Compose no corre en Android 16 o más nuevo (`InputManager.getInstance` ya no existe)
+    androidTestImplementation(libs.androidx.test.espresso.core)
 
     testImplementation(testFixtures(project(":sync")))
     testImplementation(libs.junit)

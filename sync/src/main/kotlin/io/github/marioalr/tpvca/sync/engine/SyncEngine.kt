@@ -1457,7 +1457,7 @@ class SyncEngine(
     private fun noteArrivals(run: Run) {
         if (run.arrivedPatients.isEmpty() && run.arrivedAppointments.isEmpty()) return
         val notices = SyncNotices.read(store.meta(NOTICES))
-        val next = notices + SyncNotices.check(store, run.arrivedPatients, run.arrivedAppointments)
+        val next = SyncNotices.merged(store, notices, SyncNotices.check(store, run.arrivedPatients, run.arrivedAppointments))
         if (next != notices) store.apply(StoreChanges(meta = mapOf(NOTICES to SyncNotices.write(next))))
     }
 
@@ -1672,6 +1672,6 @@ class SyncEngine(
         private const val REJECTED_CODE_PREFIX = "X"
 
         /** Vaciar por otra generación no toca el freno, la identidad ni las pausas. */
-        val KEPT_META_ON_CLEAR = listOf(ConsumptionBrake.META_PREFIX, "Cloud:", "Pause:", "Status:")
+        val KEPT_META_ON_CLEAR = listOf(ConsumptionBrake.META_PREFIX, "Cloud:", "Pause:", "Status:", LocalSide.DRAFT_PREFIX)
     }
 }

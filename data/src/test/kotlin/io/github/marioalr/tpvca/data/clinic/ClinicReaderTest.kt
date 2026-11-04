@@ -257,7 +257,8 @@ class ClinicReaderTest {
             var size = 0
             val ms = measureTimeMillis { size = block() }
             println("VOLUMEN $name: $size en $ms ms")
-            assertTrue("$name tardó $ms ms", ms < limitMillis)
+            // Una máquina compartida de la CI se detiene segundos enteros: aquí solo se atrapa lo patológico (leer de más, una consulta sin índice). Lo que tarda de verdad lo mide `ClinicReaderDeviceTest`
+            assertTrue("$name tardó $ms ms", ms < limitMillis * SHARED_RUNNER_SLACK)
         }
         timed("pacientes recientes (límite 50)", 500) { reader.recentPatients().size }
         val all = reader.allPatients()
@@ -273,5 +274,9 @@ class ClinicReaderTest {
         assertEquals(5000, all.size)
         assertEquals(20, reader.consultations(patients[0]).size)
         assertTrue(reader.consultationCount(patients[0]) > 1000)
+    }
+
+    private companion object {
+        const val SHARED_RUNNER_SLACK = 10
     }
 }

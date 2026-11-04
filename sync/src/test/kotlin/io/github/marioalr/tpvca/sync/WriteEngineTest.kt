@@ -1318,4 +1318,28 @@ class WriteEngineTest {
         assertFalse(original == tampered.readText())
         assertTrue(ScenarioHarness(tampered).run().isNotEmpty())
     }
+
+    /** K6: lo que guarda el formulario llega a la nube con su marca, y lo que no se tocó no se marca. */
+    @Test
+    fun laEdicionDelFormularioSubeSoloLoQueCambio() {
+        linked()
+        val (id, _) = writes.newPatient("Ana López", mapOf("Allergies" to "Penicilina", "Phone" to "5512345678", "Gender" to "Femenino", "Age" to 30))
+        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Completed)
+        val today = io.github.marioalr.tpvca.domain.Clinic.today(java.time.Instant.now())
+        val row = writes.patientRow(id)!!
+        val form = io.github.marioalr.tpvca.sync.rules.PatientFormFields.formOf(row, today)
+        val baseline = io.github.marioalr.tpvca.sync.rules.PatientFormFields.columnsOf(form, today, form.age(today)).mapValues { (c, v) -> io.github.marioalr.tpvca.sync.rules.PatientFormFields.comparable(c, v) }
+        val stored = io.github.marioalr.tpvca.sync.rules.PatientFormFields.snapshotOf(row, today)
+        val edited = form.copy(allergies = "Penicilina, sulfas")
+        assertTrue(writes.savePatientEdit(id, io.github.marioalr.tpvca.sync.rules.PatientFormFields.columnsOf(edited, today, edited.age(today)), baseline, stored))
+        assertEquals(1, store.outbox().size)
+        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Completed)
+        assertTrue(store.outbox().isEmpty())
+        val cloudRow = cloud.admin("SELECT Allergies, Phone, FieldStampsJson FROM Patients WHERE SyncId = ?", id).single()
+        assertEquals("Penicilina, sulfas", cloudRow["Allergies"]?.text)
+        assertEquals("5512345678", cloudRow["Phone"]?.text)
+        val stamps = cloudRow["FieldStampsJson"]?.text.orEmpty()
+        assertTrue(stamps, "Allergies" in stamps)
+        assertFalse(stamps, "\"Phone\"" in stamps)
+    }
 }

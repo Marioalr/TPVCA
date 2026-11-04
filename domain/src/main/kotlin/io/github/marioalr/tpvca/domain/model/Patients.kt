@@ -48,6 +48,12 @@ data class Patient(
     val zoonosis: String = "",
     val lastDiagnosis: String = "",
     val vitalSigns: String = "",
+    val bloodType: String = "",
+    val sexualPartnersCount: String = "",
+    val isPeriodHeavy: String = "",
+    val clinicalNotes: String = "",
+    /** La receta vigente del expediente (`ActivePrescriptionJson`): «Última receta» de la ficha. */
+    val activePrescription: List<PrescriptionItem> = emptyList(),
 ) {
     /** Con fecha de nacimiento, los años cumplidos hoy; sin ella, la edad capturada. */
     fun age(today: LocalDate): Int = birthDate?.let { PatientIdentity.calculateAge(it, today) } ?: storedAge
@@ -151,6 +157,8 @@ data class Appointment(
     val reason: String = "",
     val status: String = "Programada",
     val notes: String = "",
+    val patientRecordNumber: String = "",
+    val patientPhone: String = "",
 ) {
     val isCancelled: Boolean get() = status == "Cancelada"
 

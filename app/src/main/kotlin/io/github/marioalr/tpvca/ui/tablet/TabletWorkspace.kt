@@ -80,6 +80,12 @@ class FormSession(
     var form by mutableStateOf(initial)
     var error by mutableStateOf<String?>(null)
     var saving by mutableStateOf(false)
+
+    /** Ya se está escribiendo: desde aquí no se puede salir. Mientras solo espera a la nube, sí, y entonces no se guarda nada. */
+    var writing by mutableStateOf(false)
+
+    /** El nombre del expediente, no lo que se lleva escrito. */
+    val storedName: String get() = stored["FullName"].orEmpty()
     val isNew: Boolean get() = patientSyncId == null
 
     fun draft() = PatientFormDraft(patientSyncId, newSyncId, suggestedFolio, form, opened, baseline, stored)
@@ -115,6 +121,10 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
     class Toast(val text: String, val warning: Boolean)
 
     private var pageBeforeForm: TabletPage = TabletPage.PatientsHome
+    private var pageBeforeSync: TabletPage = TabletPage.Hub
+    private var restoring = false
+    private var restoreAgain = false
+    private var openingForm = false
     private var formSessionId = 0
     private var draftJob: Job? = null
     private var appointmentDraftJob: Job? = null
@@ -128,6 +138,8 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
     }
 
     suspend fun ask(title: String, message: String): Boolean {
+        // Una pregunta nueva no deja a la anterior esperando para siempre: esa cuenta como «No»
+        confirm?.answer?.complete(false)
         val request = ConfirmRequest(title, message, CompletableDeferred())
         confirm = request
         return request.answer.await()
@@ -145,33 +157,58 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
     // ------------------------------------------------------------------ navegación
 
     fun goHub() {
+        if (returnToOpenForm()) return
         closeAgenda()
         homeQuery = ""
         page = TabletPage.Hub
     }
 
     fun goPatients() {
+        if (returnToOpenForm()) return
         page = TabletPage.PatientsHome
     }
 
+    /** Un formulario abierto nunca se queda sin camino de regreso. */
+    private fun returnToOpenForm(): Boolean {
+        if (form == null) return false
+        page = TabletPage.Form
+        return true
+    }
+
     fun goSync() {
+        if (page != TabletPage.Sync) pageBeforeSync = page
         page = TabletPage.Sync
+    }
+
+    /** «Volver» de Sincronización: a donde estaba, también al formulario con lo escrito. */
+    fun leaveSync() {
+        page = if (form != null) TabletPage.Form else pageBeforeSync.takeIf { it != TabletPage.Form } ?: TabletPage.Hub
     }
 
     fun setQuery(text: String) {
         homeQuery = text
+        firstResult = null
         if (text.isNotBlank() && page is TabletPage.Chart) page = TabletPage.PatientsHome
     }
 
     /** El primero de los resultados: lo que abre Enter en el buscador. */
-    var firstResult: String? = null
+    private var firstResult: Pair<String, String?>? = null
 
+    /** Lo que ya se buscó: de [query], el primero. */
+    fun noteFirstResult(query: String, syncId: String?) {
+        firstResult = query to syncId
+    }
+
+    /** Solo el de lo que está escrito ahora: sin texto, o antes de que salgan sus resultados, Enter no abre nada. */
     fun openFirstResult() {
-        firstResult?.let(::openChart)
+        val (query, syncId) = firstResult ?: return
+        if (homeQuery.isBlank() || query != homeQuery) return
+        syncId?.let(::openChart)
     }
 
     fun openChart(syncId: String) {
         homeQuery = ""
+        firstResult = null
         page = TabletPage.Chart(syncId)
     }
 
@@ -181,7 +218,8 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
             detail != null -> detail = null
             agendaOpen -> closeAgenda()
             page == TabletPage.Form -> backFromForm()
-            page is TabletPage.Chart || page == TabletPage.Sync -> page = TabletPage.PatientsHome.takeIf { page is TabletPage.Chart } ?: TabletPage.Hub
+            page is TabletPage.Chart -> page = TabletPage.PatientsHome
+            page == TabletPage.Sync -> leaveSync()
             homeQuery.isNotEmpty() -> homeQuery = ""
             page == TabletPage.PatientsHome -> page = TabletPage.Hub
             else -> return false
@@ -214,7 +252,7 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
     /** «Agendar» desde la ficha: el paciente ya viene puesto. */
     fun preselectPatient(syncId: String) {
         scope.launch {
-            val patient = withContext(io) { runCatching { env.phone.reader.patient(syncId) }.getOrNull() } ?: return@launch
+            val patient = withContext(io) { runCatching { env.phone.reader.activePatient(syncId) }.getOrNull() } ?: return@launch
             if (appointment.isOpen && appointment.patient == null) {
                 appointment.patient = AgendaPatient(syncId, patient.fullName, patient.recordNumber, patient.phone)
                 appointmentChanged()
@@ -291,46 +329,67 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
 
     // ------------------------------------------------------------------ alta y edición
 
-    fun newPatient(fromSearch: String = "") {
+    /**
+     * Hay un solo formulario y un solo borrador: **abrir otro nunca reemplaza lo que ya se escribió**, ni lo que está en memoria ni lo que quedó guardado sin recuperar. Regresa `false` si ya hay uno: se muestra ese o se dice por qué no.
+     */
+    private suspend fun canStartForm(): Boolean {
+        if (form == null && restoreForm() && form == null) {
+            info = "Hay una edición sin guardar de un expediente que todavía está bajando. Espere a que termine de bajar."
+            return false
+        }
+        if (form == null) return true
+        page = TabletPage.Form
+        show(FORM_ALREADY_OPEN, warning = true)
+        return false
+    }
+
+    /** Un segundo toque mientras se abre el primero tampoco reemplaza nada. */
+    private fun startForm(build: suspend () -> FormSession?, afterOpen: () -> Unit = {}) {
+        if (openingForm) return
+        openingForm = true
         scope.launch {
-            val session = try {
-                val engine = env.writes() ?: throw WriteRefused(WriteRefused.Reason.NOT_APPROVED, AgendaController.NOT_READY)
-                val folio = withContext(io) { engine.suggestedPatientFolio() }
-                val initial = PatientForm.fromSearch(fromSearch, folio)
-                FormSession(null, SyncIds.random(), folio, initial, PatientForm(recordNumber = folio), emptyMap(), emptyMap())
+            try {
+                if (!canStartForm()) return@launch
+                val session = build() ?: return@launch
+                openForm(session)
+                afterOpen()
             } catch (e: Exception) {
                 info = problem(e)
-                return@launch
+            } finally {
+                openingForm = false
             }
-            homeQuery = ""
-            openForm(session)
-            if (fromSearch.isNotBlank()) formChanged()
         }
     }
 
+    private fun engine(): WriteEngine = env.writes() ?: throw WriteRefused(WriteRefused.Reason.NOT_APPROVED, AgendaController.NOT_READY)
+
+    fun newPatient(fromSearch: String = "") = startForm(
+        build = {
+            val folio = withContext(io) { engine().suggestedPatientFolio() }
+            homeQuery = ""
+            FormSession(null, SyncIds.random(), folio, PatientForm.fromSearch(fromSearch, folio), PatientForm(recordNumber = folio), emptyMap(), emptyMap())
+        },
+        afterOpen = { if (fromSearch.isNotBlank()) formChanged() },
+    )
+
     /** Editar: el formulario se abre con la fila de ahora, y esa es su foto. [section]: «Editar esta sección». */
-    fun editPatient(syncId: String, section: String? = null) {
-        scope.launch {
-            val session = try {
-                val engine = env.writes() ?: throw WriteRefused(WriteRefused.Reason.NOT_APPROVED, AgendaController.NOT_READY)
-                val day = today()
-                val row = withContext(io) { engine.patientRow(syncId) }
-                if (row == null) {
-                    info = "El expediente ya no existe en la base de datos."
-                    return@launch
-                }
+    fun editPatient(syncId: String, section: String? = null) = startForm(
+        build = {
+            val day = today()
+            val row = withContext(io) { engine().patientRow(syncId) }
+            if (row == null) {
+                info = "El expediente ya no existe en la base de datos."
+                null
+            } else {
                 val form = PatientFormFields.formOf(row, day, section ?: "Identificacion")
                 val baseline = PatientFormFields.columnsOf(form, day, form.age(day)).mapValues { (column, value) -> PatientFormFields.comparable(column, value) }
                 FormSession(syncId, null, null, form, form, baseline, PatientFormFields.snapshotOf(row, day))
-            } catch (e: Exception) {
-                info = problem(e)
-                return@launch
             }
-            openForm(session)
-        }
-    }
+        },
+    )
 
     private fun openForm(session: FormSession) {
+        if (form != null) return
         formSessionId++
         if (page != TabletPage.Form) pageBeforeForm = page
         form = session
@@ -382,80 +441,112 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         }
     }
 
-    /** Al abrir: si quedó un alta, una edición o una cita sin guardar, se reabre tal cual (`TryRestorePatientFormDraftAsync`). Si no se pudo leer la base, se intenta la siguiente vez. */
+    /** Al abrir, y cada vez que baja algo mientras falte: si quedó un alta, una edición o una cita sin guardar, se reabre tal cual (`TryRestorePatientFormDraftAsync`). Si no se pudo leer la base, se intenta la siguiente vez. */
     fun restoreDrafts() {
         if (restored) return
+        // Lo que bajó mientras tanto cuenta: al terminar se revisa otra vez
+        if (restoring) {
+            restoreAgain = true
+            return
+        }
+        restoring = true
         scope.launch {
             try {
-                restoreForm()
+                val waiting = restoreForm()
                 restoreAppointment()
-                restored = true
+                restored = !waiting
             } catch (_: Exception) {
                 // La base no está lista: el borrador sigue guardado
+            } finally {
+                restoring = false
+                if (restoreAgain) {
+                    restoreAgain = false
+                    restoreDrafts()
+                }
             }
         }
     }
 
-    private suspend fun restoreForm() {
-        if (form != null) return
-        val local = env.local() ?: throw IllegalStateException()
-        val text = withContext(io) { local.draft(LocalSide.PATIENT_FORM) } ?: return
+    /** `true` si hay una edición que todavía no se puede reabrir: su expediente está por bajar. El borrador se queda. */
+    private suspend fun restoreForm(): Boolean {
+        if (form != null) return false
+        val local = withContext(io) { env.local() } ?: throw IllegalStateException()
+        val text = withContext(io) { local.draft(LocalSide.PATIENT_FORM) } ?: return false
         val draft = PatientFormDraft.decode(text)
         if (draft == null) {
             withContext(io) { local.deleteDraft(LocalSide.PATIENT_FORM) }
-            return
+            return false
         }
-        val engine = env.writes() ?: throw IllegalStateException()
-        val existing = withContext(io) { (draft.patientSyncId ?: draft.newSyncId)?.let { engine.patientRow(it) } }
+        val (existing, downloaded) = withContext(io) {
+            val engine = env.writes() ?: throw IllegalStateException()
+            // A media descarga, que no esté no quiere decir que se borró
+            engine.patientRowAndDownload((draft.patientSyncId ?: draft.newSyncId).orEmpty())
+        }
         if (draft.patientSyncId != null && existing == null) {
+            if (!downloaded) return true
             withContext(io) { local.deleteDraft(LocalSide.PATIENT_FORM) }
             info = "Se descartó la edición sin guardar: el expediente ya no existe."
-            return
+            return false
         }
         // Un alta cuyo expediente ya existe ya se guardó: se fue la luz entre guardar y borrar el borrador
         if (draft.patientSyncId == null && existing != null) {
             withContext(io) { local.deleteDraft(LocalSide.PATIENT_FORM) }
-            return
+            return false
         }
         openForm(FormSession(draft.patientSyncId, draft.newSyncId, draft.suggestedFolio, draft.form, draft.opened, draft.baseline, draft.stored))
         show(if (draft.patientSyncId != null) "Se recuperó la edición del expediente que no se había guardado" else "Se recuperó el alta de paciente que no se había guardado")
+        return false
     }
 
     private suspend fun restoreAppointment() {
         if (appointment.isOpen) return
-        val local = env.local() ?: throw IllegalStateException()
+        val local = withContext(io) { env.local() } ?: throw IllegalStateException()
         val text = withContext(io) { local.draft(LocalSide.APPOINTMENT_FORM) } ?: return
-        if (appointment.restore(text)) {
-            agendaDate = appointment.slotDate ?: today()
-            agendaOpen = true
-        } else {
+        if (!appointment.restore(text)) {
             withContext(io) { local.deleteDraft(LocalSide.APPOINTMENT_FORM) }
+            return
+        }
+        agendaDate = appointment.slotDate ?: today()
+        agendaOpen = true
+        val chosen = appointment.patient ?: return
+        // Lo que se copió al escribir el borrador puede ser viejo: el nombre, el folio y el teléfono de ahora, o decir que ya no está
+        val (current, downloaded) = withContext(io) { (env.writes() ?: throw IllegalStateException()).patientRowAndDownload(chosen.syncId) }
+        if (current != null) {
+            appointment.patient = AgendaPatient(chosen.syncId, current["FullName"] as String? ?: "", current["RecordNumber"] as String? ?: "", current["Phone"] as String? ?: "")
+        } else if (downloaded) {
+            appointment.patient = null
+            appointment.error = AgendaController.PATIENT_GONE
+            saveAppointmentDraft()
         }
     }
 
     /** «Cancelar» y «Volver» (`CancelPatientForm`): un alta con datos pregunta. */
     fun cancelForm() {
         val session = form ?: return
+        if (session.writing) return
         scope.launch {
             val typed = session.isNew && (session.form.firstName.isNotBlank() || session.form.lastName.isNotBlank())
             if (typed && !ask("Salir del alta", "¿Salir sin guardar el paciente nuevo?\n\nLo capturado se perderá.")) return@launch
-            closeForm()
+            closeForm(session)
         }
     }
 
     /** La flecha de atrás del sistema, que la PC no tiene y se toca sin querer: también pregunta en una edición con cambios. */
     private fun backFromForm() {
         val session = form ?: return
+        if (session.writing) return
         if (session.isNew || session.form.sameDataAs(session.opened)) {
             cancelForm()
             return
         }
         scope.launch {
-            if (ask("Salir de la edición", "¿Salir sin guardar los cambios del expediente?\n\nLo capturado se perderá.")) closeForm()
+            if (ask("Salir de la edición", "¿Salir sin guardar los cambios del expediente?\n\nLo capturado se perderá.")) closeForm(session)
         }
     }
 
-    private fun closeForm() {
+    /** Solo el formulario por el que se preguntó: una respuesta que llega tarde no cierra otro. */
+    private fun closeForm(session: FormSession) {
+        if (form !== session || session.writing) return
         formSessionId++
         draftJob?.cancel()
         form = null
@@ -493,20 +584,22 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
             if (sessionId != formSessionId || form !== session) return
             if (!confirmNotDuplicate(session, day)) return
         }
+        // Lo cerró mientras se preguntaba
+        if (sessionId != formSessionId || form !== session) return
         val fullName = session.form.fullName().trim()
         val columns = PatientFormFields.columnsOf(session.form, day, check.age)
         val message: String
         val syncId: String
+        session.writing = true
         try {
-            val engine = env.writes() ?: throw WriteRefused(WriteRefused.Reason.NOT_APPROVED, AgendaController.NOT_READY)
             if (session.isNew) {
-                val (id, folio) = withContext(io) { engine.newPatient(fullName, columns - "FullName" - "RecordNumber", session.newSyncId!!) }
+                val (id, folio) = withContext(io) { engine().newPatient(fullName, columns - "FullName" - "RecordNumber", session.newSyncId!!) }
                 syncId = id
                 // Paso 8.16: si otro equipo tomó el folio que se mostraba, se dice cuál quedó
                 message = if (!folio.equals(session.suggestedFolio, ignoreCase = true)) "Expediente de $fullName guardado con el folio $folio" else "Expediente de $fullName guardado"
             } else {
                 syncId = session.patientSyncId!!
-                val done = withContext(io) { engine.savePatientEdit(syncId, columns, session.baseline, session.stored) }
+                val done = withContext(io) { engine().savePatientEdit(syncId, columns, session.baseline, session.stored) }
                 if (!done) {
                     session.error = "No se pudo guardar: el expediente ya no existe en la base de datos. Lo capturado sigue aquí."
                     return
@@ -516,6 +609,8 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         } catch (e: Exception) {
             session.error = "No se pudo guardar. ${problem(e)}"
             return
+        } finally {
+            session.writing = false
         }
         formSessionId++
         draftJob?.cancel()
@@ -551,8 +646,7 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         scope.launch {
             if (!ask("Eliminar expediente", "¿Eliminar el expediente de $fullName?\n\nDejará de aparecer en la búsqueda. Sus consultas y recetas se conservan.")) return@launch
             try {
-                val engine = env.writes() ?: throw WriteRefused(WriteRefused.Reason.NOT_APPROVED, AgendaController.NOT_READY)
-                withContext(io) { engine.edit("Patients", syncId, mapOf("IsActive" to false)) }
+                withContext(io) { engine().edit("Patients", syncId, mapOf("IsActive" to false)) }
             } catch (e: Exception) {
                 info = "No se pudo eliminar el expediente. ${problem(e)}"
                 return@launch
@@ -631,6 +725,7 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
 
     private companion object {
         const val DRAFT_PAUSE_MILLIS = 400L
+        const val FORM_ALREADY_OPEN = "Hay un expediente abierto sin guardar: guárdelo o cancélelo antes de abrir otro."
     }
 }
 

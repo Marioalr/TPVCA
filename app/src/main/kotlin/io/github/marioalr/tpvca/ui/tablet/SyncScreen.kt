@@ -25,7 +25,7 @@ import io.github.marioalr.tpvca.ui.phone.load
 import io.github.marioalr.tpvca.ui.theme.LocalTpvcColors
 import java.time.format.DateTimeFormatter
 
-private class SyncData(val pending: Int, val saved: SavedSummary, val notice: SyncNotices.ReapplyNotice?)
+private class SyncData(val pending: Int?, val saved: SavedSummary, val notice: SyncNotices.ReapplyNotice?)
 
 private val WHEN = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
 
@@ -39,20 +39,22 @@ fun SyncScreen(workspace: TabletWorkspace, chrome: TabletChrome) {
     val status = chrome.status
     val state by load(Unit, refresh = chrome.dataVersion to workspace.localVersion) {
         val local = workspace.env.local()
-        SyncData(local?.pendingCount() ?: 0, local?.savedSummary() ?: SavedSummary(0, emptyList()), local?.reapplyNotice())
+        SyncData(local?.pendingCount(), local?.savedSummary() ?: SavedSummary(0, emptyList()), local?.reapplyNotice())
     }
     Column(Modifier.fillMaxSize().testTag(TabletTags.SYNC).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            TButton("Inicio", workspace::goHub, icon = TIcons.ChevronLeft)
+            TButton("Volver", workspace::leaveSync, icon = TIcons.ChevronLeft)
             THeading("Sincronización", size = TType.heading)
         }
         TCard(Modifier.fillMaxWidth().widthIn(max = 880.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 val data = (state as? Loaded.Ready)?.value
                 if (status.clinicName.isNotBlank()) TText(status.clinicName)
-                TText(
-                    when (val pending = data?.pending ?: 0) {
-                        0 -> "Todo lo de este equipo ya está en la nube."
+                // Sin haber leído no se afirma nada: mientras lee, nada; si no se pudo, se dice
+                if (state is Loaded.Failed || (state is Loaded.Ready && data?.pending == null)) TText("No se pudo leer lo que espera subir.", color = colors.warningText)
+                if (data?.pending != null) TText(
+                    when (val pending = data.pending) {
+                        0 -> if (data.saved.total == 0) "Todo lo de este equipo ya está en la nube." else "No hay cambios en espera de subir."
                         1 -> "1 cambio sin sincronizar. Está guardado en este equipo y sube en cuanto haya conexión."
                         else -> "$pending cambios sin sincronizar. Están guardados en este equipo y suben en cuanto haya conexión."
                     },

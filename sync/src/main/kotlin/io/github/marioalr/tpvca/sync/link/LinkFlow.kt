@@ -524,7 +524,7 @@ class LinkFlow(
         val token = saved.token ?: return null
         val issuedAt = eraseCount
         return WriteEngine(
-            database.store(),
+            openForWriting(saved, issuedAt),
             { saved.deviceId },
             folios,
             { connectFolio(saved.url, token) },
@@ -548,13 +548,24 @@ class LinkFlow(
         val saved = credential ?: return null
         saved.token ?: return null
         val issued = eraseCount
-        return LocalSide(database.store()) { block ->
+        return LocalSide(openForWriting(saved, issued)) { block ->
             writeGuard {
                 if (issued != eraseCount) throw WriteRefused(WriteRefused.Reason.REVOKED, "Los datos de este equipo ya no están disponibles.")
                 block()
             }
         }
     }
+
+    /**
+     * `store()` abre la base y la crea si no existe: **por eso va dentro de la puerta**. Sin ella, quien pidió esto justo al empezar un borrado volvería a crear una base vacía, con una llave nueva, después de borrar.
+     */
+    private fun openForWriting(saved: DeviceCredential, issued: Long): SyncStore = writeOpen {
+        if (issued != eraseCount || eraseClosed || credential !== saved) throw WriteRefused(WriteRefused.Reason.REVOKED, "Los datos de este equipo ya no están disponibles.")
+        database.store()
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun writeOpen(block: () -> SyncStore): SyncStore = writeGuard(block) as SyncStore
 
     /** Dos 401 y nada pendiente: se borra la base y el token. Se quedan el `DeviceId` y la URL: la fila de `DeviceRegistry` sigue (§4.7). */
     private fun onTokenWipe(saved: DeviceCredential) {

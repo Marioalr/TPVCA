@@ -131,9 +131,23 @@ class WriteEngine(
         recalculate(patients)
     }
 
+    /** Lanza [WriteRefused] si ahora no se puede escribir: para no confundir «todavía no baja» con «ya no existe». */
+    fun checkWritable() {
+        guarded { requireWritable() }
+    }
+
     /** La fila completa de un expediente, para abrir el formulario. `null` si ya no existe o se dio de baja. */
     fun patientRow(syncId: String): LocalRow? = guarded {
         writer.find(writer.table("Patients"), syncId)?.takeIf { it["IsActive"] == 1L }
+    }
+
+    /**
+     * La fila, si sigue activa, y si ya terminó de bajar todo, **de la misma foto**: leídos por separado, una descarga que termina entre los dos haría creer que un expediente que todavía no baja se borró.
+     */
+    fun patientRowAndDownload(syncId: String): Pair<LocalRow?, Boolean> = guarded {
+        store.transaction {
+            writer.find(writer.table("Patients"), syncId)?.takeIf { it["IsActive"] == 1L } to (store.meta(SyncEngine.FIRST_DOWNLOAD_DONE) != null)
+        }
     }
 
     /**

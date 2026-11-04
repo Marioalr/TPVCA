@@ -33,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -136,7 +137,8 @@ fun AgendaPanel(workspace: TabletWorkspace, dataVersion: Long) {
             TDivider()
             SlotKeeper(workspace, slots, date, state is Loaded.Ready)
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (slot in slots) {
+                // Por su cita o su hora, no por su lugar: lo que baja no debe dejar un menú abierto sobre otra cita
+                for (slot in slots) key(slot.appointment?.appointment?.syncId ?: slot.timeText) {
                     SlotRow(workspace, slot, rows, date, (state as? Loaded.Ready)?.value?.profile)
                 }
             }
@@ -329,10 +331,9 @@ private fun PatientPicker(workspace: TabletWorkspace, form: AppointmentFormState
         } else {
             TField(form.patientQuery, { form.patientQuery = it; workspace.appointmentChanged() }, placeholder = "Escriba el nombre", tag = TabletTags.field("Patient"))
             val query = form.patientQuery
-            val all by load(query.isBlank()) { if (query.isBlank()) emptyList() else workspace.env.phone.reader.allPatients() }
-            val rows = (all as? Loaded.Ready)?.value.orEmpty()
-            val found = remember(query, rows) { if (query.isBlank()) emptyList<PatientRow>() else searchPatients(rows, query).take(5) }
-            for (row in found) {
+            // Leer y buscar, fuera del hilo principal
+            val results by load(query) { if (query.isBlank()) emptyList<PatientRow>() else searchPatients(workspace.env.phone.reader.allPatients(), query).take(5) }
+            for (row in (results as? Loaded.Ready)?.value.orEmpty()) key(row.syncId) {
                 Column(
                     Modifier.fillMaxWidth().heightIn(min = TOUCH_MIN).clickable(role = Role.Button) {
                         form.patient = AgendaPatient(row.syncId, row.patient.fullName, row.patient.recordNumber, row.patient.phone)

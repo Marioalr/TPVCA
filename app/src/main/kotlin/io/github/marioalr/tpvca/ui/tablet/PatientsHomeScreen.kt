@@ -32,7 +32,9 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -176,8 +178,11 @@ private fun TodayCard(workspace: TabletWorkspace, chrome: TabletChrome, modifier
     val today = workspace.today()
     val state by load(today, refresh = chrome.dataVersion to workspace.localVersion) {
         val rows = workspace.env.phone.reader.appointmentsBetween(today, today.plusDays(1))
+        val reader = workspace.env.phone.reader
+        // Solo el expediente que sigue activo se abre desde aquí: como en la PC, uno dado de baja ya no se encuentra
+        val active = rows.map { it.patientSyncId }.distinct().filter { reader.activePatient(it) != null }.toSet()
         val patients = java.util.IdentityHashMap<io.github.marioalr.tpvca.domain.model.Appointment, String>().apply { rows.forEach { put(it.appointment, it.patientSyncId) } }
-        AgendaRules.todayAppointments(rows.map { it.appointment }).map { it to patients[it.appointment] }
+        AgendaRules.todayAppointments(rows.map { it.appointment }).map { it to patients[it.appointment]?.takeIf(active::contains) }
     }
     TCard(modifier, padding = 0.dp) {
         Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -194,7 +199,7 @@ private fun TodayCard(workspace: TabletWorkspace, chrome: TabletChrome, modifier
                         TCaption("Puede agendar desde la agenda o desde la ficha de un paciente.")
                     }
                 }
-                for ((marked, patient) in rows) TodayRow(workspace, marked, patient)
+                for ((marked, patient) in rows) key(marked.appointment.syncId) { TodayRow(workspace, marked, patient) }
             }
         }
         TDivider()
@@ -270,7 +275,7 @@ private fun ColumnScope.Recent(workspace: TabletWorkspace, refresh: Any) {
             }
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val columns = if (maxWidth / androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceAtLeast(1f) >= 400.dp) 2 else 1
-                FieldRows(columns, gap = 10.dp, content = recent.map { row -> @Composable { m: Modifier -> RecentCard(workspace, row, m) } })
+                FieldRows(columns, gap = 10.dp, content = recent.map { row -> @Composable { m: Modifier -> key(row.syncId) { RecentCard(workspace, row, m) } } })
             }
         }
     }
@@ -316,12 +321,13 @@ private fun ColumnScope.Results(workspace: TabletWorkspace, refresh: Any) {
     val query = workspace.homeQuery
     val colors = LocalTpvcColors.current
     val all by load(Unit, refresh = refresh) { workspace.env.phone.reader.allPatients() }
-    val results by produceState<List<PatientRow>?>(null, query, all) {
+    val found by produceState<Pair<String, List<PatientRow>>?>(null, query, all) {
         val rows = (all as? Loaded.Ready)?.value ?: return@produceState
         delay(120)
-        value = withContext(Dispatchers.Default) { searchPatients(rows, query) }
+        value = query to withContext(Dispatchers.Default) { searchPatients(rows, query) }
     }
-    workspace.firstResult = results?.firstOrNull()?.syncId
+    val results = found?.second
+    LaunchedEffect(found) { found?.let { (searched, rows) -> workspace.noteFirstResult(searched, rows.firstOrNull()?.syncId) } }
     val count = results?.size ?: 0
     Row(Modifier.padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         THeading("Resultados")
@@ -329,7 +335,7 @@ private fun ColumnScope.Results(workspace: TabletWorkspace, refresh: Any) {
     }
     TDivider()
     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        results?.forEachIndexed { index, row -> ResultRow(workspace, row, first = index == 0) }
+        results?.forEachIndexed { index, row -> key(row.syncId) { ResultRow(workspace, row, first = index == 0) } }
         if (results?.isEmpty() == true) TText("No hay pacientes que coincidan.", Modifier.padding(12.dp), size = TType.detail, color = colors.textSecondary)
         Row(
             Modifier.padding(top = 8.dp).heightIn(min = TOUCH_MIN).clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button) { workspace.newPatient(query) }.padding(horizontal = 10.dp, vertical = 8.dp),

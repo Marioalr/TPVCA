@@ -61,7 +61,8 @@ fun TabletApp(workspace: TabletWorkspace, chrome: TabletChrome) {
     PatientDataWindow()
     val colors = LocalTpvcColors.current
     val lifecycle = LocalLifecycleOwner.current
-    LaunchedEffect(Unit) { workspace.restoreDrafts() }
+    // Otra vez cada que baja algo: una edición puede estar esperando a que baje su expediente
+    LaunchedEffect(chrome.dataVersion) { workspace.restoreDrafts() }
     // Al irse: lo que se estaba escribiendo ya no espera la pausa
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->

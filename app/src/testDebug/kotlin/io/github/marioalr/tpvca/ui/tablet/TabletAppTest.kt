@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -51,6 +52,7 @@ import io.github.marioalr.tpvca.ui.theme.TpvcThemes
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -64,6 +66,10 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import java.io.File
 import java.time.Instant
+
+private object SyncEngineColumns {
+    val patients: List<String> = io.github.marioalr.tpvca.sync.SyncContract.bundledSchema.table("Patients")!!.columns.map { it.name }
+}
 
 /** La tablet en la JVM, sobre la base de Room y el motor de escritura de verdad, con datos inventados. */
 @RunWith(AndroidJUnit4::class)
@@ -80,15 +86,41 @@ class TabletAppTest {
     private var failWrites = false
     private val folios = MemoryFolioNumbers()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var quickGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+    private var failLocal = false
+    private var holdLocal: java.util.concurrent.CountDownLatch? = null
+    private val onMainThread = java.util.concurrent.atomic.AtomicInteger()
+    private var watchDaoThread = false
+
+    private fun checkThread() {
+        if (android.os.Looper.getMainLooper().isCurrentThread) onMainThread.incrementAndGet()
+    }
 
     private fun env(): TabletEnv {
         val assets = File(context.cacheDir, "membrete-tablet")
         return TabletEnv(
-            PhoneEnv(ClinicReader({ database.clinic() }, { assets }), SharedDocuments(context), labFiles = null),
-            writes = { if (failWrites) throw IllegalStateException("/ruta/secreta/base.db") else WriteEngine(store, { "tablet" }, folios, { null }) },
-            local = { LocalSide(store) },
+            PhoneEnv(
+                ClinicReader({
+                    if (watchDaoThread) checkThread()
+                    database.clinic()
+                }, { assets }),
+                SharedDocuments(context),
+                labFiles = null,
+            ),
+            writes = {
+                checkThread()
+                if (failWrites) throw IllegalStateException("/ruta/secreta/base.db") else WriteEngine(store, { "tablet" }, folios, { null })
+            },
+            local = {
+                checkThread()
+                holdLocal?.await()
+                if (failLocal) throw IllegalStateException("/ruta/secreta/base.db") else LocalSide(store)
+            },
             reapplySaved = { SyncEngine(NoCloud, store, SyncEngineConfig("tablet")).reapplySaved() },
-            quickSync = { true },
+            quickSync = {
+                quickGate?.await()
+                true
+            },
             noteLocalWrite = { saves++ },
             refreshNow = {},
         )
@@ -104,7 +136,11 @@ class TabletAppTest {
     }
 
     @After
-    fun close() = database.close()
+    fun close() {
+        // Abrir la base (SQLCipher y el Keystore) nunca en el hilo principal, en ninguna prueba
+        assertEquals(0, onMainThread.get())
+        database.close()
+    }
 
     private fun show(target: TabletWorkspace = workspace) {
         compose.setContent {
@@ -273,7 +309,8 @@ class TabletAppTest {
         waitText("J02.9 Faringitis aguda")
         compose.onNodeWithContentDescription("Abrir la consulta: J02.9 Faringitis aguda").performScrollTo().performClick()
         waitTag(TabletTags.DETAIL)
-        waitText("MOTIVO DE CONSULTA")
+        waitText("Motivo de consulta")
+        assertEquals(0, compose.onAllNodesWithText("MOTIVO DE CONSULTA").fetchSemanticsNodes().size)
         waitText("T/A (mmHg)")
     }
 
@@ -528,7 +565,8 @@ class TabletAppTest {
         text(TabletTags.slot(time)).performScrollTo().performClick()
         waitTag(TabletTags.SLOT_FORM)
         text(TabletTags.field("Patient")).performTextInput(patient)
-        waitText("EXP-2025-152")
+        // Exacto: el folio también sale, con la edad y el sexo, en las tarjetas de atrás del panel
+        waitFor { compose.onAllNodesWithText("EXP-2025-152").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("EXP-2025-152").performClick()
         compose.waitForIdle()
         text(TabletTags.field("Reason")).performScrollTo().performTextInput("Control de prueba")
@@ -587,7 +625,8 @@ class TabletAppTest {
         waitText("Ya hay una cita a las 11:00 con Otra Persona")
         compose.onNodeWithTag(TabletTags.CONFIRM_YES).performClick()
         waitOutbox(1)
-        assertFalse(form.isOpen)
+        // La fila se escribe en otro hilo; el formulario se cierra al regresar
+        waitFor { !form.isOpen }
     }
 
     /** Los menús emergentes se tocan en el equipo (`TabletDeviceTest`): aquí, lo que hace cada opción. */
@@ -624,7 +663,7 @@ class TabletAppTest {
         compose.onNodeWithTag(TabletTags.CONFIRM_YES).performClick()
         waitOutbox(1)
         assertEquals("Cancelada", row().appointment.status)
-        assertEquals(3, saves)
+        waitFor { saves == 3 }
     }
 
     @Test
@@ -691,7 +730,9 @@ class TabletAppTest {
     fun laSincronizacionDiceCuantoEsperaSubir() {
         workspace.goSync()
         show()
-        waitText("Todo lo de este equipo ya está en la nube.")
+        // Con un cambio guardado para «Volver a aplicar» no se dice que todo ya está en la nube
+        waitText("No hay cambios en espera de subir.")
+        assertEquals(0, compose.onAllNodesWithText("ya está en la nube", substring = true).fetchSemanticsNodes().size)
         WriteEngine(store, { "tablet" }, folios, { null }).edit("Patients", anaId(), mapOf("Allergies" to "Negadas"))
         workspace.changed()
         waitText("1 cambio sin sincronizar")
@@ -757,6 +798,339 @@ class TabletAppTest {
             refused = e
         }
         assertNotNull(refused)
+    }
+
+    // ------------------------------------------------------------------ revisión independiente de K6
+
+    private fun deactivate(id: String) {
+        io.github.marioalr.tpvca.sync.engine.LocalWriter(store, { "otro" }).edit("Patients", id, mapOf("IsActive" to false))
+        store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))
+    }
+
+    private val draftKey = LocalSide.DRAFT_PREFIX + LocalSide.PATIENT_FORM
+
+    @Test
+    fun laBarraDeEstadoRegresaAlFormularioConLoEscrito() {
+        newForm()
+        text(TabletTags.field("FirstName")).performTextInput("Laura")
+        compose.onNodeWithTag(TabletTags.STATUS).performClick()
+        waitTag(TabletTags.SYNC)
+        compose.onNodeWithText("Volver").performClick()
+        waitTag(TabletTags.FORM)
+        text(TabletTags.field("FirstName")).assert(hasTextExactly("Laura"))
+    }
+
+    @Test
+    fun abrirOtroFormularioNoReemplazaElAbierto() {
+        newForm()
+        text(TabletTags.field("FirstName")).performTextInput("Laura")
+        val session = workspace.form
+        workspace.goSync()
+        workspace.newPatient()
+        waitFor { workspace.page == TabletPage.Form }
+        assertTrue(session === workspace.form)
+        waitText("Hay un expediente abierto sin guardar")
+        workspace.goSync()
+        workspace.editPatient(anaId())
+        waitFor { workspace.page == TabletPage.Form }
+        assertTrue(session === workspace.form)
+        assertEquals("Laura", workspace.form!!.form.firstName)
+    }
+
+    @Test
+    fun unBorradorSinRecuperarNoSePisaAlAbrirOtro() {
+        newForm()
+        text(TabletTags.field("FirstName")).performTextInput("Laura")
+        waitFor { store.meta(draftKey) != null }
+        val fresh = TabletWorkspace(env(), scope)
+        // Sin haber restaurado todavía: «Nuevo paciente» recupera, no empieza otro
+        fresh.newPatient()
+        waitFor { fresh.form != null }
+        assertEquals("Laura", fresh.form!!.form.firstName)
+        assertTrue(store.meta(draftKey)!!.contains("Laura"))
+    }
+
+    @Test
+    fun aMediaDescargaNoSeBorraElBorradorDeUnaEdicion() {
+        val id = anaId()
+        workspace.editPatient(id)
+        show()
+        waitTag(TabletTags.FORM)
+        workspace.updateForm { it.copy(allergies = "Lo escrito") }
+        waitFor { store.meta(draftKey) != null }
+        val row = store.select("Patients", SyncEngineColumns.patients, "SyncId", listOf(id)).single()
+        // Otra generación: se vació y todavía no baja
+        store.apply(StoreChanges(deletes = mapOf("Patients" to setOf(id)), metaRemoved = setOf(SyncEngine.FIRST_DOWNLOAD_DONE)))
+        val fresh = TabletWorkspace(env(), scope)
+        fresh.restoreDrafts()
+        Thread.sleep(300)
+        waitFor { true }
+        org.robolectric.shadows.ShadowLooper.idleMainLooper(300, java.util.concurrent.TimeUnit.MILLISECONDS)
+        Thread.sleep(300)
+        org.robolectric.shadows.ShadowLooper.idleMainLooper(300, java.util.concurrent.TimeUnit.MILLISECONDS)
+        assertNull(fresh.form)
+        assertNotNull(store.meta(draftKey))
+        assertNull(fresh.info)
+        // Ya bajó: se reabre con lo escrito
+        store.apply(StoreChanges(writes = listOf(io.github.marioalr.tpvca.sync.engine.RowWrite("Patients", id, row, isNew = true)), meta = mapOf(SyncEngine.FIRST_DOWNLOAD_DONE to "x")))
+        fresh.restoreDrafts()
+        waitFor { fresh.form != null }
+        assertEquals("Lo escrito", fresh.form!!.form.allergies)
+    }
+
+    @Test
+    fun yaDescargadoUnExpedienteQueNoEstaSiDescartaYLoDice() {
+        val id = anaId()
+        workspace.editPatient(id)
+        show()
+        waitTag(TabletTags.FORM)
+        workspace.updateForm { it.copy(allergies = "Lo escrito") }
+        waitFor { store.meta(draftKey) != null }
+        deactivate(id)
+        val fresh = TabletWorkspace(env(), scope)
+        fresh.restoreDrafts()
+        waitFor { fresh.info != null }
+        assertNull(store.meta(draftKey))
+    }
+
+    private fun appointmentDraft(patient: String): io.github.marioalr.tpvca.ui.agenda.AppointmentFormState {
+        val form = io.github.marioalr.tpvca.ui.agenda.AppointmentFormState()
+        form.open(workspace.today().plusDays(2), "11:00", io.github.marioalr.tpvca.ui.agenda.AgendaPatient(patient, "Nombre Viejo", "F-VIEJA", "1"))
+        form.reason = "Motivo escrito"
+        LocalSide(store).saveDraft(LocalSide.APPOINTMENT_FORM, form.encode())
+        return form
+    }
+
+    @Test
+    fun laCitaRecuperadaTomaLosDatosDeAhoraDelPaciente() {
+        appointmentDraft(anaId())
+        show()
+        val fresh = TabletWorkspace(env(), scope)
+        fresh.restoreDrafts()
+        waitFor { fresh.appointment.patient?.fullName == "Paciente Ana Ejemplo Ruiz" }
+        assertEquals("EXP-2026-014", fresh.appointment.patient!!.recordNumber)
+        assertEquals("5500000001", fresh.appointment.patient!!.phone)
+    }
+
+    @Test
+    fun laCitaRecuperadaDeUnPacienteDadoDeBajaLoDiceYNoSeCrea() {
+        val id = anaId()
+        appointmentDraft(id)
+        deactivate(id)
+        show()
+        val fresh = TabletWorkspace(env(), scope)
+        fresh.restoreDrafts()
+        waitFor { fresh.appointment.error != null }
+        assertNull(fresh.appointment.patient)
+        assertEquals("Motivo escrito", fresh.appointment.reason)
+        fresh.scheduleAppointment()
+        waitFor { fresh.appointment.error?.contains("Elija el paciente") == true }
+        assertTrue(store.outbox().isEmpty())
+    }
+
+    @Test
+    fun agendarAUnPacienteQueSeDioDeBajaNoLaCreaYCopiaLoDeAhora() {
+        val id = anaId()
+        val form = workspace.appointment
+        form.open(workspace.today().plusDays(2), "11:00", io.github.marioalr.tpvca.ui.agenda.AgendaPatient(id, "Nombre Viejo", "F-VIEJA", "1"))
+        form.reason = "Control"
+        show()
+        deactivate(id)
+        workspace.scheduleAppointment()
+        waitFor { form.error == io.github.marioalr.tpvca.ui.agenda.AgendaController.PATIENT_GONE }
+        assertNull(form.patient)
+        assertTrue(form.isOpen)
+        assertTrue(store.outbox().isEmpty())
+        // Con un expediente activo, lo que se copia es el de ahora
+        val juan = store.select("Patients", listOf("SyncId", "RecordNumber")).first { it["RecordNumber"] == "EXP-2026-009" }["SyncId"] as String
+        form.patient = io.github.marioalr.tpvca.ui.agenda.AgendaPatient(juan, "Nombre Viejo", "F-VIEJA", "1")
+        workspace.scheduleAppointment()
+        waitOutbox(1)
+        val row = store.select("Appointments", listOf("PatientName", "PatientRecordNumber", "Reason")).first { it["Reason"] == "Control" }
+        assertEquals("Paciente Juan Ejemplo Gómez", row["PatientName"])
+        assertEquals("EXP-2026-009", row["PatientRecordNumber"])
+    }
+
+    @Test
+    fun laFichaDeUnExpedienteDadoDeBajaDiceQueYaNoExisteSinBotones() {
+        val id = anaId()
+        deactivate(id)
+        workspace.openChart(id)
+        show()
+        waitText("El expediente ya no existe.")
+        assertEquals(0, compose.onAllNodesWithText("Agendar cita").fetchSemanticsNodes().size)
+        assertEquals(0, compose.onAllNodesWithContentDescription("Eliminar expediente").fetchSemanticsNodes().size)
+        assertEquals(0, compose.onAllNodesWithTag(TabletTags.MORE).fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun laCitaDeHoyDeUnExpedienteDadoDeBajaNoLoAbre() {
+        deactivate(store.select("Patients", listOf("SyncId", "RecordNumber")).first { it["RecordNumber"] == "EXP-2025-188" }["SyncId"] as String)
+        workspace.goPatients()
+        show()
+        waitText("Retiro de puntos")
+        compose.onNodeWithText("Retiro de puntos").performClick()
+        compose.waitForIdle()
+        assertEquals(TabletPage.PatientsHome, workspace.page)
+        // La de un expediente activo, sí
+        compose.onNodeWithText("Control de presión").performClick()
+        waitFor { workspace.page is TabletPage.Chart }
+    }
+
+    /** El menú abierto se queda con su cita aunque baje otra que recorra la lista. Sin `key`, se pasaba a la de abajo. */
+    @Test
+    fun elMenuAbiertoSigueSiendoDeSuCitaDespuesDeRecargar() {
+        val day = workspace.today().plusDays(3)
+        val writer = io.github.marioalr.tpvca.sync.engine.LocalWriter(store, { "otro" })
+        val date = io.github.marioalr.tpvca.sync.ProtocolDate.format(day.atStartOfDay())
+        fun add(id: String, name: String, time: String) = writer.create("Appointments", id, mapOf("PatientRecordSyncId" to anaId(), "PatientName" to name, "Date" to date, "Time" to time, "DurationMinutes" to 30, "Status" to "Programada", "Reason" to "Control"))
+        add("00000000-0000-0000-0000-0000000000c1", "Cita Uno", "10:00")
+        add("00000000-0000-0000-0000-0000000000c2", "Cita Dos", "10:30")
+        store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))
+        workspace.goPatients()
+        workspace.openAgenda(day)
+        show()
+        waitTag(TabletTags.appointmentMenu("10:00"))
+        text(TabletTags.appointmentMenu("10:00")).performScrollTo().performClick()
+        waitText("Cancelar la cita")
+        // Baja una cita que ocupa dos huecos: las de abajo suben un lugar
+        add("00000000-0000-0000-0000-0000000000c3", "Otra Persona", "08:40")
+        store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))
+        workspace.changed()
+        waitText("Otra Persona")
+        compose.onNodeWithText("Cancelar la cita").performClick()
+        waitText("¿Cancelar la cita de")
+        waitText("¿Cancelar la cita de Cita Uno")
+        compose.onNodeWithTag(TabletTags.CONFIRM_NO).performClick()
+    }
+
+    @Test
+    fun unaSegundaPreguntaCuentaLaPrimeraComoNo() {
+        show()
+        var first: Boolean? = null
+        var second: Boolean? = null
+        scope.launch { first = workspace.ask("Uno", "Primera") }
+        scope.launch { second = workspace.ask("Dos", "Segunda") }
+        waitFor { first == false }
+        waitText("Segunda")
+        compose.onNodeWithTag(TabletTags.CONFIRM_YES).performClick()
+        waitFor { second == true }
+    }
+
+    @Test
+    fun cancelarMientrasEsperaALaNubeNoCreaNada() {
+        newForm()
+        fillValid()
+        quickGate = kotlinx.coroutines.CompletableDeferred()
+        compose.onNodeWithTag(TabletTags.FORM_SAVE).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Cancelar").performClick()
+        waitText("¿Salir sin guardar el paciente nuevo?")
+        compose.onNodeWithTag(TabletTags.CONFIRM_YES).performClick()
+        waitFor { workspace.form == null }
+        quickGate!!.complete(Unit)
+        Thread.sleep(200)
+        waitFor { true }
+        assertNull(patientByName("Laura Prueba"))
+        assertTrue(store.outbox().isEmpty())
+        assertNull(store.meta(draftKey))
+    }
+
+    @Test
+    fun mientrasEscribeNoSePuedeSalir() {
+        newForm()
+        val session = workspace.form!!
+        session.writing = true
+        workspace.cancelForm()
+        workspace.back()
+        compose.waitForIdle()
+        assertTrue(session === workspace.form)
+        assertNull(workspace.confirm)
+        session.writing = false
+    }
+
+    @Test
+    fun laSincronizacionNoTranquilizaSinHaberLeido() {
+        val hold = java.util.concurrent.CountDownLatch(1)
+        holdLocal = hold
+        workspace.goSync()
+        show()
+        Thread.sleep(200)
+        compose.waitForIdle()
+        assertEquals(0, compose.onAllNodesWithText("ya está en la nube", substring = true).fetchSemanticsNodes().size)
+        failLocal = true
+        hold.countDown()
+        waitText("No se pudo leer lo que espera subir.")
+        assertEquals(0, compose.onAllNodesWithText("ya está en la nube", substring = true).fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun enterSinTextoNoReabreAlPacienteAnterior() {
+        workspace.goPatients()
+        show()
+        text(TabletTags.SEARCH).performTextInput("sofia")
+        waitText("EXP-2025-188")
+        waitFor { workspace.openFirstResult(); workspace.page is TabletPage.Chart }
+        val chart = workspace.page
+        workspace.goPatients()
+        assertEquals("", workspace.homeQuery)
+        workspace.openFirstResult()
+        assertEquals(TabletPage.PatientsHome, workspace.page)
+        assertTrue(chart != workspace.page)
+        // Lo que se buscó antes tampoco vale para lo que se escribe ahora
+        workspace.noteFirstResult("ana", anaId())
+        workspace.setQuery("sofia")
+        workspace.openFirstResult()
+        assertEquals(TabletPage.PatientsHome, workspace.page)
+        workspace.noteFirstResult("otra", anaId())
+        workspace.openFirstResult()
+        assertEquals(TabletPage.PatientsHome, workspace.page)
+    }
+
+    @Test
+    fun eliminarDesdeElFormularioNombraAlExpedienteNoLoEscrito() {
+        workspace.editPatient(anaId())
+        show()
+        waitTag(TabletTags.FORM)
+        workspace.updateForm { it.copy(firstName = "Otro Nombre") }
+        compose.waitForIdle()
+        compose.onNodeWithText("Eliminar expediente").performClick()
+        waitText("¿Eliminar el expediente de Paciente Ana Ejemplo Ruiz?")
+        compose.onNodeWithTag(TabletTags.CONFIRM_NO).performClick()
+    }
+
+    @Test
+    fun laBusquedaDeLaAgendaEsFueraDelHiloPrincipal() {
+        val form = workspace.appointment
+        form.open(workspace.today().plusDays(2), "11:00", null)
+        workspace.goPatients()
+        workspace.openAgenda(workspace.today().plusDays(2))
+        show()
+        watchDaoThread = true
+        text(TabletTags.field("Patient")).performScrollTo().performTextInput("Roberto")
+        waitFor { compose.onAllNodesWithText("EXP-2025-152").fetchSemanticsNodes().isNotEmpty() }
+        watchDaoThread = false
+    }
+
+    @Test
+    fun cambiarDeHuecoConUnToqueNoBorraLoEscrito() {
+        val form = workspace.appointment
+        val day = workspace.today().plusDays(2)
+        form.open(day, "11:00", null)
+        form.reason = "Lo escrito"
+        form.open(day, "11:30", null)
+        assertEquals("Lo escrito", form.reason)
+        assertEquals("11:30", form.slotTime)
+    }
+
+    @Test
+    fun quitarUnResultadoSeVeDeshabilitado() {
+        workspace.openChart(anaId())
+        show()
+        waitText("Biometría hemática")
+        val node = compose.onAllNodesWithContentDescription("Quitar, en la siguiente versión").fetchSemanticsNodes().single()
+        assertTrue(SemanticsProperties.Disabled in node.config)
+        assertFalse(SemanticsActions.OnClick in node.config)
     }
 
     private fun hasTextExactly(value: String) = androidx.compose.ui.test.hasText(value)

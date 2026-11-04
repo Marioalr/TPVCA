@@ -52,10 +52,12 @@ class AppointmentFormState {
     val isOpen: Boolean get() = slotTime != null
 
     fun open(date: LocalDate, time: String, selected: AgendaPatient?) {
+        val hadForm = isOpen
         slotDate = date
         slotTime = time
         request++
-        if (keepValues) {
+        // Cambiar de hueco con un toque no borra lo escrito: en una pantalla táctil es fácil tocar otro sin querer
+        if (keepValues || hadForm) {
             keepValues = false
         } else {
             patient = selected
@@ -172,15 +174,22 @@ class AgendaController(
             val duration = if (form.duration > 0) form.duration else 30
             val candidate = Appointment(patientName = patient.fullName, date = date, time = time, durationMinutes = duration, reason = form.reason.trim(), status = "Programada")
             if (!confirmNoOverlap(candidate) { request == form.request }) return null
+            val current: AgendaPatient?
             try {
-                withContext(io) {
-                    engine().create(
+                current = withContext(io) {
+                    val writes = engine()
+                    // Primero si se puede escribir: a media descarga, que no esté no quiere decir que se borró
+                    writes.checkWritable()
+                    val row = writes.patientRow(patient.syncId) ?: return@withContext null
+                    // Lo que la cita copia, del expediente de ahora: no de cuando se eligió o se escribió el borrador
+                    val fresh = AgendaPatient(patient.syncId, row["FullName"] as String? ?: "", row["RecordNumber"] as String? ?: "", row["Phone"] as String? ?: "")
+                    writes.create(
                         "Appointments",
                         mapOf(
-                            "PatientRecordSyncId" to patient.syncId,
-                            "PatientName" to patient.fullName,
-                            "PatientRecordNumber" to patient.recordNumber,
-                            "PatientPhone" to patient.phone,
+                            "PatientRecordSyncId" to fresh.syncId,
+                            "PatientName" to fresh.fullName,
+                            "PatientRecordNumber" to fresh.recordNumber,
+                            "PatientPhone" to fresh.phone,
                             "Date" to ProtocolDate.format(date.atStartOfDay()),
                             "Time" to time,
                             "DurationMinutes" to duration,
@@ -189,14 +198,20 @@ class AgendaController(
                             "CreatedAt" to ProtocolDate.format(Clinic.localNow(now())),
                         ),
                     )
+                    fresh
                 }
             } catch (e: Exception) {
                 form.error = "No se pudo guardar la cita: ${problem(e)}"
                 return null
             }
+            if (current == null) {
+                form.patient = null
+                form.error = PATIENT_GONE
+                return null
+            }
             form.close()
             noteLocalWrite()
-            return AgendaTexts.scheduled(patient.fullName, date, time)
+            return AgendaTexts.scheduled(current.fullName, date, time)
         } finally {
             saving = false
         }
@@ -245,6 +260,7 @@ class AgendaController(
     private fun problem(e: Exception): String = if (e is WriteRefused) e.message.orEmpty() else LOCAL_FAILURE
 
     companion object {
+        const val PATIENT_GONE = "El paciente de esta cita ya no existe: elija otro."
         const val NOT_READY = "Este equipo todavía no puede guardar: revise la vinculación."
 
         /** El texto de una excepción podría traer una ruta o un dato: no se muestra. */

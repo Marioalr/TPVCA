@@ -61,15 +61,15 @@ fun PatientFormScreen(workspace: TabletWorkspace) {
             verticalArrangement = Arrangement.spacedBy(6.dp),
             itemVerticalAlignment = Alignment.CenterVertically,
         ) {
-            TButton("Volver", workspace::cancelForm, icon = TIcons.ChevronLeft)
+            TButton("Volver", workspace::cancelForm, icon = TIcons.ChevronLeft, enabled = !session.writing)
             Column(Modifier.weight(1f, fill = true).padding(horizontal = 8.dp)) {
                 THeading(form.pageTitle(session.isNew), size = TType.heading)
                 TCaption("Folio ${form.recordNumber} · automático")
             }
             if (!session.isNew) {
-                TButton("Eliminar expediente", { workspace.deletePatient(session.patientSyncId!!, form.fullName()) }, kind = TButtonKind.DangerGhost, icon = TIcons.Trash)
+                TButton("Eliminar expediente", { workspace.deletePatient(session.patientSyncId!!, session.storedName) }, kind = TButtonKind.DangerGhost, icon = TIcons.Trash, enabled = !session.saving)
             }
-            TButton("Cancelar", workspace::cancelForm, kind = TButtonKind.Ghost)
+            TButton("Cancelar", workspace::cancelForm, kind = TButtonKind.Ghost, enabled = !session.writing)
             TButton(if (session.saving) "Guardando…" else "Guardar y abrir ficha", workspace::savePatient, enabled = !session.saving, tag = TabletTags.FORM_SAVE)
             TButton("Guardar e iniciar consulta", {}, kind = TButtonKind.Primary, nextVersion = true)
         }

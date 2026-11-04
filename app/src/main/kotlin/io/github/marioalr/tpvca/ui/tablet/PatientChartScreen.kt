@@ -106,7 +106,7 @@ fun PatientChartScreen(workspace: TabletWorkspace, chrome: TabletChrome, syncId:
     val reader = workspace.env.phone.reader
     val state by load(syncId, refresh = chrome.dataVersion to workspace.localVersion) {
         val count = reader.consultationCount(syncId)
-        ChartData(reader.patient(syncId), reader.consultations(syncId, limit = count.coerceAtLeast(1)), reader.labResults(syncId), reader.patientAppointments(syncId))
+        ChartData(reader.activePatient(syncId), reader.consultations(syncId, limit = count.coerceAtLeast(1)), reader.labResults(syncId), reader.patientAppointments(syncId))
     }
     Box(Modifier.fillMaxSize().testTag(TabletTags.CHART)) {
         Loads(state) { data ->
@@ -249,6 +249,7 @@ private fun LabCard(workspace: TabletWorkspace, labs: List<LabResultRow>) {
                     enabled = workspace.env.phone.labFiles != null && opening == null,
                     description = "Abrir el resultado: ${lab.title}",
                 )
+                TButton("Quitar", {}, icon = TIcons.Trash, nextVersion = true)
             }
         }
         if (labs.isEmpty()) TCaption("Sin resultados. Agregue el PDF del laboratorio o fotos de las hojas.")
@@ -550,7 +551,7 @@ fun ConsultationDetailSheet(workspace: TabletWorkspace, row: ConsultationRow) {
                     }
                     for ((title, text) in consultationSections(c)) {
                         Column {
-                            TLabel(title.uppercase(Clinic.LOCALE), Modifier.padding(bottom = 4.dp))
+                            TLabel(title, Modifier.padding(bottom = 4.dp))
                             TText(text)
                         }
                     }
@@ -594,7 +595,7 @@ private suspend fun openPrescription(workspace: TabletWorkspace, context: Contex
     val ticket = phone.documents.ticket()
     val file = withContext(Dispatchers.IO) {
         runCatching {
-            val patient = phone.reader.patient(syncId) ?: return@runCatching null
+            val patient = phone.reader.activePatient(syncId) ?: return@runCatching null
             buildPrescriptionFile(phone, context, patient, row, ticket, forViewing = true)
         }.getOrNull()
     }

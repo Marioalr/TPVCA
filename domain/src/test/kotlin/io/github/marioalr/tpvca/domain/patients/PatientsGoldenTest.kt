@@ -98,14 +98,37 @@ class PatientsGoldenTest {
         }
     }
 
-    /** patient-identity: K1 porta lo que la ficha muestra; el alta y la edición (nombre, fecha, correo, validación) son de K6. */
+    /** patient-identity: lo que la ficha muestra (K1) y el alta y la edición (K6). */
     @Test
     fun patientIdentity() = GoldenFile.load("patient-identity")
-        .run(setOf("record", "phone"), pending = setOf("parse-name", "compose-name", "birth-date", "email", "validate")) { case ->
+        .run(setOf("record", "phone", "parse-name", "compose-name", "birth-date", "email", "validate")) { case ->
             val input = case.input
-            if (input.s("check") == "phone") {
-                json(PatientIdentity.formatPhoneNumber(input.s("phone")))
-            } else {
+            when (input.s("check")) {
+                "phone" -> return@run json(PatientIdentity.formatPhoneNumber(input.s("phone")))
+                "parse-name" -> {
+                    val name = PatientFormRules.parseFullName(input.s("fullName"))
+                    return@run jsonObject("firstName" to json(name.firstName), "lastName" to json(name.lastName), "maternalLastName" to json(name.maternalLastName))
+                }
+                "compose-name" -> return@run json(PatientFormRules.composeFullName(input.str("firstName"), input.str("lastName"), input.s("maternalLastName")))
+                "birth-date" -> {
+                    val parsed = PatientFormRules.tryParseBirthDate(input.s("text"), parseLocal(input.str("today")).toLocalDate())
+                    return@run json(parsed?.toString())
+                }
+                "email" -> return@run json(PatientFormRules.isValidEmail(input.s("email")))
+                "validate" -> {
+                    val today = parseLocal(input.str("today")).toLocalDate()
+                    val birthText = input.s("birthDateText")
+                    val check = PatientFormRules.validate(
+                        PatientFormInput(
+                            input.s("firstName"), input.s("lastName"), input.s("maternalLastName"), input.s("recordNumber"), birthText,
+                            PatientFormRules.tryParseBirthDate(birthText, today), input.s("ageText"), input.s("gender"), input.s("allergies"), input.s("email"),
+                        ),
+                        today,
+                    )
+                    return@run jsonObject("problem" to json(check.problem), "age" to json(check.age))
+                }
+            }
+            run {
                 val today = parseLocal(input.str("today")).toLocalDate()
                 val birth = input.s("birthDate")?.let { parseLocal(it).toLocalDate() }
                 val p = Patient(fullName = input.str("fullName"), gender = input.str("gender"), birthDate = birth, storedAge = input.int("storedAge"))
@@ -332,5 +355,21 @@ class PatientsGoldenTest {
         org.junit.Assert.assertEquals("Tempra · Caja: 1 tableta", full["Receta"])
         org.junit.Assert.assertEquals("BH", full["Laboratorio"])
         org.junit.Assert.assertEquals(false, "Exploración" in full)
+    }
+
+    /** date-mask: el campo de fecha, con cursor. */
+    @Test
+    fun dateMask() = GoldenFile.load("date-mask").run(setOf("insert", "paste", "backspace", "delete"), key = "op") { case ->
+        val input = case.input
+        val text = input.s("text")
+        val start = input.int("selectionStart")
+        val length = input.int("selectionLength")
+        val edit = when (input.str("op")) {
+            "insert" -> DateMaskText.insert(text, start, length, input.s("input"))
+            "paste" -> DateMaskText.paste(text, start, length, input.s("input"))
+            "backspace" -> DateMaskText.backspace(text, start, length)
+            else -> DateMaskText.delete(text, start, length)
+        }
+        if (edit == null) kotlinx.serialization.json.JsonNull else jsonObject("text" to json(edit.text), "caret" to json(edit.caret))
     }
 }

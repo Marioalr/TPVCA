@@ -42,7 +42,7 @@ Paquetes: `io.github.marioalr.tpvca.domain` + `search`, `business`, `patients`, 
 | Vector | Kotlin | Casos | Estado |
 |---|---|---|---|
 | `patient-summary.json` | `PatientSummaryRules.next`, `lastVisit`, `timeOfDay` | 27/27 | ✅ |
-| `patient-identity.json` | `Patient.initials`, `age`, `ageDisplay`, `isFemale`, `isPediatric`, `showsGynecoObstetric`; `PatientIdentity.totalMonths`, `formatPhoneNumber` | 30/30 de `record` y `phone` | 🟡 Parcial: `parse-name`, `compose-name`, `birth-date`, `email` y `validate` (52 casos) son del alta y la edición → **K6** |
+| `patient-identity.json` | `Patient.initials`, `age`, `ageDisplay`, `isFemale`, `isPediatric`, `showsGynecoObstetric`; `PatientIdentity.totalMonths`, `formatPhoneNumber`; desde K6 `PatientFormRules.parseFullName`, `composeFullName`, `tryParseBirthDate`, `isValidEmail`, `validate` | 82/82 | ✅ |
 | `chart-antecedents.json` | `PatientChartRules.buildAntecedentSections` | 7/7 | ✅ |
 | `chart-timeline.json` | `PatientChartRules.buildTimeline`, `filterTimeline`, `firstLine` | 9/9 | ✅ |
 | `latest-vitals.json` | `PatientChartRules.buildLatestVitals` | 7/7 | ✅ |
@@ -90,6 +90,14 @@ Prueba: `LabFilesGoldenTest`. Lo demás de K4 no trae vector nuevo: arma lo port
 - `InventoryListRules`, `MovementRules` y `HomeAgendaRules`: cómo se combinan `alerts.json`, `agenda.json` y `appointment-overlap.json` en cada pantalla, y el signo del Kardex con la `note` de `InventoryMovements.Delta`.
 - `PrescriptionSheet.indicationsOf`, `doctorFontPx` (`ConsultationDetailViewModel.Indications`, `LetterheadHtml.DoctorFontPx`).
 
+## Portados en K6
+
+Lo que no trae vector arma lo portado para la tablet, con pruebas propias (`PatientFormTest`, `TabletWritesTest`, `TabletAppTest`, `TabletDeviceTest`):
+
+- `PatientForm` (`PatientFormViewModel`): secciones, qué se pide según sexo y edad, barra de avance, alta desde la búsqueda. `DuplicateQuestion` y `AgendaTexts`: los textos de la PC.
+- `PatientFormFields` (`ApplyFormTo`, `FormBaselineFor`, `PatientFields.ToWrite`): **una edición escribe solo lo que el médico cambió**.
+- `SyncNotices.merged`, `load`, `dismiss` (`Services/SyncNotices.cs`): los avisos con su depuración y lo descartado.
+
 ## Pendientes (con el paso que los porta)
 
 | Vector | Paso | Qué es |
@@ -100,7 +108,7 @@ Prueba: `LabFilesGoldenTest`. Lo demás de K4 no trae vector nuevo: arma lo port
 | `patient-merge.json` | K5, hecho | `rules/PatientMerge`: la combinación por campo y por renglón. `WriteRulesGoldenTest`. |
 | `duplicate-patients.json` | K5, hecho | `DuplicatePatientRules`: el aviso de posibles duplicados después de bajar (`SyncNotices`). `PatientsGoldenTest`. |
 | `folios.json` | K5, hecho | `rules/FolioFactory`: los folios con y sin conexión. `WriteRulesGoldenTest`. |
-| `date-mask.json` | K6 | El campo de fecha dd/mm/aaaa |
+| `date-mask.json` | K6, hecho | `DateMaskText`: el campo de fecha dd/mm/aaaa, con su cursor (31/31). `PatientsGoldenTest`. `applyChange` lo convierte desde lo que entrega el teclado de Android. |
 | `cie10-catalog.json` | K7 | El catálogo CIE-10 |
 | `cie10-search.json` | K7 | La búsqueda del diagnóstico |
 | `pediatric-dose.json` | K7 | Dosis pediátricas |

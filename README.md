@@ -64,7 +64,7 @@ export JAVA_HOME=/opt/android-studio/jbr   # o cualquier JDK 17+
 ./gradlew lint          # lint de todos los módulos
 ./gradlew assembleDebug # app/build/outputs/apk/debug/app-debug.apk
 scripts/check-secrets.sh
-./gradlew :data:connectedDebugAndroidTest # SQLCipher y el Keystore: con un equipo o emulador; no corre en la CI
+./gradlew :data:connectedDebugAndroidTest :app:connectedDebugAndroidTest # SQLCipher, Keystore y ML Kit: con un equipo o emulador; no corren en la CI
 ```
 
 La CI (`.github/workflows/ci.yml`) corre `scripts/check-secrets.sh` y `./gradlew test lint assembleDebug` con JDK 17 en

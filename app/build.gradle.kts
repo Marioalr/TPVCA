@@ -82,6 +82,31 @@ android {
     }
 }
 
+/** Solo `golden/link-qr.json` para la prueba en un equipo: los demás vectores llevan datos reales del médico y no hacen falta en ese APK. */
+abstract class CopyLinkVector : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val source: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val output: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        source.get().asFile.copyTo(output.get().file("link-qr.json").asFile, overwrite = true)
+    }
+}
+
+val copyLinkVector = tasks.register<CopyLinkVector>("copyLinkVector") {
+    source.set(rootProject.layout.projectDirectory.file("contracts/golden/link-qr.json"))
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("debug")) { variant ->
+        variant.androidTest?.sources?.assets?.addGeneratedSourceDirectory(copyLinkVector, CopyLinkVector::output)
+    }
+}
+
 dependencies {
     implementation(project(":sync"))
     implementation(project(":domain"))
@@ -109,6 +134,13 @@ dependencies {
     implementation(libs.androidx.compose.material3.windowsizeclass)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    // Lo que solo se comprueba en un equipo: ML Kit leyendo un QR como el de la PC (./gradlew :app:connectedDebugAndroidTest)
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.zxing.core)
 
     testImplementation(testFixtures(project(":sync")))
     testImplementation(libs.junit)

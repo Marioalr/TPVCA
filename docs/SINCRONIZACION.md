@@ -28,8 +28,8 @@ Sin escribir nada en la nube y en este orden (§7.3):
    PC más nueva o lo que le falta a la nube), la app queda en **solo lectura** con "Actualice la app" (`Completed.readOnly`). Los datos
    siguen bajando; lo que la app no conoce se ignora. Se repite al cambiar `SyncContract.REVISION`.
 3. **Su fila de `DeviceRegistry`** (`registry.own`). Sin fila, espera a que la PC la apruebe (`NotApproved`); con `RevokedAtUtc`, ver "401 y
-   revocación". Con un `Role` que no es `AndroidTablet` ni `AndroidMobileAdmin`, o que no es el que eligió este equipo al vincularse, no baja
-   nada ni borra nada (`WrongRole`). Las pantallas según el rol llegan con K4.
+   revocación". Con un `Role` que no es `AndroidTablet` ni `AndroidMobileAdmin` no baja nada ni borra nada (`WrongRole`). **La fila es la autoridad:** la PC puede
+   aprobar con el otro rol de Android y eso no detiene nada (ver "Vincular"). Las pantallas según el rol llegan con K4.
 4. **La marca de agua**, antes de leer: la hora del servidor menos 5 s (`handshake`), en la misma petición que el perfil. Se guarda tal cual.
 5. **La descarga:** una tabla por petición en el orden de `schema.json`, luego `SyncTombstones`, sin omitir lo propio, cada página seguida
    del `SELECT` de la generación. Después el perfil y las imágenes del membrete que falten.
@@ -89,7 +89,11 @@ se compara en las dos pantallas son los últimos 6 caracteres del `DeviceId`.
 4. **Latido** (`heartbeat.readNonce` y `heartbeat.write` en una petición): `Platform = 'Android'`, el rol que pide en `DeviceRole` (nombre del enum),
    `SyncProtocol`, `ContractRevision`, `PendingCount`, y `HandoffProtocol = 0` hasta K8, porque la PC le ofrece consultas a quien trae 1 o más.
 5. **Espera**, mostrando los 6 caracteres, sin bajar nada. Lee solo su fila cada 10 s y escribe su latido cada 60 s (el plan no fija esto).
-6. La fila aparece: si el rol coincide, empieza la primera descarga; si dice `rechazado` o trae código X, ver abajo.
+6. La fila aparece: con cualquiera de los dos roles de Android empieza la primera descarga; si dice `rechazado` o trae código X, ver abajo.
+
+**El rol.** `DeviceRegistry` manda (`TURSO_SYNC_ARCHITECTURE.md` §4.2 de la PC) y la PC puede aprobar un equipo con el rol que no pidió. El que eligió aquí solo vale hasta la aprobación. Después
+`LinkFlow.role` es el de su fila, guardado en la credencial (`approvedRole`) para que sobreviva a borrar la base: lo siguen el bloqueo de la app, la cadencia, el latido y el inicio. Si la fila
+cambia después, la app lo sigue en la siguiente revisión, sin borrar nada.
 
 **Otra instalación con su `DeviceId`** (la fila trae otro `InstanceNonce` después de haber escrito el suyo): toma uno nuevo, vuelve a bajar todo y la PC
 lo aprueba otra vez.
@@ -118,7 +122,7 @@ Con la app cerrada no corre nada: WorkManager es de K5.
 - Después de una revocación, volver a vincular toma **otro `DeviceId`**: las filas de `DeviceRegistry` nunca se borran, y la revocada no se puede aprobar otra vez.
 - Un token nuevo de **otra base** se detiene en `OtherCloud`: el `clinicId` queda en la credencial, así que no baja nada ni toca lo de aquí.
 - **Si la app se cierra a medio borrar**, termina al abrir: el aviso se guarda antes de empezar.
-- **Rol equivocado:** nada se baja ni se borra. Se corrige con *Quitar* en la PC y vinculando otra vez.
+- **Un rol que no es de Android** (una PC, o uno que esta versión no conoce): nada se baja ni se borra. Se corrige con *Quitar* en la PC y vinculando otra vez.
 
 ## Seguridad local (§4.8)
 
@@ -129,10 +133,16 @@ Con la app cerrada no corre nada: WorkManager es de K5.
 - **Llaves:** AES-256-GCM del Android Keystore, no exportables, con StrongBox si existe, una por uso (`tpvca.base`, `tpvca.credencial`). Sin autenticación y con
   `unlockedDeviceRequired=false`, para que la sincronización siga con la pantalla bloqueada.
 - **Respaldos:** `allowBackup=false`, `fullBackupContent=false` y `data_extraction_rules.xml` excluye todo, en la nube y al cambiar de equipo.
-- **Bloqueo de la app:** en el **celular**, al abrir y después de 5 min en segundo plano, con huella o la credencial del equipo (`androidx.biometric`). La tablet no lo
+- **Bloqueo de la app:** en el **celular** (el rol aprobado; antes de aprobar, el que pidió), al abrir y después de 5 min en segundo plano, con huella o la credencial del equipo (`androidx.biometric`). La tablet no lo
   lleva, porque el plan lo pide para el celular (§4.8, §7.2). Es de la interfaz, no de la llave: quien tuviera el proceso abierto no se detiene con esto.
 - **Sin bloqueo de pantalla:** un equipo ya vinculado (celular o tablet) que lo quita no muestra nada hasta activarlo. La sincronización no se detiene.
 - **`FLAG_SECURE`:** el plan no lo menciona. Va solo donde se puede ver el token: al pegarlo y con el QR en la cámara. Las pantallas clínicas son una decisión de K4.
+- **Telemetría de ML Kit:** ML Kit trae dos caminos a Google, y solo uno se puede cerrar desde la app.
+  - **`datatransport` (cerrado):** guarda eventos `FIREBASE_ML_SDK` y los sube desde este proceso a `firebaselogging.googleapis.com`. El manifiesto quita con `tools:node="remove"`
+    `TransportBackendDiscovery`, `JobInfoSchedulerService` y `AlarmManagerSchedulerBroadcastReceiver`: sin backend (`Transport backend 'cct' is not registered`) ni trabajo, nada sube. Los eventos se
+    siguen guardando en una base local, sin lo leído en el QR, y se borran al revocar. `ManifestTest` lo revisa en el manifiesto combinado.
+  - **`TelemetryLogging` de Play Services (abierto):** al cargar el lector, `zzl.load` manda a Play Services un evento `mlkit:vision` con códigos y tiempos, por IPC. La app no abre ninguna conexión, pero **Play
+    Services sí puede subirlo con la suya**, y el manifiesto no lo alcanza. Para cerrarlo hay que cambiar de lector (ZXing, por ejemplo): es una decisión pendiente.
 - **Token y URL:** nunca en una bitácora (`NoLogsTest`: el código no escribe en ella) ni en un mensaje: los errores pasan por `Redactor` y la red no repite su texto, que nombra al host.
   `toString` de `LinkData` y `DeviceCredential` no los muestra, y ningún `LinkState` los lleva. El formulario guarda lo escrito en memoria, no en el estado que Android
   restaura; por eso girar la pantalla lo borra.
@@ -148,7 +158,8 @@ scripts/check-secrets.sh
 - **Vinculación** (`LinkCodeGoldenTest` con `link-qr.json`; `LinkFlowTest` con la PC simulada; `LinkFlowHttpTest` con el cliente real y `MockWebServer`; `RedactorTest`).
 - **Seguridad en la JVM** (`EncryptedLocalDatabaseTest`, `EncryptedCredentialVaultTest`, `AppLockTest`, `LinkScreensTest`): con SQLite en lugar de SQLCipher y una llave en memoria en lugar
   del Keystore, porque la biblioteca nativa y el AndroidKeyStore no existen en Robolectric. **No comprueban que el archivo quede cifrado.**
-- **En un equipo o emulador** (no corre en la CI): `./gradlew :data:connectedDebugAndroidTest` corre `SqlCipherDeviceTest`, con SQLCipher y el Keystore de verdad.
+- **En un equipo o emulador** (no corre en la CI): `./gradlew :data:connectedDebugAndroidTest` corre `SqlCipherDeviceTest`, con SQLCipher y el Keystore de verdad, y
+  `./gradlew :app:connectedDebugAndroidTest` corre `QrDecodingDeviceTest`: ML Kit de verdad sobre la imagen de un QR como el de la PC, generada con ZXing (solo en esa prueba). Comprueba la lectura, **no la cámara**.
 - **Grabaciones** (`TranscriptReplayTest`, `RecordingReplay`): `MockWebServer` reproduce `first-download`, `incremental`, `generation-change`,
   `blocked`, `unauthorized` y `key-ties`. Cada petición se compara con la grabada por significado, salvo el SQL, que es literal. Lo que le
   toca solo a la PC se salta por número con su motivo. Las grabaciones todavía no tienen dos lecturas de Kotlin: `meta.all` no aparece en

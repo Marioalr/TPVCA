@@ -26,6 +26,8 @@ fragment = "1.8.9"
 appcompat = "1.7.1"
 camerax = "1.6.2"
 mlkitBarcode = "17.3.0"
+# Solo para generar un QR en las pruebas en un equipo: no va en la app
+zxing = "3.5.3"
 androidxTestRunner = "1.7.0"
 # K5
 work = "2.12.0"
@@ -46,6 +48,7 @@ androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "a
 androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
 androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
 androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 mlkit-barcode-scanning = { module = "com.google.mlkit:barcode-scanning", version.ref = "mlkitBarcode" }
 
 androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }

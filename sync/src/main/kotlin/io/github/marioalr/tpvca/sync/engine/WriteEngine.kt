@@ -3,6 +3,8 @@ package io.github.marioalr.tpvca.sync.engine
 import io.github.marioalr.tpvca.domain.Clinic
 import io.github.marioalr.tpvca.domain.business.BusinessReportRules
 import io.github.marioalr.tpvca.domain.business.StockReviewRules
+import io.github.marioalr.tpvca.domain.business.StockShortage
+import io.github.marioalr.tpvca.domain.patients.VitalSignsRules
 import io.github.marioalr.tpvca.domain.devices.DevicePermissions
 import io.github.marioalr.tpvca.domain.devices.DeviceRole
 import io.github.marioalr.tpvca.domain.model.Product
@@ -18,6 +20,7 @@ import io.github.marioalr.tpvca.sync.rules.FolioKind
 import io.github.marioalr.tpvca.sync.rules.PatientFormFields
 import io.github.marioalr.tpvca.sync.rules.PatientSheets
 import io.github.marioalr.tpvca.sync.rules.SyncIds
+import io.github.marioalr.tpvca.sync.rules.consultation.ConsultationDraft
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import java.math.BigDecimal
@@ -66,7 +69,40 @@ data class SaleLine(
     val individualUnits: Boolean = false,
 )
 
-data class SaleResult(val syncId: String, val folio: String)
+data class SaleResult(val syncId: String, val folio: String, val shortages: List<StockShortage> = emptyList())
+
+/** La nota de la consulta (`PatientConsultation`), con el texto ya como se guarda. */
+data class ConsultationNote(
+    val folio: String,
+    val startedAt: LocalDateTime,
+    val chiefComplaint: String,
+    val vitalSigns: String,
+    val physicalExamination: String,
+    val systemsReview: String,
+    val diagnosis: String,
+    val treatmentPlan: String,
+    val notes: String,
+    /** Los renglones de la receta, como arreglo JSON. */
+    val prescriptionsJson: String,
+    val hasPrescriptions: Boolean,
+    val labOrderJson: String,
+)
+
+/** Terminar y cobrar. Sin [lines] (se quitaron todos los cargos) es una consulta de cortesía: sin venta en ceros. */
+data class FinishConsultation(
+    val patientSyncId: String,
+    val note: ConsultationNote,
+    val lines: List<SaleLine>,
+    val saleSyncId: String,
+    val patientName: String,
+    val paymentMethod: String?,
+    val responsible: String,
+    val appointmentSyncId: String?,
+    /** Sin receta en esta consulta: la última emitida sigue siendo la del expediente. */
+    val restorePrescriptionJson: String?,
+)
+
+data class FinishedConsultation(val sale: SaleResult?, val noteSyncId: String?, val alreadyFinished: Boolean)
 
 /**
  * Lo que la app le pide al motor de escritura (K5): cada caso de uso revisa el permiso (`DevicePermissions`, con el rol de su fila de `DeviceRegistry`), escribe todo junto con su
@@ -256,6 +292,182 @@ class WriteEngine(
     private fun utcNow() = ProtocolDate.format(LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC))
 
     // ---------------------------------------------------------------------------------------------------------------------------
+    // La consulta en curso (K7): una sola por equipo, en `Draft:Consultation`, siempre en la misma transacción que lo que escribe
+    // ---------------------------------------------------------------------------------------------------------------------------
+
+    private fun storedDraft(): Pair<String?, ConsultationDraft?> {
+        val text = store.meta(CONSULTATION_DRAFT)
+        return text to ConsultationDraft.decode(text)
+    }
+
+    /** El folio de una consulta nueva: `CNS` sale de la hora y sin conexión lleva la letra del equipo (`FolioFactory.consultation`). */
+    fun consultationFolio(online: Boolean): String = guarded {
+        FolioFactory.consultation(Clinic.localNow(clock.instant()), store.meta(SyncEngine.DEVICE_CODE).takeUnless { online })
+    }
+
+    /**
+     * Empieza una consulta. `null` si empezó; si ya hay otra guardada regresa esa y no escribe nada: **una consulta no pisa a otra.** Un borrador que no se entiende también cuenta como otra (con un texto vacío en lugar del
+     * borrador) y no se borra solo.
+     */
+    fun startConsultation(draft: ConsultationDraft): ConsultationDraft? = guarded {
+        if (!WritePolicy.canWrite(requireWritable(), "PatientConsultations", creating = true)) refuse("anotar consultas")
+        store.transaction {
+            val (text, stored) = storedDraft()
+            if (text != null) return@transaction stored ?: draft.copy(folio = "")
+            store.apply(StoreChanges(meta = mapOf(CONSULTATION_DRAFT to draft.encode())))
+            null
+        }
+    }
+
+    /**
+     * Un paso de la consulta: lo que cambió en las hojas (renglón por renglón, sobre la hoja que está en la base) y el borrador, **juntos**: si el proceso muere nunca queda un renglón sin su cargo en la cuenta. Sin [sheets]
+     * solo guarda lo que se lleva escrito. `false` si la consulta de ese folio ya no es la de este equipo (ya se terminó o se descartó): un guardado tarde no la revive ni pisa a otra.
+     */
+    fun saveConsultation(draft: ConsultationDraft, sheets: Map<String, (List<PatientSheets.SheetRow>) -> List<JsonObject>> = emptyMap()): Boolean = guarded {
+        if (draft.isHandedOff) throw WriteRefused(WriteRefused.Reason.CONFLICT, "La consulta se envió a otro equipo: aquí está en solo lectura.")
+        if (sheets.isNotEmpty() && !WritePolicy.canWrite(requireWritable(), "Patients", creating = false)) refuse("escribir en Patients")
+        store.transaction {
+            val (_, stored) = storedDraft()
+            if (stored?.folio != draft.folio) return@transaction false
+            if (sheets.isNotEmpty()) {
+                val table = writer.table("Patients")
+                val current = writer.find(table, draft.patientSyncId) ?: throw WriteRefused(WriteRefused.Reason.CONFLICT, "El expediente ya no existe.")
+                for ((column, change) in sheets) {
+                    require(PatientSheets.isSheet(column)) { "$column no es una hoja." }
+                    val rows = PatientSheets.readRows(column, current[column] as String?, draft.patientSyncId)
+                    writer.edit("Patients", draft.patientSyncId, mapOf(column to JsonArray(change(rows)).toString()))
+                }
+            }
+            store.apply(StoreChanges(meta = mapOf(CONSULTATION_DRAFT to draft.encode())))
+            true
+        }
+    }
+
+    /**
+     * Terminar y cobrar (`FinalizeConsultationAsync`, `ChargeAsync` y `HandleSaleCompletedFromConsultationAsync` de la PC): la nota, el resumen del expediente, la venta con sus renglones, sus movimientos por lote y sus existencias, la cita «Atendida» y borrar
+     * el borrador, **en una sola transacción con sus entradas de la cola**. Se corta la luz: o quedó todo o no quedó nada y la consulta sigue en curso. El folio del ticket se pide antes, sin tener la base tomada mientras espera la red; con conexión del
+     * contador y sin ella con la letra. Un segundo toque, o volver a intentar después de morir el proceso, no cobra otra vez: el ticket lleva el `SyncId` del borrador y el borrador ya no está.
+     *
+     * A diferencia de la PC, que guarda la nota al abrir «Terminar consulta», aquí nada se escribe hasta cobrar.
+     */
+    fun finishConsultation(request: FinishConsultation): FinishedConsultation {
+        val saleTable = "Sales"
+        val existing = guarded {
+            if (!WritePolicy.canWrite(requireWritable(), "PatientConsultations", creating = true)) refuse("anotar consultas")
+            if (request.lines.isNotEmpty() && !WritePolicy.canWrite(requireWritable(), saleTable, creating = true)) refuse("cobrar")
+            val stored = storedDraft().second
+            if (stored?.folio != request.note.folio) return@guarded null
+            if (stored.isHandedOff) throw WriteRefused(WriteRefused.Reason.CONFLICT, "La consulta se envió a otro equipo: aquí está en solo lectura.")
+            for (id in request.lines.mapNotNull { it.productSyncId }.distinct()) {
+                val product = store.select("Products", listOf("IsActive"), "SyncId", listOf(id)).firstOrNull()
+                if (product == null || product["IsActive"] != 1L) throw WriteRefused(WriteRefused.Reason.CONFLICT, "El producto $id ya no existe en el inventario.")
+            }
+            store.select(saleTable, listOf("Folio")).map { it["Folio"] as String? }
+        } ?: return FinishedConsultation(soldBefore(request.saleSyncId), null, alreadyFinished = true)
+
+        val lines = request.lines.filter { it.quantity > 0 }
+        val folio = if (lines.isEmpty()) null else nextFolio(FolioKind.Sale, existing)
+
+        return guarded {
+            store.transaction {
+                if (storedDraft().second?.folio != request.note.folio) return@transaction FinishedConsultation(soldBefore(request.saleSyncId), null, alreadyFinished = true)
+                val noteId = writeNote(request.patientSyncId, request.note)
+                writePatientSummary(request.patientSyncId, request.note, request.restorePrescriptionJson)
+                val sale = folio?.let { writeSale(lines, it, request.patientName, request.paymentMethod, request.responsible, request.saleSyncId) }
+                request.appointmentSyncId?.let { id ->
+                    if (writer.find(writer.table("Appointments"), id) != null) writer.edit("Appointments", id, mapOf("Status" to "Atendida"))
+                }
+                store.apply(StoreChanges(metaRemoved = setOf(CONSULTATION_DRAFT)))
+                recalculate(request.patientSyncId)
+                FinishedConsultation(sale, noteId, alreadyFinished = false)
+            }
+        }
+    }
+
+    private fun soldBefore(saleSyncId: String): SaleResult? =
+        guarded { writer.find(writer.table("Sales"), saleSyncId)?.let { SaleResult(saleSyncId, it["Folio"] as String) } }
+
+    /** La nota se busca dentro del mismo paciente: un folio repetido en otro expediente nunca sobrescribe la consulta de otra persona (`AddConsultationNoteAsync`). */
+    private fun noteOf(patientSyncId: String, folio: String): LocalRow? =
+        store.select("PatientConsultations", listOf("SyncId", "PatientRecordSyncId"), "Folio", listOf(folio)).firstOrNull { it["PatientRecordSyncId"] == patientSyncId }
+
+    private fun writeNote(patientSyncId: String, note: ConsultationNote): String {
+        val vitals = VitalSignsRules.parse(note.vitalSigns)
+        val now = protocolLocalNow()
+        val values = mapOf<String, Any?>(
+            "EndedAt" to now,
+            "ChiefComplaint" to note.chiefComplaint,
+            "VitalSigns" to note.vitalSigns,
+            "BloodPressureSystolic" to vitals.bloodPressureSystolic?.toPlainString(),
+            "BloodPressureDiastolic" to vitals.bloodPressureDiastolic?.toPlainString(),
+            "HeartRate" to vitals.heartRate?.toPlainString(),
+            "RespiratoryRate" to vitals.respiratoryRate?.toPlainString(),
+            "Temperature" to vitals.temperature?.toPlainString(),
+            "Weight" to vitals.weight?.toPlainString(),
+            "Height" to vitals.height?.toPlainString(),
+            "BMI" to vitals.bmi?.toPlainString(),
+            "Glucose" to vitals.glucose?.toPlainString(),
+            "OxygenSaturation" to vitals.oxygenSaturation?.toPlainString(),
+            "PhysicalExamination" to note.physicalExamination,
+            "SystemsReview" to note.systemsReview,
+            "Diagnosis" to note.diagnosis,
+            "TreatmentPlan" to note.treatmentPlan,
+            "Notes" to note.notes,
+            "PrescriptionsJson" to note.prescriptionsJson,
+            "LabOrderJson" to note.labOrderJson,
+        )
+        val prior = noteOf(patientSyncId, note.folio)?.get("SyncId") as String?
+        if (prior != null) {
+            writer.edit("PatientConsultations", prior, values)
+            return prior
+        }
+        val id = SyncIds.random()
+        writer.create(
+            "PatientConsultations", id,
+            values + mapOf("PatientRecordSyncId" to patientSyncId, "Folio" to note.folio, "Date" to now, "StartedAt" to ProtocolDate.format(note.startedAt)),
+        )
+        return id
+    }
+
+    /** `ApplyConsultationSummary`: lo que el expediente muestra de su última consulta. `LastVisit` es derivada: la recalcula [recalculate]. */
+    private fun writePatientSummary(patientSyncId: String, note: ConsultationNote, restorePrescriptionJson: String?) {
+        val table = writer.table("Patients")
+        if (writer.find(table, patientSyncId)?.takeIf { it["IsActive"] == 1L } == null) throw WriteRefused(WriteRefused.Reason.CONFLICT, "El expediente ya no existe.")
+        val values = buildMap<String, Any?> {
+            if (note.diagnosis.isNotBlank()) put("LastDiagnosis", note.diagnosis)
+            if (note.vitalSigns.isNotBlank()) put("VitalSigns", note.vitalSigns)
+            if (note.notes.isNotBlank() || note.treatmentPlan.isNotBlank()) put("ClinicalNotes", "${note.chiefComplaint}\n${note.notes}\nPlan: ${note.treatmentPlan}".trim())
+            if (note.hasPrescriptions) put(PatientSheets.PRESCRIPTION, note.prescriptionsJson) else restorePrescriptionJson?.let { put(PatientSheets.PRESCRIPTION, it) }
+        }
+        if (values.isNotEmpty()) writer.edit("Patients", patientSyncId, values)
+    }
+
+    /**
+     * Descartar (`DiscardActiveConsultationAsync`): no guarda la nota ni cobra. Si había un avance guardado con ese folio se borra; el expediente regresa a como estaba (el resumen, si la nota ya lo había cambiado, y la receta). Todo junto con quitar el borrador.
+     * Lo que se anotó en las hojas de insumos y servicios se queda, como en la PC. `false` si ya no estaba.
+     */
+    fun discardConsultation(draft: ConsultationDraft, restorePrescriptionJson: String?): Boolean = guarded {
+        if (draft.isHandedOff) throw WriteRefused(WriteRefused.Reason.CONFLICT, "La consulta se envió a otro equipo: aquí está en solo lectura.")
+        requireWritable()
+        store.transaction {
+            if (storedDraft().second?.folio != draft.folio) return@transaction false
+            val progress = noteOf(draft.patientSyncId, draft.folio)?.get("SyncId") as String?
+            if (progress != null && WritePolicy.canWrite(requireWritable(), "PatientConsultations", creating = false)) {
+                writer.delete("PatientConsultations", progress)
+                draft.patientBefore?.let { before ->
+                    writer.edit("Patients", draft.patientSyncId, mapOf("LastDiagnosis" to before.lastDiagnosis, "VitalSigns" to before.vitalSigns, "ClinicalNotes" to before.clinicalNotes))
+                }
+            }
+            if (restorePrescriptionJson != null && writer.find(writer.table("Patients"), draft.patientSyncId) != null) {
+                writer.edit("Patients", draft.patientSyncId, mapOf(PatientSheets.PRESCRIPTION to restorePrescriptionJson))
+            }
+            store.apply(StoreChanges(metaRemoved = setOf(CONSULTATION_DRAFT)))
+            recalculate(draft.patientSyncId)
+            true
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------------------
     // Existencias (regla «Existencias», `CurrentStock` como valor hasta el 8.20)
     // ---------------------------------------------------------------------------------------------------------------------------
 
@@ -276,16 +488,21 @@ class WriteEngine(
         }
         if (valid.isEmpty()) return null
         val folio = nextFolio(FolioKind.Sale, existing)
-        return guarded { store.transaction { writeSale(valid, folio, patientName, paymentMethod, responsible) } }
+        return guarded { store.transaction { writeSale(valid, folio, patientName, paymentMethod, responsible, SyncIds.random()) } }
     }
 
-    private fun writeSale(lines: List<SaleLine>, folio: String, patientName: String?, paymentMethod: String?, responsible: String): SaleResult {
+    private fun writeSale(lines: List<SaleLine>, folio: String, patientName: String?, paymentMethod: String?, responsible: String, saleId: String): SaleResult {
         val client = patientName?.trim()?.takeIf { it.isNotEmpty() } ?: "Público General"
         val method = paymentMethod?.trim()?.takeIf { it.isNotEmpty() } ?: "Efectivo"
         val now = protocolLocalNow()
-        val saleId = SyncIds.random()
         val saleStamp = writer.stamp(null)
         val state = StockState()
+        val shortages = lines.mapNotNull { it.productSyncId }.distinct().mapNotNull { id ->
+            val product = stockProduct(state.product(id))
+            val own = lines.filter { it.productSyncId == id }
+            val pieces = own.filter { it.individualUnits }.sumOf { it.quantity }
+            StockReviewRules.shortage(product, own.sumOf { it.quantity } - pieces, pieces)
+        }
         val writes = ArrayList<RowWrite>()
         val marks = ArrayList<OutboxMark>()
         var total = BigDecimal.ZERO
@@ -341,7 +558,7 @@ class WriteEngine(
         marks.add(0, writer.mark(saleTable, saleId))
         state.flush(writes, marks)
         store.apply(StoreChanges(writes = writes, outbox = marks))
-        return SaleResult(saleId, folio)
+        return SaleResult(saleId, folio, shortages)
     }
 
     /** Piezas sueltas (revisión 17): primero las del paquete abierto, y abre los que falten. Regresa cuántos paquetes salen de las existencias. */
@@ -663,6 +880,13 @@ class WriteEngine(
 
     private fun MutableMap<String, Any?>.int(column: String) = (this[column] as Long? ?: 0L).toInt()
 
+    private fun stockProduct(row: Map<String, Any?>) = Product(
+        name = row["Name"] as String? ?: "",
+        currentStock = (row["CurrentStock"] as Long? ?: 0L).toInt(),
+        unitsPerPackage = (row["UnitsPerPackage"] as Long? ?: 1L).toInt(),
+        openedUnitsRemaining = (row["OpenedUnitsRemaining"] as Long? ?: 0L).toInt(),
+    )
+
     private fun domainProduct(row: Map<String, Any?>) = Product(
         unitCost = (row["UnitCost"] as String?)?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
         costExcludesVat = row["CostExcludesVat"] == 1L,
@@ -733,5 +957,7 @@ class WriteEngine(
     companion object {
         const val CURRENT_LEDGER_VERSION = 1L
 
+        /** El borrador de la consulta en curso, con el prefijo de `LocalSide.DRAFT_PREFIX`. */
+        const val CONSULTATION_DRAFT = "Draft:Consultation"
     }
 }

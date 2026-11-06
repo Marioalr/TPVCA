@@ -123,6 +123,7 @@ class TabletAppTest {
             },
             noteLocalWrite = { saves++ },
             refreshNow = {},
+            isOnline = { false },
         )
     }
 
@@ -294,12 +295,12 @@ class TabletAppTest {
     }
 
     @Test
-    fun loDeLaConsultaEstaDeshabilitadoEnLaFicha() {
+    fun laFichaYaPuedeIniciarLaConsulta() {
         workspace.openChart(anaId())
         show()
         waitTag(TabletTags.ALLERGY)
-        val node = compose.onNodeWithContentDescription("Iniciar consulta, en la siguiente versión").fetchSemanticsNode()
-        assertFalse(SemanticsActions.OnClick in node.config)
+        compose.onNodeWithTag(TabletTags.CHART_PRIMARY).assertHasClickAction()
+        compose.onNodeWithText("Iniciar consulta").assertExists()
     }
 
     @Test
@@ -962,8 +963,9 @@ class TabletAppTest {
         assertEquals(0, compose.onAllNodesWithTag(TabletTags.MORE).fetchSemanticsNodes().size)
     }
 
+    /** Como en la PC, el renglón ya no abre nada: lo que hay es «Atender», y una cita sin expediente activo se busca por su nombre. */
     @Test
-    fun laCitaDeHoyDeUnExpedienteDadoDeBajaNoLoAbre() {
+    fun laCitaDeHoyDeUnExpedienteDadoDeBajaSeBuscaPorSuNombre() {
         deactivate(store.select("Patients", listOf("SyncId", "RecordNumber")).first { it["RecordNumber"] == "EXP-2025-188" }["SyncId"] as String)
         workspace.goPatients()
         show()
@@ -971,9 +973,11 @@ class TabletAppTest {
         compose.onNodeWithText("Retiro de puntos").performClick()
         compose.waitForIdle()
         assertEquals(TabletPage.PatientsHome, workspace.page)
-        // La de un expediente activo, sí
-        compose.onNodeWithText("Control de presión").performClick()
-        waitFor { workspace.page is TabletPage.Chart }
+        assertEquals("", workspace.homeQuery)
+        compose.onNodeWithTag(TabletTags.attend("12:15")).performClick()
+        waitFor { workspace.homeQuery == "Paciente Sofía Ejemplo Cruz" }
+        assertFalse(workspace.consultation.hasConsultation)
+        assertEquals(TabletPage.PatientsHome, workspace.page)
     }
 
     /** El menú abierto se queda con su cita aunque baje otra que recorra la lista. Sin `key`, se pasaba a la de abajo. */

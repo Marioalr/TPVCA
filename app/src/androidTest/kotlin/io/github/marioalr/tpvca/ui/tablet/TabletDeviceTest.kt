@@ -75,6 +75,7 @@ class TabletDeviceTest {
         quickSync = { true },
         noteLocalWrite = { saves++ },
         refreshNow = {},
+        isOnline = { false },
     )
 
     @Before
@@ -181,8 +182,7 @@ class TabletDeviceTest {
         waitTag(TabletTags.appointmentMenu("16:30"))
         compose.onNodeWithTag(TabletTags.appointmentMenu("16:30")).performScrollTo().performClick()
         waitText("Marcar como confirmada")
-        // Atender es de la consulta (K7): se ve y no hace nada
-        compose.onNodeWithText("Atender ahora").assertExists().performClick()
+        compose.onNodeWithText("Atender ahora").assertExists()
         compose.onNodeWithText("Marcar como confirmada").performClick()
         waitFor { store.outbox().isNotEmpty() }
         waitText("Confirmada")

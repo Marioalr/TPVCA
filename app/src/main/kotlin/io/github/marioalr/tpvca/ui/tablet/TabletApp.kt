@@ -63,6 +63,9 @@ fun TabletApp(workspace: TabletWorkspace, chrome: TabletChrome) {
     val lifecycle = LocalLifecycleOwner.current
     // Otra vez cada que baja algo: una edición puede estar esperando a que baje su expediente
     LaunchedEffect(chrome.dataVersion) { workspace.restoreDrafts() }
+    // El paciente, el catálogo y las hojas de ahora; con el expediente borrado, la consulta pasa a solo lectura
+    val consultationFolio = workspace.consultation.draft?.folio
+    LaunchedEffect(chrome.dataVersion, workspace.localVersion, consultationFolio) { workspace.consultation.refresh() }
     // Al irse: lo que se estaba escribiendo ya no espera la pausa
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
@@ -82,6 +85,7 @@ fun TabletApp(workspace: TabletWorkspace, chrome: TabletChrome) {
                     is TabletPage.Chart -> PatientsScreen(workspace) { PatientChartScreen(workspace, chrome, page.syncId) }
                     TabletPage.Form -> PatientFormScreen(workspace)
                     TabletPage.Sync -> SyncScreen(workspace, chrome)
+                    TabletPage.Consultation -> ConsultationScreen(workspace)
                 }
             }
             // Con el teclado abierto, ese renglón es para el formulario
@@ -164,15 +168,21 @@ private fun Toast(workspace: TabletWorkspace) {
     val toast = workspace.toast ?: return
     val colors = LocalTpvcColors.current
     LaunchedEffect(toast) {
-        delay(if (toast.warning) 8000 else 4000)
+        delay(if (toast.action != null) 15_000 else if (toast.warning) 8000 else 4000)
         if (workspace.toast === toast) workspace.toast = null
     }
     Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(bottom = 56.dp), contentAlignment = Alignment.BottomCenter) {
-        Box(
+        Row(
             Modifier.widthIn(max = 720.dp).clip(RoundedCornerShape(10.dp)).background(if (toast.warning) colors.warningSubtle else colors["ThemeToastBackground"])
                 .clickable { workspace.toast = null }.testTag(TabletTags.TOAST).padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            TText(toast.text, size = TType.detail, color = if (toast.warning) colors.warningText else colors["ThemeToastText"])
+            TText(toast.text, Modifier.weight(1f, fill = false), size = TType.detail, color = if (toast.warning) colors.warningText else colors["ThemeToastText"])
+            toast.action?.let { action ->
+                val context = androidx.compose.ui.platform.LocalContext.current
+                TButton(action.text, { action.run(context) }, tag = TabletTags.TOAST_ACTION)
+            }
         }
     }
 }

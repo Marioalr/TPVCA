@@ -5,8 +5,11 @@ import io.github.marioalr.tpvca.data.entity.ClinicalServiceEntity
 import io.github.marioalr.tpvca.data.entity.PatientAppointmentEntity
 import io.github.marioalr.tpvca.data.entity.PatientConsultationEntity
 import io.github.marioalr.tpvca.data.entity.PatientRecordEntity
+import io.github.marioalr.tpvca.data.entity.PediatricDoseRuleEntity
+import io.github.marioalr.tpvca.data.entity.PrescriptionTemplateEntity
 import io.github.marioalr.tpvca.data.entity.ProductBatchEntity
 import io.github.marioalr.tpvca.data.entity.ProductEntity
+import io.github.marioalr.tpvca.domain.consultation.PediatricDoseRule
 import io.github.marioalr.tpvca.domain.model.Appointment
 import io.github.marioalr.tpvca.domain.model.ClinicProfile
 import io.github.marioalr.tpvca.domain.model.ClinicalService
@@ -14,8 +17,10 @@ import io.github.marioalr.tpvca.domain.model.Consultation
 import io.github.marioalr.tpvca.domain.model.EMPTY_SYNC_ID
 import io.github.marioalr.tpvca.domain.model.Patient
 import io.github.marioalr.tpvca.domain.model.PrescriptionItem
+import io.github.marioalr.tpvca.domain.model.PrescriptionTemplate
 import io.github.marioalr.tpvca.domain.model.Product
 import io.github.marioalr.tpvca.domain.model.ProductBatch
+import io.github.marioalr.tpvca.domain.model.ServiceDefaultProduct
 import io.github.marioalr.tpvca.domain.model.Vitals
 import io.github.marioalr.tpvca.domain.search.PrescriptionNaming
 import io.github.marioalr.tpvca.domain.text.NetDecimal
@@ -78,6 +83,7 @@ object ClinicMappers {
         openedUnitsRemaining = e.openedUnitsRemaining.toInt(),
         location = e.location,
         isActive = e.isActive != 0L,
+        syncId = e.syncId,
     )
 
     fun batch(e: ProductBatchEntity, id: Int, productId: Int): ProductBatch = ProductBatch(
@@ -90,8 +96,13 @@ object ClinicMappers {
         closedAtUtc = instantUtc(e.closedAtUtc),
     )
 
-    fun service(e: ClinicalServiceEntity, id: Int): ClinicalService =
-        ClinicalService(id, e.code, e.name, e.category, decimal(e.price), e.isActive != 0L)
+    /** [defaults]: sus insumos por defecto (`ServiceDefaultProducts`). */
+    fun service(e: ClinicalServiceEntity, id: Int, defaults: List<ServiceDefaultProduct> = emptyList()): ClinicalService =
+        ClinicalService(id, e.code, e.name, e.category, decimal(e.price), e.isActive != 0L, e.syncId, e.estimatedDurationMinutes.toInt(), defaults)
+
+    fun template(e: PrescriptionTemplateEntity): PrescriptionTemplate = PrescriptionTemplate(e.syncId, e.kind, e.title, e.text, e.sortOrder.toInt())
+
+    fun pediatricRule(e: PediatricDoseRuleEntity): PediatricDoseRule = PediatricDoseRule(e.medication, e.doseText, e.mlPerKg, e.dropsPerMl?.toInt())
 
     fun appointment(e: PatientAppointmentEntity): Appointment = Appointment(
         syncId = uuid(e.syncId),

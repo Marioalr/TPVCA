@@ -12,10 +12,13 @@ import io.github.marioalr.tpvca.data.entity.LabResultEntity
 import io.github.marioalr.tpvca.data.entity.PatientAppointmentEntity
 import io.github.marioalr.tpvca.data.entity.PatientConsultationEntity
 import io.github.marioalr.tpvca.data.entity.PatientRecordEntity
+import io.github.marioalr.tpvca.data.entity.PediatricDoseRuleEntity
+import io.github.marioalr.tpvca.data.entity.PrescriptionTemplateEntity
 import io.github.marioalr.tpvca.data.entity.ProductBatchEntity
 import io.github.marioalr.tpvca.data.entity.ProductEntity
 import io.github.marioalr.tpvca.data.entity.SaleEntity
 import io.github.marioalr.tpvca.data.entity.SaleItemEntity
+import io.github.marioalr.tpvca.data.entity.ServiceDefaultProductEntity
 
 /** Un renglón de la lista de pacientes: solo lo que leen la lista y la búsqueda. */
 data class PatientListColumns(
@@ -48,6 +51,16 @@ data class SaleLineColumns(
     @ColumnInfo(name = "Subtotal") val subtotal: String,
     @ColumnInfo(name = "UnitCost") val unitCost: String?,
     @ColumnInfo(name = "IsIndividualUnits") val isIndividualUnits: Long?,
+)
+
+/** Todo lo que la consulta lee del catálogo, en una sola foto. */
+class CatalogColumns(
+    val categories: List<CategoryEntity>,
+    val products: List<ProductEntity>,
+    val services: List<ClinicalServiceEntity>,
+    val serviceDefaults: List<ServiceDefaultProductEntity>,
+    val templates: List<PrescriptionTemplateEntity>,
+    val pediatricRules: List<PediatricDoseRuleEntity>,
 )
 
 /** Solo lectura. Las fechas son el texto de 27 caracteres del protocolo, sin zona: comparar el texto es comparar el tiempo (`ProtocolDate`). */
@@ -159,6 +172,21 @@ interface ClinicDao {
     /** Una venta con sus renglones, en una sola foto. */
     @Transaction
     fun saleWithItems(syncId: String): Pair<SaleEntity?, List<SaleItemEntity>> = sale(syncId) to saleItems(syncId)
+
+    // ------------------------------------------------------------------ catálogo de la consulta
+
+    @Query("SELECT * FROM ServiceDefaultProducts")
+    fun serviceDefaultProducts(): List<ServiceDefaultProductEntity>
+
+    @Query("SELECT * FROM PrescriptionTemplates WHERE IsActive <> 0 ORDER BY SortOrder, Title")
+    fun prescriptionTemplates(): List<PrescriptionTemplateEntity>
+
+    @Query("SELECT * FROM PediatricDoseRules WHERE IsActive <> 0 ORDER BY SortOrder, Medication")
+    fun pediatricDoseRules(): List<PediatricDoseRuleEntity>
+
+    /** El catálogo de la consulta, de una sola foto: una sincronización a la mitad no deja un servicio con los insumos de otra versión. */
+    @Transaction
+    fun catalogColumns(): CatalogColumns = CatalogColumns(categories(), products(), services(), serviceDefaultProducts(), prescriptionTemplates(), pediatricDoseRules())
 
     // ------------------------------------------------------------------ membrete
 

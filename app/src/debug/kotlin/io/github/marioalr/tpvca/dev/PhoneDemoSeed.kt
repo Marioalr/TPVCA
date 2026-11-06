@@ -65,6 +65,31 @@ class PhoneDemoSeed(private val store: SyncStore, private val today: LocalDate) 
         flush()
     }
 
+    /** Lo que solo usa la consulta de la tablet, para llevar una de principio a fin en el emulador: servicios con sus insumos por defecto, plantillas, reglas pediátricas y una cita de hoy. Todo inventado. */
+    fun fillConsultationCatalog(gasa: String, jeringa: String, patient: String, patientName: String) {
+        counter = 1000
+        val inyeccion = row("ClinicalServices", mapOf("Name" to "Aplicación de inyección", "Code" to "SERV-020", "Category" to "Procedimiento", "Price" to "80.00", "EstimatedDurationMinutes" to 10L, "IsActive" to 1L))
+        row("ClinicalServices", mapOf("Name" to "Nebulización", "Code" to "SERV-021", "Category" to "Procedimiento", "Price" to "120.00", "EstimatedDurationMinutes" to 20L, "IsActive" to 1L))
+        val sutura = row("ClinicalServices", mapOf("Name" to "Sutura simple", "Code" to "SERV-022", "Category" to "Procedimiento", "Price" to "450.00", "EstimatedDurationMinutes" to 30L, "IsActive" to 1L))
+        row("ServiceDefaultProducts", mapOf("ClinicalServiceSyncId" to inyeccion, "ProductSyncId" to jeringa, "Quantity" to 1L))
+        row("ServiceDefaultProducts", mapOf("ClinicalServiceSyncId" to sutura, "ProductSyncId" to gasa, "Quantity" to 2L))
+        fun template(kind: String, title: String, text: String, order: Long) = row("PrescriptionTemplates", mapOf("Kind" to kind, "Title" to title, "Text" to text, "SortOrder" to order, "IsActive" to 1L))
+        template("MedidasGenerales", "Cuadro respiratorio", "Abundantes líquidos, reposo relativo y lavado de manos. Regresar si hay fiebre de más de tres días.", 1)
+        template("MedidasGenerales", "Cuadro digestivo", "Dieta blanda, suero oral a libre demanda. Regresar si hay vómito persistente.", 2)
+        template("Posologia", "Cada 8 horas por 3 días", "1 tableta cada 8 horas por 3 días", 1)
+        template("Posologia", "Cada 12 horas por 7 días", "1 cápsula cada 12 horas por 7 días", 2)
+        row("PediatricDoseRules", mapOf("Medication" to "Paracetamol 3.2 g/100 ml", "DoseText" to "15 mg/kg/dosis", "MlPerKg" to 0.46875, "DropsPerMl" to 20L, "SortOrder" to 1L, "IsActive" to 1L))
+        row("PediatricDoseRules", mapOf("Medication" to "Ibuprofeno 2 g/100 ml", "DoseText" to "10 mg/kg/dosis", "MlPerKg" to 0.5, "SortOrder" to 2L, "IsActive" to 1L))
+        row(
+            "Appointments",
+            mapOf(
+                "PatientRecordSyncId" to patient, "PatientName" to patientName, "Date" to date(today), "Time" to "16:00", "Reason" to "Dolor de garganta", "Status" to "Programada", "DurationMinutes" to 30L,
+                "CreatedAt" to at(today.minusDays(1), 10),
+            ),
+        )
+        flush()
+    }
+
     /** Muchos renglones, para probar listas largas a mano en el emulador. */
     fun fillVolume(patients: Int, products: Int) {
         val category = row("Categories", mapOf("Name" to "Medicamentos", "Icon" to ""))

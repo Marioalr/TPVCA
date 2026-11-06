@@ -88,6 +88,12 @@ class LocalSide(private val store: SyncStore, private val guard: (() -> Any?) ->
         const val PATIENT_FORM = "PatientForm"
         const val APPOINTMENT_FORM = "Appointment"
 
+        /** La consulta en curso: `WriteEngine.CONSULTATION_DRAFT`. Aquí solo se lee: se escribe en la misma transacción que lo demás. */
+        const val CONSULTATION = "Consultation"
+
+        /** El cronómetro de la consulta oculto: se recuerda en este equipo, como `HideConsultationTimer` de la PC. */
+        const val CONSULTATION_TIMER_HIDDEN = "ConsultationTimerHidden"
+
         /** `LocalDataLabel` de la PC, con mayúscula. */
         fun labelOf(entityType: String): String = when (entityType) {
             "Category" -> "Categorías propias"

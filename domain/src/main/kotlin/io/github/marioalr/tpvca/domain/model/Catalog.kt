@@ -123,3 +123,11 @@ data class ClinicalService(
 
 /** Un insumo por defecto de un servicio: el producto (`null` si este equipo no lo tiene) y sus piezas por unidad. */
 data class ServiceDefaultProduct(val product: Product? = null, val quantity: Int = 1)
+
+/** Un texto para la receta (`Models/PrescriptionTemplate`): una posología o un bloque de medidas generales, de los que se ofrecen al recetar. */
+data class PrescriptionTemplate(val syncId: String = "", val kind: String = POSOLOGY, val title: String = "", val text: String = "", val sortOrder: Int = 0) {
+    companion object {
+        const val POSOLOGY = "Posologia"
+        const val GENERAL_MEASURES = "MedidasGenerales"
+    }
+}

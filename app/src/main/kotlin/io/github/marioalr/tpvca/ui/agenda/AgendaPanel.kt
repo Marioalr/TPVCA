@@ -225,7 +225,8 @@ private fun openSlot(workspace: TabletWorkspace, date: LocalDate, time: String) 
         workspace.moveTo(date, time)
         return
     }
-    val selected = (workspace.page as? TabletPage.Chart)?.syncId
+    // «Agendar próxima cita» de la consulta también trae a su paciente
+    val selected = (workspace.page as? TabletPage.Chart)?.syncId ?: workspace.consultation.draft?.patientSyncId?.takeIf { workspace.page == TabletPage.Consultation }
     workspace.appointment.open(date, time, null)
     if (selected != null) workspace.preselectPatient(selected)
     workspace.appointmentChanged()
@@ -253,7 +254,7 @@ private fun AppointmentCard(workspace: TabletWorkspace, a: Appointment, overlapT
         Box {
             TIconButton(TIcons.More, "Acciones de la cita", { menu = true }, tint = text, tag = TabletTags.appointmentMenu(a.time.orEmpty()))
             DropdownMenu(menu, { menu = false }) {
-                DropdownMenuItem({ Column { TText("Atender ahora"); TCaption(NEXT_VERSION_TEXT) } }, onClick = {}, enabled = false)
+                DropdownMenuItem({ TText("Atender ahora") }, onClick = { menu = false; workspace.consultation.attend(a, row?.patientSyncId) })
                 DropdownMenuItem({ TText("Marcar como confirmada") }, onClick = { menu = false; workspace.confirmAppointment(a) })
                 DropdownMenuItem({ TText("Recordar por WhatsApp") }, onClick = {
                     menu = false

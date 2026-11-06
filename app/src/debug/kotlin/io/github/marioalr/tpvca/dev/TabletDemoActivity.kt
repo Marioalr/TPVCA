@@ -54,11 +54,14 @@ fun tabletDemoExtras(store: SyncStore) {
     val row = store.select("Patients", listOf("SyncId", "RecordNumber"))
     val ana = row.first { it["RecordNumber"] == "EXP-2026-014" }["SyncId"] as String
     val juan = row.first { it["RecordNumber"] == "EXP-2026-009" }["SyncId"] as String
+    val products = store.select("Products", listOf("SyncId", "Code"))
+    fun product(code: String) = products.first { it["Code"] == code }["SyncId"] as String
+    PhoneDemoSeed(store, Clinic.today(Instant.now())).fillConsultationCatalog(product("INS-001"), product("INS-002"), juan, "Paciente Juan Ejemplo Gómez")
     val appointments = store.select("Appointments", listOf("SyncId", "Time")).filter { it["Time"] == "10:30" || it["Time"] == "10:45" }.map { it["SyncId"] as String }.sorted()
     store.apply(
         StoreChanges(
             writes = listOf(
-                io.github.marioalr.tpvca.sync.engine.RowWrite("Patients", ana, mapOf("OriginalFolio" to "EXP-2026-T1-003", "BloodType" to "O+", "ClinicalNotes" to "Nota de prueba"), isNew = false),
+                io.github.marioalr.tpvca.sync.engine.RowWrite("Patients", ana, mapOf("OriginalFolio" to "EXP-2026-T1-003", "BloodType" to "O+", "ClinicalNotes" to "Nota de prueba", "ActivePrescriptionJson" to """[{"RowId":"10000000-0000-4000-8000-00000000d001","MedicineName":"Tempra 500 mg tabletas (Paracetamol)","Dosage":"1 tableta cada 8 horas por 3 días","RecommendedQuantity":1,"Presentation":"Caja con 20","ActiveIngredient":"Paracetamol","ShowActiveIngredient":true}]"""), isNew = false),
             ),
             meta = buildMap {
                 put(SyncEngine.DEVICE_ROLE, DeviceRole.AndroidTablet.name)
@@ -71,7 +74,7 @@ fun tabletDemoExtras(store: SyncStore) {
     )
 }
 
-/** La tablet con datos inventados y sin nube, sobre SQLCipher. Solo en depuración. Girar no la vuelve a armar; que Android cierre el proceso sí. `--es pagina hub|pacientes|ficha|alta|editar|agenda|sync`. */
+/** La tablet con datos inventados y sin nube, sobre SQLCipher. Solo en depuración. Girar no la vuelve a armar; que Android cierre el proceso sí. `--es pagina hub|pacientes|ficha|alta|editar|agenda|sync|consulta`. */
 class TabletDemoActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -88,6 +91,7 @@ class TabletDemoActivity : FragmentActivity() {
                 demo.workspace.openAgenda()
             }
             "sync" -> demo.workspace.goSync()
+            "consulta" -> demo.workspace.consultation.chartPrimaryAction(demo.ana())
         }
         setContent {
             TpvcTheme(TpvcThemes.claro) {
@@ -119,6 +123,7 @@ class TabletDemoActivity : FragmentActivity() {
                 quickSync = { true },
                 noteLocalWrite = {},
                 refreshNow = {},
+                isOnline = { false },
             )
             workspace = TabletWorkspace(env, CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate))
         }

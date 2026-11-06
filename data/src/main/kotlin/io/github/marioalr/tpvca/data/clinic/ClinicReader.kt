@@ -9,6 +9,7 @@ import io.github.marioalr.tpvca.domain.business.BusinessReportData
 import io.github.marioalr.tpvca.domain.business.InventoryListRules
 import io.github.marioalr.tpvca.domain.business.InventoryRow
 import io.github.marioalr.tpvca.domain.business.MovementRules
+import io.github.marioalr.tpvca.domain.consultation.PediatricDoseRule
 import io.github.marioalr.tpvca.domain.model.Appointment
 import io.github.marioalr.tpvca.domain.model.BusinessSaleLine
 import io.github.marioalr.tpvca.domain.model.BusinessStockMovement
@@ -16,12 +17,15 @@ import io.github.marioalr.tpvca.domain.model.ClinicProfile
 import io.github.marioalr.tpvca.domain.model.Consultation
 import io.github.marioalr.tpvca.domain.model.MovementType
 import io.github.marioalr.tpvca.domain.model.Patient
+import io.github.marioalr.tpvca.domain.model.PrescriptionTemplate
 import io.github.marioalr.tpvca.domain.model.Product
 import io.github.marioalr.tpvca.domain.model.ProductBatch
 import io.github.marioalr.tpvca.domain.model.Sale
 import io.github.marioalr.tpvca.domain.model.SaleItem
 import io.github.marioalr.tpvca.domain.model.SaleReceipt
 import io.github.marioalr.tpvca.domain.model.SaleReceiptItem
+import io.github.marioalr.tpvca.domain.model.ServiceDefaultProduct
+import io.github.marioalr.tpvca.sync.rules.consultation.AccountCatalog
 import java.io.File
 import java.math.BigDecimal
 import java.time.LocalDate
@@ -52,6 +56,14 @@ data class LabResultRow(
 data class MovementRow(val type: MovementType?, val date: LocalDateTime, val delta: Int, val reason: String?)
 
 data class SaleRow(val syncId: String, val folio: String, val date: LocalDateTime, val patientName: String, val paymentMethod: String, val total: BigDecimal, val cancelled: Boolean)
+
+/** El catálogo para la consulta, **leído en el momento de cada acción**: [account] es lo que trabaja la cuenta, y lo demás son las plantillas de la receta y la calculadora pediátrica, ya en su orden. */
+class ConsultationCatalog(
+    val account: AccountCatalog,
+    val generalMeasures: List<PrescriptionTemplate>,
+    val posology: List<PrescriptionTemplate>,
+    val pediatricRules: List<PediatricDoseRule>,
+)
 
 /** Las imágenes del membrete que están en este equipo. */
 data class LetterheadFiles(val crest: File?, val header: File?)
@@ -129,6 +141,31 @@ class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -
     }
 
     fun products(): List<Product> = gate.read { catalog(withBatches = false).products }
+
+    /** Productos activos por nombre y servicios activos por categoría y nombre, como `CatalogStore.LoadAsync` de la PC; `feeService` depende de este orden. */
+    fun consultationCatalog(): ConsultationCatalog = gate.read {
+        val c = dao().catalogColumns()
+        val categoryIds = c.categories.withIndex().associate { (i, category) -> category.syncId to i + 1 }
+        val categoryNames = c.categories.associate { it.syncId to it.name }
+        val productIds = c.products.withIndex().associate { (i, p) -> p.syncId to i + 1 }
+        val products = c.products.map { ClinicMappers.product(it, productIds.getValue(it.syncId), categoryIds[it.categorySyncId] ?: 0, categoryNames[it.categorySyncId]) }
+        val byId = products.associateBy { it.syncId }
+        val defaults = c.serviceDefaults.groupBy { it.clinicalServiceSyncId }
+        val services = c.services.withIndex().map { (i, e) ->
+            ClinicMappers.service(e, i + 1, defaults[e.syncId].orEmpty().map { ServiceDefaultProduct(byId[it.productSyncId], it.quantity.toInt()) })
+        }
+        val templates = c.templates.map(ClinicMappers::template).groupBy { it.kind }
+        ConsultationCatalog(
+            AccountCatalog(
+                products = products.filter { it.isActive }.sortedBy { it.name },
+                services = services.filter { it.isActive }.sortedWith(compareBy({ it.category }, { it.name })),
+                allProducts = products,
+            ),
+            templates[PrescriptionTemplate.GENERAL_MEASURES].orEmpty(),
+            templates[PrescriptionTemplate.POSOLOGY].orEmpty(),
+            c.pediatricRules.map(ClinicMappers::pediatricRule),
+        )
+    }
 
     /** El inventario con sus alertas. `SyncId` → renglón, con el `SyncId` en [InventoryEntry]. */
     fun inventory(today: LocalDate): List<InventoryEntry> = gate.read {

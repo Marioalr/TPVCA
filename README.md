@@ -47,7 +47,7 @@ Pila: Jetpack Compose con Material 3, Room + SQLCipher, OkHttp, kotlinx.serializ
 | K4b | Celular: agendar con aviso de empalme y registrar entradas de mercancía | Pendiente |
 | **K5** | Motor de escritura: cola de salida, LWW, cerca de generación, combinación de pacientes, movimientos, folios y WorkManager | Hecho ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)) |
 | **K6** | Tablet: inicio, ficha, agenda con aviso de empalme, alta y edición con aviso de duplicado, avisos y «Volver a aplicar» (`ui/tablet`). La consulta y lo demás se ven deshabilitados | ✅ Hecho |
-| K7 | Consulta completa: receta, insumos, servicios, cuenta, terminar y cobrar, también sin conexión | Pendiente |
+| K7 | Consulta completa: receta, insumos, servicios, cuenta, terminar y cobrar, también sin conexión | En curso: secciones, cuenta y cobro ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)); faltan las hojas y laboratorio |
 | K8 | Consulta entre equipos. **Con K5–K8, primera versión de la tablet** | Pendiente |
 | K9 | Punto de venta en la tablet | Pendiente |
 | K9b | El resto de la copia de la PC: panel, negocio, productos, lotes, kardex, servicios, médico y consultorio | Pendiente |

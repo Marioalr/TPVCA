@@ -71,7 +71,7 @@ fun PatientFormScreen(workspace: TabletWorkspace) {
             }
             TButton("Cancelar", workspace::cancelForm, kind = TButtonKind.Ghost, enabled = !session.writing)
             TButton(if (session.saving) "Guardando…" else "Guardar y abrir ficha", workspace::savePatient, enabled = !session.saving, tag = TabletTags.FORM_SAVE)
-            TButton("Guardar e iniciar consulta", {}, kind = TButtonKind.Primary, nextVersion = true)
+            TButton("Guardar e iniciar consulta", { workspace.savePatient(startConsultation = true) }, kind = TButtonKind.Primary, enabled = !session.saving, tag = TabletTags.FORM_SAVE_START)
         }
         TDivider()
         session.error?.let { message ->

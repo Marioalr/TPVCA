@@ -54,4 +54,16 @@ data class ClinicProfile(
     val university: String? = null,
     val phone: String? = null,
     val address: String? = null,
-)
+) {
+    /** Quien firma la venta (`ClinicProfile.DoctorNameWithTitle`). */
+    val doctorNameWithTitle: String
+        get() = when {
+            doctorName.isNullOrBlank() -> DEFAULT_DOCTOR
+            doctorName.startsWith("Dr", ignoreCase = true) -> doctorName
+            else -> "Dr(a). $doctorName"
+        }
+
+    companion object {
+        const val DEFAULT_DOCTOR = "Dr. Titular"
+    }
+}

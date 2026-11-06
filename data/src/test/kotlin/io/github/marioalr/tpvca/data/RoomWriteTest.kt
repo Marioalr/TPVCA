@@ -48,6 +48,93 @@ class RoomWriteTest {
 
     private fun mark(id: String) = OutboxMark("Category", id, "2026-11-03 10:00:00.0000000")
 
+    private fun seedRow(table: String, syncId: String, values: Map<String, Any?>): RowWrite {
+        val full = LinkedHashMap<String, Any?>()
+        for (c in io.github.marioalr.tpvca.sync.SyncContract.bundledSchema.tables.first { it.table == table }.columns) {
+            full[c.name] = when {
+                c.nullable -> null
+                c.timeKind != null -> io.github.marioalr.tpvca.sync.ProtocolDate.MIN
+                c.remoteType == "INTEGER" -> 0L
+                c.remoteType == "REAL" -> 0.0
+                c.clrType == "decimal" -> "0"
+                else -> ""
+            }
+        }
+        full["SyncId"] = syncId
+        full["UpdatedAtUtc"] = "2026-01-01 00:00:00.0000000"
+        full["SyncedAtUtc"] = "2026-01-01 00:00:00.000"
+        full.putAll(values)
+        return RowWrite(table, syncId, full, isNew = true)
+    }
+
+    /** Con la base de verdad: si algo falla a media transacción, ni nota, ni venta, ni movimientos, ni cita, y la consulta sigue en curso; con todo bien, queda todo y un segundo intento no cobra otra vez. */
+    @Test
+    fun terminarYCobrarEsTodoONadaEnLaBaseDeVerdad() {
+        val patient = "10000000-0000-4000-8000-000000000001"
+        val product = "10000000-0000-4000-8000-000000000002"
+        val category = "10000000-0000-4000-8000-000000000003"
+        val batch = "10000000-0000-4000-8000-000000000004"
+        val appointment = "10000000-0000-4000-8000-000000000005"
+        store.apply(
+            StoreChanges(
+                writes = listOf(
+                    seedRow("Patients", patient, mapOf("FullName" to "Ana", "RecordNumber" to "EXP-1", "IsActive" to 1L)),
+                    seedRow("Categories", category, mapOf("Name" to "C")),
+                    seedRow("Products", product, mapOf("Name" to "Gasa", "Code" to "P1", "Price" to "10.00", "CurrentStock" to 5L, "IsActive" to 1L, "CategorySyncId" to category, "UnitsPerPackage" to 1L)),
+                    seedRow("ProductBatches", batch, mapOf("ProductSyncId" to product, "BatchNumber" to "L1", "ExpirationDate" to "2030-01-01 00:00:00.0000000", "Quantity" to 5L)),
+                    seedRow("Appointments", appointment, mapOf("PatientRecordSyncId" to patient, "Date" to "2030-01-10 00:00:00.0000000", "Time" to "10:00", "Status" to "Programada", "DurationMinutes" to 30L)),
+                ),
+                meta = mapOf(
+                    io.github.marioalr.tpvca.sync.engine.SyncEngine.DEVICE_ROLE to "AndroidTablet",
+                    io.github.marioalr.tpvca.sync.engine.SyncEngine.DEVICE_CODE to "T1",
+                    io.github.marioalr.tpvca.sync.engine.SyncEngine.FIRST_DOWNLOAD_DONE to "2026-01-01 00:00:00.0000000",
+                ),
+            ),
+        )
+        val writes = io.github.marioalr.tpvca.sync.engine.WriteEngine(store, { "tablet" }, io.github.marioalr.tpvca.sync.link.MemoryFolioNumbers(), { null })
+        val draft = io.github.marioalr.tpvca.sync.rules.consultation.ConsultationDraft(
+            patientSyncId = patient, patientName = "Ana", folio = "CNS-20261106-103000-T1", startedAt = "2026-11-06T10:30:00", attendingAppointmentSyncId = appointment, chargeSaleSyncId = io.github.marioalr.tpvca.sync.rules.SyncIds.random(),
+        )
+        assertEquals(null, writes.startConsultation(draft))
+        fun request(productId: String) = io.github.marioalr.tpvca.sync.engine.FinishConsultation(
+            patientSyncId = patient,
+            note = io.github.marioalr.tpvca.sync.engine.ConsultationNote(draft.folio, java.time.LocalDateTime.of(2026, 11, 6, 10, 30), "Fiebre", "", "", "", "Faringitis", "Reposo", "", "[]", false, ""),
+            lines = listOf(io.github.marioalr.tpvca.sync.engine.SaleLine(productSyncId = productId, quantity = 2, unitPrice = java.math.BigDecimal("10.00"), code = "P1", description = "Gasa")),
+            saleSyncId = draft.chargeSaleSyncId,
+            patientName = "Ana",
+            paymentMethod = "Efectivo",
+            responsible = "Dra. Ejemplo",
+            appointmentSyncId = appointment,
+            restorePrescriptionJson = null,
+        )
+
+        // El expediente se dio de baja: falla después de escribir la nota, dentro de la transacción
+        store.apply(StoreChanges(writes = listOf(seedRow("Patients", patient, mapOf("FullName" to "Ana", "RecordNumber" to "EXP-1", "IsActive" to 0L)).copy(isNew = false))))
+        assertThrows(io.github.marioalr.tpvca.sync.engine.WriteRefused::class.java) { writes.finishConsultation(request(product)) }
+        assertTrue(store.select("PatientConsultations", listOf("SyncId")).isEmpty())
+        assertTrue(store.select("Sales", listOf("SyncId")).isEmpty())
+        assertTrue(store.select("InventoryMovements", listOf("SyncId")).isEmpty())
+        assertEquals(5L, store.select("ProductBatches", listOf("Quantity")).single()["Quantity"])
+        assertEquals("Programada", store.select("Appointments", listOf("Status")).single()["Status"])
+        assertEquals(0, store.pendingChanges())
+        assertTrue("La consulta sigue en curso", store.meta(io.github.marioalr.tpvca.sync.engine.WriteEngine.CONSULTATION_DRAFT) != null)
+
+        store.apply(StoreChanges(writes = listOf(seedRow("Patients", patient, mapOf("FullName" to "Ana", "RecordNumber" to "EXP-1", "IsActive" to 1L)).copy(isNew = false))))
+        val done = writes.finishConsultation(request(product))
+        assertTrue(done.sale!!.folio.contains("-T1-"))
+        assertEquals(1, store.select("PatientConsultations", listOf("SyncId")).size)
+        assertEquals(3L, store.select("ProductBatches", listOf("Quantity")).single()["Quantity"])
+        assertEquals("Atendida", store.select("Appointments", listOf("Status")).single()["Status"])
+        assertEquals(null, store.meta(io.github.marioalr.tpvca.sync.engine.WriteEngine.CONSULTATION_DRAFT))
+        assertTrue(store.pendingChanges() > 0)
+
+        // Otra vez, como después de morir el proceso: no cobra de nuevo
+        val again = writes.finishConsultation(request(product))
+        assertTrue(again.alreadyFinished)
+        assertEquals(done.sale!!.folio, again.sale?.folio)
+        assertEquals(1, store.select("Sales", listOf("SyncId")).size)
+    }
+
     @Test
     fun laEscrituraYSuEntradaVanEnLaMismaTransaccion() {
         assertThrows(IllegalStateException::class.java) {

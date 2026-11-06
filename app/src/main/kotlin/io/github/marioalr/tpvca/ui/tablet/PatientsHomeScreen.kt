@@ -60,7 +60,6 @@ import io.github.marioalr.tpvca.sync.engine.ArrivalNotices
 import io.github.marioalr.tpvca.sync.engine.NoticeKind
 import io.github.marioalr.tpvca.ui.phone.Loaded
 import io.github.marioalr.tpvca.ui.phone.Loads
-import io.github.marioalr.tpvca.ui.phone.isOpenableSyncId
 import io.github.marioalr.tpvca.ui.phone.load
 import io.github.marioalr.tpvca.ui.phone.searchPatients
 import io.github.marioalr.tpvca.ui.theme.LocalTpvcColors
@@ -74,6 +73,7 @@ import java.time.format.DateTimeFormatter
 fun PatientsScreen(workspace: TabletWorkspace, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         PatientsTopBar(workspace)
+        ConsultationBanner(workspace)
         Box(Modifier.weight(1f).fillMaxWidth()) { content() }
     }
 }
@@ -213,10 +213,10 @@ private fun TodayRow(workspace: TabletWorkspace, marked: MarkedAppointment, pati
     val colors = LocalTpvcColors.current
     val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
     val action: @Composable () -> Unit = {
-        if (a.isAttended) TBadge("Atendida", colors.successSubtle, colors.successText) else TButton("Atender", {}, kind = TButtonKind.Primary, nextVersion = true)
+        if (a.isAttended) TBadge("Atendida", colors.successSubtle, colors.successText) else TButton("Atender", { workspace.consultation.attend(a, patient) }, kind = TButtonKind.Primary, tag = TabletTags.attend(a.time.orEmpty()))
     }
     Row(
-        Modifier.fillMaxWidth().clickable(enabled = patient != null && isOpenableSyncId(patient), role = Role.Button) { patient?.let(workspace::openChart) }.padding(horizontal = 18.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {

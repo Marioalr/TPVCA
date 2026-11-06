@@ -232,6 +232,20 @@ Con la app cerrada, ver «Segundo plano».
 
 **Migración:** la base pasa a la versión 2 con `MIGRATION_1_2`, que solo agrega `SyncOutbox` y `SyncSavedChanges`: lo que ya bajó no se toca ni se baja otra vez. `RoomWriteTest` la prueba con una base de la versión 1.
 
+
+## La consulta (K7)
+
+La consulta en curso de la tablet (`ui/tablet/ConsultationController.kt`, `ConsultationScreen.kt`, `ConsultationCheckoutSheet.kt`), con los pasos y textos de la PC.
+
+- **El borrador es la única fuente.** Hay uno por equipo, en `Draft:Consultation` de la base cifrada (`WriteEngine.CONSULTATION_DRAFT`), con la forma de `Models/ConsultationDraft.cs` por `SyncId`. Empezar nunca pisa otro: el motor regresa el que hay, y uno que esta versión no entiende se conserva y lo dice.
+- **Dos caminos de escritura.** Lo que se teclea se ve al instante y va al borrador tras una pausa (400 ms, 10 s como máximo sin dejar de escribir) y al irse la app. Todo lo demás pasa por `ConsultationController.apply`: bajo un candado lee el catálogo y las hojas de ahora, aplica las reglas fuera del hilo principal, escribe y solo entonces muestra. Lo tecleado mientras tanto se vuelve a poner encima.
+- **Una sola transacción.** El borrador y los renglones de las hojas van juntos (`saveConsultation`): si el proceso muere nunca queda un renglón sin su cargo. La receta vive en `draft.prescriptions` y se escribe también en `Patients.ActivePrescriptionJson`; insumos y servicios se editan renglón por renglón sobre la hoja que está en la base, por `RowId`.
+- **La nota se escribe solo al cobrar, a diferencia de la PC**, que la guarda al abrir «Terminar consulta». `finishConsultation` escribe en una transacción la nota, el resumen del expediente, la venta con sus movimientos, la cita «Atendida» y quita el borrador. Por eso la hoja de cobro no dice «Nota médica guardada», y volver a la consulta no deja nada que deshacer. El `SyncId` de la venta se toma al empezar (`ChargeSaleSyncId`): dos toques o reintentar tras morir el proceso no cobran dos veces.
+- **Cortesía:** sin cargos se termina sin venta en ceros. Un inventario mal contado nunca impide cobrar: `Existencias insuficientes…` se avisa después.
+- **Solo lectura:** enviada a otro equipo (`Handoff`, que hasta K8 nadie escribe), expediente borrado o todavía por bajar. No se escribe nada. Con el expediente borrado, «Descartar» sigue: es la única salida, porque hay una consulta por equipo. La PC descarta sola esa consulta al abrir; aquí se ve lo escrito antes de soltarlo.
+- **Los toques:** `apply(tapKey)` ignora el mismo botón mientras sigue el primero y 300 ms después. Empezar, descartar, terminar y cobrar tienen su propia guarda. Cobrar no pregunta nada, así que una pregunta de otra pantalla no lo cancela.
+- **Pantalla encendida:** `FLAG_KEEP_SCREEN_ON` solo mientras se ve la consulta o sus hojas; en la ficha, no.
+
 ## Segundo plano (§3.3)
 
 | Trabajo | Cuándo | Restricciones |

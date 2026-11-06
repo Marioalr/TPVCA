@@ -50,6 +50,8 @@ class TabletEnv(
     val quickSync: suspend () -> Boolean,
     val noteLocalWrite: () -> Unit,
     val refreshNow: () -> Unit,
+    /** Hay red de verdad: en la app, una red validada; decide si el folio de la consulta lleva la letra del equipo. */
+    val isOnline: () -> Boolean,
 )
 
 sealed interface TabletPage {
@@ -62,6 +64,9 @@ sealed interface TabletPage {
     data object Form : TabletPage
 
     data object Sync : TabletPage
+
+    /** La consulta en curso. Solo hay una: su paciente viene en el borrador. */
+    data object Consultation : TabletPage
 }
 
 /** Una pregunta de Sí o No, con los textos de la PC. */
@@ -118,7 +123,13 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
     val appointment = AppointmentFormState()
     val agenda = AgendaController(env.phone.reader, env.writes, env.quickSync, env.noteLocalWrite, ::ask, env.phone.now, io)
 
-    class Toast(val text: String, val warning: Boolean)
+    /** La consulta en curso (K7). */
+    val consultation = ConsultationController(this, scope, io)
+
+    class Toast(val text: String, val warning: Boolean, val action: ToastAction? = null)
+
+    /** Un botón en el aviso: «Compartir ticket» al cobrar. */
+    class ToastAction(val text: String, val run: (android.content.Context) -> Unit)
 
     private var pageBeforeForm: TabletPage = TabletPage.PatientsHome
     private var pageBeforeSync: TabletPage = TabletPage.Hub
@@ -150,8 +161,8 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         confirm = null
     }
 
-    fun show(text: String, warning: Boolean = false) {
-        toast = Toast(text, warning)
+    fun show(text: String, warning: Boolean = false, action: ToastAction? = null) {
+        toast = Toast(text, warning, action)
     }
 
     // ------------------------------------------------------------------ navegación
@@ -168,6 +179,47 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         page = TabletPage.PatientsHome
     }
 
+    /** La tarjeta del inicio (`EnterPatientsSection`): a la consulta si hay una en curso. Con un formulario abierto, a él: es el único camino para regresar a lo escrito, y la consulta tiene su aviso en la ficha. */
+    fun enterPatients() {
+        if (returnToOpenForm()) return
+        page = if (consultation.hasConsultation) TabletPage.Consultation else TabletPage.PatientsHome
+    }
+
+    /** «Volver a la consulta». Si hay un formulario abierto, la consulta queda detrás de él. */
+    fun showConsultation() {
+        if (!consultation.hasConsultation) return
+        if (form != null && page == TabletPage.Form) {
+            pageBeforeForm = TabletPage.Consultation
+            return
+        }
+        homeQuery = ""
+        page = TabletPage.Consultation
+    }
+
+    /** «Expediente» de la consulta: la ficha completa, sin cerrarla. */
+    fun showChartFromConsultation(syncId: String) {
+        page = TabletPage.Chart(syncId)
+    }
+
+    /** Cita sin expediente: se busca por su nombre para abrirlo o crearlo. */
+    internal fun searchPatient(name: String) {
+        if (returnToOpenForm()) return
+        page = TabletPage.PatientsHome
+        homeQuery = name
+        firstResult = null
+    }
+
+    /** Cobrada o descartada: a la ficha si la hay, si no al inicio. */
+    internal fun afterConsultation(chartSyncId: String?) {
+        val next = if (chartSyncId != null) TabletPage.Chart(chartSyncId) else TabletPage.PatientsHome
+        if (form != null && page == TabletPage.Form) pageBeforeForm = next else page = next
+    }
+
+    internal fun showHomeIfOnConsultation() {
+        if (page == TabletPage.Consultation) page = TabletPage.PatientsHome
+        if (pageBeforeForm == TabletPage.Consultation) pageBeforeForm = TabletPage.PatientsHome
+    }
+
     /** Un formulario abierto nunca se queda sin camino de regreso. */
     private fun returnToOpenForm(): Boolean {
         if (form == null) return false
@@ -182,7 +234,8 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
 
     /** «Volver» de Sincronización: a donde estaba, también al formulario con lo escrito. */
     fun leaveSync() {
-        page = if (form != null) TabletPage.Form else pageBeforeSync.takeIf { it != TabletPage.Form } ?: TabletPage.Hub
+        val before = pageBeforeSync.takeIf { it != TabletPage.Form } ?: TabletPage.Hub
+        page = if (form != null) TabletPage.Form else if (before == TabletPage.Consultation && !consultation.hasConsultation) TabletPage.PatientsHome else before
     }
 
     fun setQuery(text: String) {
@@ -217,8 +270,12 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         when {
             detail != null -> detail = null
             agendaOpen -> closeAgenda()
+            consultation.checkout != null -> consultation.closeCheckout()
+            consultation.sheet != null -> consultation.closeSheet()
             page == TabletPage.Form -> backFromForm()
-            page is TabletPage.Chart -> page = TabletPage.PatientsHome
+            // La consulta sigue: su aviso lleva de regreso. Atrás nunca la cierra
+            page == TabletPage.Consultation -> page = TabletPage.PatientsHome
+            page is TabletPage.Chart -> page = if (consultation.isConsultationFor((page as TabletPage.Chart).syncId)) TabletPage.Consultation else TabletPage.PatientsHome
             page == TabletPage.Sync -> leaveSync()
             homeQuery.isNotEmpty() -> homeQuery = ""
             page == TabletPage.PatientsHome -> page = TabletPage.Hub
@@ -439,6 +496,7 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
             saveFormDraft()
             saveAppointmentDraft()
         }
+        consultation.flush()
     }
 
     /** Al abrir, y cada vez que baja algo mientras falte: si quedó un alta, una edición o una cita sin guardar, se reabre tal cual (`TryRestorePatientFormDraftAsync`). Si no se pudo leer la base, se intenta la siguiente vez. */
@@ -452,6 +510,8 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         restoring = true
         scope.launch {
             try {
+                // Primero la consulta, como en la PC: un formulario recuperado queda encima de ella
+                consultation.restore()
                 val waiting = restoreForm()
                 restoreAppointment()
                 restored = !waiting
@@ -555,20 +615,20 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
     }
 
     /** «Guardar y abrir ficha». Si no se guarda, el formulario sigue abierto con todo lo escrito y dice por qué. */
-    fun savePatient() {
+    fun savePatient(startConsultation: Boolean = false) {
         val session = form ?: return
         if (session.saving) return
         session.saving = true
         scope.launch {
             try {
-                saveForm(session)
+                saveForm(session, startConsultation)
             } finally {
                 session.saving = false
             }
         }
     }
 
-    private suspend fun saveForm(session: FormSession) {
+    private suspend fun saveForm(session: FormSession, startConsultation: Boolean) {
         val day = today()
         val check = session.form.check(day)
         check.problem?.let { problem ->
@@ -620,6 +680,8 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         changed()
         page = TabletPage.Chart(syncId)
         show(message)
+        // Solo si de verdad se guardó
+        if (startConsultation) consultation.startAfterSaving(syncId)
     }
 
     private suspend fun confirmNotDuplicate(session: FormSession, day: LocalDate): Boolean {
@@ -643,6 +705,10 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
 
     /** Baja lógica (`DeletePatientAsync`): deja de aparecer en las búsquedas; sus consultas y recetas se conservan. */
     fun deletePatient(syncId: String, fullName: String) {
+        if (consultation.isConsultationFor(syncId)) {
+            info = "Termine o descarte la consulta en curso antes de eliminar el expediente."
+            return
+        }
         scope.launch {
             if (!ask("Eliminar expediente", "¿Eliminar el expediente de $fullName?\n\nDejará de aparecer en la búsqueda. Sus consultas y recetas se conservan.")) return@launch
             try {
@@ -715,11 +781,12 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         preview = null
         info = null
         toast = null
+        consultation.clearMemory()
         page = TabletPage.Hub
         restored = false
     }
 
-    private fun problem(e: Exception): String = if (e is WriteRefused) e.message.orEmpty() else "Falló la base de este equipo. Lo capturado sigue aquí: intente de nuevo."
+    internal fun problem(e: Exception): String = if (e is WriteRefused) e.message.orEmpty() else "Falló la base de este equipo. Lo capturado sigue aquí: intente de nuevo."
 
     fun localNow() = Clinic.localNow(env.phone.now())
 

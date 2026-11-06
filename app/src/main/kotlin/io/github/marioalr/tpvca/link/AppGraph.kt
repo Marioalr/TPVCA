@@ -137,6 +137,10 @@ class AppGraph(context: Context) {
                 quickSync = { controller.quickSync() },
                 noteLocalWrite = { controller.noteLocalWrite() },
                 refreshNow = { controller.refreshNow() },
+                isOnline = {
+                    val connectivity = app.getSystemService(android.net.ConnectivityManager::class.java)
+                    connectivity?.getNetworkCapabilities(connectivity.activeNetwork)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+                },
             ),
             tabletScope,
         )

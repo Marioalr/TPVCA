@@ -6,6 +6,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 /** Un estudio de la orden de laboratorio (`LabOrderStudy`): `LabOrderJson` y el borrador. */
 @Serializable
@@ -18,6 +20,13 @@ data class LabOrderDraft(
     @SerialName("Indications") val indications: String = "",
 ) {
     val isEmpty: Boolean get() = studies.isEmpty()
+
+    /** Lo que se guarda en `PatientConsultations.LabOrderJson`. */
+    fun encode(): String = LAB_JSON.encodeToString(serializer(), this)
+
+    private companion object {
+        val LAB_JSON = Json { encodeDefaults = true }
+    }
 }
 
 /** El resumen del expediente antes de la consulta (`PatientSummarySnapshot`): regresa si se descarta. */
@@ -82,6 +91,9 @@ data class ConsultationDraft(
 ) {
     /** Enviada a otro equipo: aquí se ve, pero no se escribe nada. */
     val isHandedOff: Boolean get() = handoff != null
+
+    /** A qué equipo se envió (`ConsultationHandoffMarker.ToDeviceName`). */
+    val handoffTargetName: String get() = (handoff?.get("ToDeviceName") as? JsonPrimitive)?.contentOrNull.orEmpty().ifBlank { "otro equipo" }
 
     fun encode(): String = JSON.encodeToString(serializer(), this)
 

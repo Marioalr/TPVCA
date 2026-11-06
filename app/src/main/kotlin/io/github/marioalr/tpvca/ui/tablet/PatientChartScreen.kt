@@ -123,7 +123,7 @@ fun PatientChartScreen(workspace: TabletWorkspace, chrome: TabletChrome, syncId:
                     if (wide) {
                         Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             Column(Modifier.width(400.dp).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Essentials(data, patient)
+                                Essentials(workspace, syncId, data, patient)
                                 LabCard(workspace, data.labs)
                                 Antecedents(workspace, syncId, patient)
                             }
@@ -133,7 +133,7 @@ fun PatientChartScreen(workspace: TabletWorkspace, chrome: TabletChrome, syncId:
                         }
                     } else {
                         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Essentials(data, patient)
+                            Essentials(workspace, syncId, data, patient)
                             LabCard(workspace, data.labs)
                             Antecedents(workspace, syncId, patient)
                             TCard(Modifier.fillMaxWidth(), padding = 0.dp) { History(workspace, syncId, data) }
@@ -167,7 +167,7 @@ private fun ChartHeader(workspace: TabletWorkspace, syncId: String, patient: Pat
         }
         FlowRow(Modifier.padding(top = 10.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             TButton("Agendar cita", workspace::scheduleForChart, icon = TIcons.Calendar)
-            TButton("Iniciar consulta", {}, kind = TButtonKind.Primary, nextVersion = true)
+            TButton(if (workspace.consultation.isConsultationFor(syncId)) "Volver a la consulta" else "Iniciar consulta", { workspace.consultation.chartPrimaryAction(syncId) }, kind = TButtonKind.Primary, tag = TabletTags.CHART_PRIMARY)
             TButton("Eliminar", { workspace.deletePatient(syncId, patient.fullName) }, kind = TButtonKind.DangerGhost, icon = TIcons.Trash, description = "Eliminar expediente")
             Box {
                 TIconButton(TIcons.More, "Más acciones", { more = true }, tag = TabletTags.MORE)
@@ -182,20 +182,22 @@ private fun ChartHeader(workspace: TabletWorkspace, syncId: String, patient: Pat
 }
 
 @Composable
-private fun Essentials(data: ChartData, patient: Patient) {
+private fun Essentials(workspace: TabletWorkspace, syncId: String, data: ChartData, patient: Patient) {
     val latest = remember(data) { PatientChartRules.buildLatestVitals(VitalSignsRules.evolution(data.consultations.map { it.consultation })) }
     TCard(Modifier.fillMaxWidth()) {
         TLabel("LO ESENCIAL", Modifier.padding(bottom = 10.dp))
         if (latest.isEmpty()) TCaption("Sin signos vitales registrados en consultas.", Modifier.padding(bottom = 8.dp))
         VitalGrid(latest, Modifier.padding(bottom = 4.dp), big = true)
         TText("Última receta", Modifier.padding(top = 8.dp, bottom = 4.dp), weight = FontWeight.SemiBold)
-        for (item in patient.activePrescription) {
+        // Durante su consulta, la emitida antes de ella (`ChartPrescription`): la que se está escribiendo no es la «última» todavía
+        val prescription = workspace.consultation.chartPrescription(syncId)?.map { it.medicineName to it.dosage } ?: patient.activePrescription.map { it.medicineName to it.dosage.orEmpty() }
+        for ((name, dosage) in prescription) {
             Column(Modifier.padding(bottom = 6.dp)) {
-                TText(item.medicineName)
-                TCaption(item.dosage.orEmpty())
+                TText(name)
+                TCaption(dosage)
             }
         }
-        if (patient.activePrescription.isEmpty()) TCaption("Sin receta registrada. La receta se hace dentro de la consulta.")
+        if (prescription.isEmpty()) TCaption("Sin receta registrada. La receta se hace dentro de la consulta.")
     }
 }
 

@@ -51,7 +51,7 @@ data class PrescriptionSheet(
                 "médica o urgencias si presenta fiebre persistente, dificultad respiratoria o reacciones adversas."
 
         /** Lo que guarda la PC cuando el plan solo dijo que siga la receta (`SavedTreatmentPlanPlaceholder`). */
-        private const val SAVED_PLAN_PLACEHOLDER = "Tratamiento e indicaciones médicas según receta."
+        const val SAVED_PLAN_PLACEHOLDER = "Tratamiento e indicaciones médicas según receta."
 
         /** Las medidas generales de una receta anterior (`ConsultationDetailViewModel.Indications`): su plan o, sin plan, las de siempre. */
         fun indicationsOf(treatmentPlan: String?): String =

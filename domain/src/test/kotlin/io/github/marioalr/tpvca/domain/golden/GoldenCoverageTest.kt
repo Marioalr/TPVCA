@@ -42,6 +42,10 @@ class GoldenCoverageTest {
         "prescription-html-fields.json" to "documents.DocumentsGoldenTest",
         "ticket-text.json" to "documents.DocumentsGoldenTest",
         "date-mask.json" to "patients.PatientsGoldenTest",
+        "cie10-catalog.json" to "consultation.ConsultationGoldenTest",
+        "cie10-search.json" to "consultation.ConsultationGoldenTest",
+        "pediatric-dose.json" to "consultation.ConsultationGoldenTest",
+        "checkout.json" to "consultation.ConsultationGoldenTest",
     )
 
     /** Los que corren en `:sync`, que es quien los usa: archivo → su prueba, junto a `Contracts` en `sync/src/test`. */
@@ -56,6 +60,9 @@ class GoldenCoverageTest {
         "field-stamps.json" to "WriteRulesGoldenTest",
         "patient-merge.json" to "WriteRulesGoldenTest",
         "folios.json" to "WriteRulesGoldenTest",
+        "consultation-account.json" to "ConsultationRulesGoldenTest",
+        "sheet-charges.json" to "ConsultationRulesGoldenTest",
+        "synced-json-columns.json" to "ConsultationRulesGoldenTest",
     )
 
     /** Portados en parte: archivo → los tipos de caso que faltan y su paso (la prueba del archivo los salta por nombre). */
@@ -65,13 +72,6 @@ class GoldenCoverageTest {
 
     /** Los vectores pendientes: archivo → el paso que los porta. */
     private val pending = mapOf(
-        "cie10-catalog.json" to "K7",
-        "cie10-search.json" to "K7",
-        "pediatric-dose.json" to "K7",
-        "consultation-account.json" to "K7",
-        "sheet-charges.json" to "K7",
-        "synced-json-columns.json" to "K7",
-        "checkout.json" to "K7",
         "handoff-payload.json" to "K8",
         "handoff-accept.json" to "K8",
         "linked-device.json" to "K8",

@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": "2026-01-15 10:52:41.0000000",
-  "contract": 22,
+  "contract": 23,
   "protocol": 1,
   "notes": [
     "La consulta entre equipos (docs/TURSO_SYNC_ARCHITECTURE.md §4.5; Services/Rules/HandoffPayloadCodec.cs). La copia de trabajo es el borrador de la consulta como lo guarda la PC (ConsultationDraftStore, consulta-en-curso.json), con un reloj fijo: las fechas van tal cual (TestAssets/fase6/handoff-payload.golden.json las cambia por marcadores).",

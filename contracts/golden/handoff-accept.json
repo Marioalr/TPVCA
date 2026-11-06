@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "Aceptar una consulta recibida (Services/Rules/HandoffPayloadCodec.CheckArrival, paso 8.22), después de sincronizar. La copia (ConsultationDraft, PayloadVersion 1) trae, además de PatientUpdatedAtUtc, PatientFieldStamps (el estado normalizado de FieldStampsJson del expediente en el equipo que envía, con su '#piso' y sin 'UpdatedAtUtc'; en la copia van como fecha ISO 8601 sin zona) y ProgressNoteUpdatedAtUtc (la marca del avance de la nota). Son campos aditivos: una copia de antes no los trae.",
     "Orden: sin expediente aquí → PatientMissing. UpdatedAtUtc de aquí menor que PatientUpdatedAtUtc → PatientBehind. Con PatientFieldStamps (el estado normalizado del que envía, con su '#piso'; field-stamps.json): lo de aquí se normaliza igual y cada marca de la copia debe ser menor o igual a la de aquí, que vale al menos el piso de aquí (en una escritura sin marcas, su UpdatedAtUtc); el '#piso' de la copia se compara con el piso de aquí. Antes, a la copia se le purgan los renglones quitados con el horizonte de aquí (la marca más nueva de aquí − 90 días): su llave de quitado y la del renglón si no la rebasa, que aquí ya se habrían purgado; si falta alguna → PatientBehind. Con ProgressNoteSyncId: sin la nota → NoteMissing; con ProgressNoteUpdatedAtUtc y la nota de aquí más vieja → NoteBehind. Si no, Ready.",

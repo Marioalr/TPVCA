@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "Services/Rules/MedicineSearchRules.cs (pedido del 2026-10-14): el orden de los medicamentos al recetar. 'expected' son los id en orden. Los productos, como en rank-products.json.",
     "rank: con q = el texto normalizado (text-search.json), grupo (MatchTier) 0 si el código normalizado no vacío es igual a q, 1 si el nombre empieza con q, 2 si el genérico empieza con q, 3 si una palabra del nombre o del genérico empieza con q, 4 si el nombre, el genérico o el código (y la presentación con includePresentation) lo contienen; sin texto todos son 0. Orden: primero los que hay en existencia (activo y stock > 0), luego el grupo, luego el nombre normalizado en orden ordinal (por código de carácter, no Collator), luego el nombre tal cual (ordinal), luego el código (ordinal) y al final el orden de la lista. Como mucho 'limit' (20 si no viene; 0 o menos = ninguno).",

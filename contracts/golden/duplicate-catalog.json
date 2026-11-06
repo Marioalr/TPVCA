@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "Catálogo repetido entre equipos (Services/Rules/CatalogDuplicateRules; decisión del médico del 2026-10-22: la tablet es una copia de la PC y da de alta productos, servicios y categorías). Cada registro es su SyncId con LWW por fila: dos equipos que dan de alta lo mismo sin verse dejan dos filas. Esta regla solo las encuentra para avisar; nunca une, borra ni renombra nada. 'compare' da el motivo: None, Code, Name o CodeAndName.",
     "kind: 'producto' (Products), 'servicio' (ClinicalServices) o 'categoria' (Categories). Solo se comparan dos del mismo tipo, los dos con IsActive (las categorías no tienen baja: siempre activas) y con nombre, y nunca el mismo SyncId (el catálogo sembrado lleva SyncId fijos, uuid5.json: dos equipos que siembran tienen la misma fila).",

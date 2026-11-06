@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "La búsqueda del diagnóstico (Models/Cie10Diagnosis.Search y Services/Rules/CatalogSearchRules.Cie10Suggestions) sobre cie10-catalog.json. 'expected' son los códigos en orden.",
     "search: sin texto (vacío o espacios), los primeros 'max' del catálogo; si no, los del catálogo cuyo código, nombre o categoría contiene la consulta normalizada (text-search.json), en el orden del catálogo, 'max' como mucho.",

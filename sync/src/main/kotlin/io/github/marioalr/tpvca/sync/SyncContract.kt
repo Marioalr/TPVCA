@@ -8,7 +8,7 @@ package io.github.marioalr.tpvca.sync
  */
 object SyncContract {
     /** La revisión del contrato que implementa esta versión de la app (`SyncContract.Revision` en la PC). */
-    const val REVISION: Int = 22
+    const val REVISION: Int = 23
 
     /**
      * Desde esta revisión el formato está congelado: solo admite cambios aditivos (`SyncContract.FrozenRevision` en la PC).

@@ -2,6 +2,7 @@ package io.github.marioalr.tpvca.sync.engine
 
 import io.github.marioalr.tpvca.domain.Clinic
 import io.github.marioalr.tpvca.domain.business.BusinessReportRules
+import io.github.marioalr.tpvca.domain.business.StockReviewRules
 import io.github.marioalr.tpvca.domain.devices.DevicePermissions
 import io.github.marioalr.tpvca.domain.devices.DeviceRole
 import io.github.marioalr.tpvca.domain.model.Product
@@ -575,14 +576,19 @@ class WriteEngine(
 
     /**
      * Cerrar un lote (`DeleteBatchAsync`): `Delta = −libro` con su lote y `SyncId` determinista, y lo que falte para que el libro del producto baje lo mismo, sin lote. Le resta al producto lo que el lote
-     * tenía, aunque quede en negativo. Una parte que ya existe (otro equipo lo cerró) no se vuelve a escribir ni a descontar. Los lotes no se borran.
+     * tenía, aunque quede en negativo. Los lotes no se borran.
+     *
+     * **Revisión 23:** si `close:` o `close-rest:` de este lote ya está aquí, otro equipo ya lo cerró y ya descontó (su fila no ha llegado, o una venta posterior lo volvió a abrir): no se escribe ninguna parte,
+     * el producto no se toca (ni `CurrentStock` ni `UpdatedAt`) y el lote solo queda con `Quantity` 0, `IsDepleted` 1 y `ClosedAtUtc`.
+     *
+     * @return `true` si otro equipo ya lo había cerrado: las existencias no cambiaron y hay que avisar al médico (`BatchClosedElsewhereNotice`).
      */
-    fun closeBatch(batchSyncId: String) = guarded {
+    fun closeBatch(batchSyncId: String): Boolean = guarded {
         if (!WritePolicy.canWrite(requireWritable(), "ProductBatches", creating = false)) refuse("cerrar lotes")
         store.transaction {
             val state = StockState()
-            val batch = state.batch(batchSyncId) ?: return@transaction
-            if (batch["ClosedAtUtc"] != null) return@transaction
+            val batch = state.batch(batchSyncId) ?: return@transaction false
+            if (batch["ClosedAtUtc"] != null) return@transaction false
             val productId = batch["ProductSyncId"] as String
             val product = state.product(productId)
             val ledger = store.select("InventoryMovements", listOf("Delta", "MovementType", "Quantity", "StockBefore", "StockAfter"), "BatchSyncId", listOf(batchSyncId))
@@ -590,18 +596,14 @@ class WriteEngine(
             val lotPart = SyncIds.derived("close:", batchSyncId)
             val restPart = SyncIds.derived("close-rest:", batchSyncId)
             val written = store.existing("InventoryMovements", listOf(lotPart, restPart))
-            val quantity = batch.int("Quantity")
-            val legacy = ledger != quantity
-            val removed = if (legacy) minOf(quantity, maxOf(product.int("CurrentStock"), 0)) else quantity
-            val lotDelta = -ledger
-            val restDelta = -(removed - ledger)
+            val (lotDelta, restDelta) = StockReviewRules.closingDeltas(batch.int("Quantity"), ledger, product.int("CurrentStock"), lotPart in written, restPart in written)
             val now = protocolLocalNow()
             val reason = "Eliminación del lote ${batch["BatchNumber"]}"
             val writes = ArrayList<RowWrite>()
             val marks = ArrayList<OutboxMark>()
-            // El producto cambia solo si se escribe una parte: otro equipo que ya lo cerró ya lo descontó
+            // El producto cambia solo si se escribe una parte
             fun close(syncId: String, batch: String?, delta: Int) {
-                if (delta == 0 || syncId in written) return
+                if (delta == 0) return
                 addMovement(product, productId, batch, null, "AjusteInventario", kotlin.math.abs(delta), delta, now, reason, "Dr. Consulta", syncId, writes, marks)
                 product["UpdatedAt"] = now
                 state.touch(productId)
@@ -614,6 +616,7 @@ class WriteEngine(
             state.touchBatch(batchSyncId)
             state.flush(writes, marks)
             store.apply(StoreChanges(writes = writes, outbox = marks))
+            written.isNotEmpty()
         }
     }
 

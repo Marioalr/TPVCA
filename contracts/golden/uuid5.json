@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "UUID versión 5 de RFC 4122 (SHA-1 del espacio de nombres en orden de red + el nombre en UTF-8). 'expected' en minúsculas con guiones.",
     "Espacios de nombres: dns y url de RFC 4122; tpvc = uuid5(url, \"https://github.com/Marioalr/TPVC/sync\"), fijo para siempre.",

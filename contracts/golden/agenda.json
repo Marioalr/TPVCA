@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "La agenda (Services/Rules/AgendaRules.cs, antes en AgendaPanelViewModel y PatientsHomeViewModel). Cada cita: syncId, patientName, date (yyyy-MM-dd), time (texto; se lee como en patient-summary.json, lo que no se lee son las 10:00), durationMinutes, status y reason. 'now' es la hora local del consultorio.",
     "slots (BuildSlots): las citas del día que no están 'Cancelada', cada una en su hora, más los huecos libres de 30 minutos que empiezan de las 08:00 a las 19:30. Un hueco [t, t+30) no se ofrece si alguna cita del día [inicio, inicio + duración) se cruza con él (duración 0 o negativa = 30); el día de hoy (la fecha de 'now') no se ofrece un hueco cuyo inicio ya pasó. Orden por hora, la cita antes que el hueco libre a la misma hora; citas a la misma hora en su orden de entrada. title: el paciente o 'Libre'; subtitle: 'motivo · N min' (la duración guardada, aunque sea 0) o '+ Agendar aquí'. overlap: la marca 'Empalme con {paciente} ({HH:mm})' y ' y N más' si hay varias (la primera por hora y luego por SyncId), con AppointmentRules.Overlaps (appointment-overlap.json). summary: 'N citas · M huecos libres' (singular con 1).",

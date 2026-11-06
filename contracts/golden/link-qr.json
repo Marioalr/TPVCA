@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "Texto del QR: 'tpvc-link:1:' + base64url sin relleno (RFC 4648 §5: '-' y '_', sin '=') del JSON compacto {\"u\":url,\"t\":token,\"n\":consultorio} en UTF-8, con las claves en ese orden y los acentos sin escapar.",
     "Al leer: se quitan los espacios de los extremos; si el prefijo o la versión no coinciden, el base64 o el JSON no se pueden leer, o faltan 'u' o 't', 'expected' es null y el equipo pide pegar la URL y el token a mano. 'n' puede faltar o ir vacío.",

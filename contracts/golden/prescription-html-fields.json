@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "Services/Documents/PrescriptionHtmlBuilder.cs: los valores de la receta en HTML (cada uno con data-field) y lo demás que dibuja la hoja. El PDF de la app de Android pone lo mismo en los mismos lugares.",
     "data-field: paciente, edad, fecha, alergias, ta, temp, peso, talla, spo2, telefono, domicilio. 'alergias' lleva la clase alert (en rojo, #991B1B) solo si tiene alergias.",

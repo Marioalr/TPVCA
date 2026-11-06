@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "«Por sección» del panel «Negocio» (BusinessReportRules.ByType): las mismas entradas y reglas de renglón que business-summary.json. Un renglón por tipo con ventas en el periodo, en el orden Consultas, Medicamentos, Insumos, Servicios, Otros.",
     "sales, cost y profit como en el resumen; marginPercent = Math.Round(profit / sales × 100, 1); sharePercent = Math.Round(sales del tipo / sales de todos × 100, 1) (al par); lines = renglones; estimatedCostLines = renglones con costo estimado. Las canceladas no cuentan."

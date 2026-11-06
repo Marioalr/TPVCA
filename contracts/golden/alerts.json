@@ -3,11 +3,11 @@
   "culture": "es-MX",
   "today": null,
   "now": "2026-10-12T05:30:00Z",
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "Services/Rules/StockAlertRules.cs, Services/Rules/StockReviewRules.cs (revisión 20) y ProductBatch.StatusTextOn.",
     "Revisar inventario (revisión 20; decisión del médico del 2026-10-22: un inventario mal contado nunca impide cobrar, la política de negativos del paso 8.20 adelantada): la venta, «Se surte aquí», los insumos y el consumo en consulta pasan aunque no alcancen las existencias, que quedan en negativo. inventoryReview: los productos activos con CurrentStock < 0, con un lote abierto (closedAtUtc nulo) con Quantity < 0 aunque el total sea positivo, o con lotes abiertos que suman más que CurrentStock (la parte fuera de los lotes, CurrentStock − Σ lotes abiertos, en negativo: por ejemplo −3 sin lote y después una entrada de 5; revisión de la rama); del de menos existencias al de más y, con las mismas, por nombre ordinal. alertLine: '{nombre}: {existencias} · revisar inventario', con ' (lotes {Σ lotes abiertos})' después si esa suma pasa de las existencias y de 0, y con lotes abiertos en negativo, ' (lote {número} {cantidad}, …)' por número ordinal. Los negativos se escriben con el signo menos U+2212 ('−3'). stockBadge (Product.StockBadgeText, con sus lotes): si necesita revisión, '{existencias} · revisar inventario' y ' (lotes {Σ})' si los lotes abiertos suman más que las existencias y que 0; si no, la insignia de siempre ('Existencias: N', 'Stock bajo: N', 'Sin existencias' o con el paquete abierto '(+abiertas/piezas)'). La alerta se va sola cuando un conteo o una entrada dejan todo en 0 o más: nada se compensa solo.",
-    "closeLot (StockLedger.ClosingDeltas, regla «Existencias»): lotDelta = −lotLedger (con su lote, SyncId 'close:'); restDelta (sin lote, SyncId 'close-rest:'; 0 = no se escribe) = −(quitado − lotLedger), con quitado = lotQuantity si el lote está al día (lotLedger = lotQuantity) aunque el producto quede en negativo (revisión 20: un negativo fuera de los lotes se queda, nada se compensa solo; antes se topaba en max(productStock, 0) y lo borraba), o min(lotQuantity, max(productStock, 0)) en un lote de antes de la revisión 11 (lotLedger ≠ lotQuantity). stockAfter = productStock + lotDelta + restDelta.",
+    "closeLot (StockLedger.ClosingDeltas, regla «Existencias»): lotDelta = −lotLedger (con su lote, SyncId 'close:'); restDelta (sin lote, SyncId 'close-rest:'; 0 = no se escribe) = −(quitado − lotLedger), con quitado = lotQuantity si el lote está al día (lotLedger = lotQuantity) aunque el producto quede en negativo (revisión 20: un negativo fuera de los lotes se queda, nada se compensa solo; antes se topaba en max(productStock, 0) y lo borraba), o min(lotQuantity, max(productStock, 0)) en un lote de antes de la revisión 11 (lotLedger ≠ lotQuantity). stockAfter = productStock + lotDelta + restDelta. Revisión 23: lotPartWritten / restPartWritten (la entrada los omite si son false) dicen si esa parte ya existe aquí; con cualquiera de las dos, otro equipo ya cerró el lote: lotDelta y restDelta son 0, no se escribe nada, productStock no cambia y el lote solo queda con Quantity 0, IsDepleted 1 y ClosedAtUtc.",
     "shortage (StockReviewRules.Shortage): los paquetes que hacen falta son wholePackages + (si individualUnits > las piezas del paquete abierto, max(0, openedUnitsRemaining)) ⌈(piezas − abiertas) / unitsPerPackage⌉; con unitsPerPackage <= 1 las piezas cuentan como paquetes. Si no pasan de currentStock, null. Si no, en paquetes {available: currentStock, charged: paquetes}; con piezas sueltas en piezas {available: currentStock × unitsPerPackage + max(0, abiertas), charged: wholePackages × unitsPerPackage + piezas, pieces: true}. warning (StockReviewRules.WarningText): 'Existencias insuficientes: ' + cada faltante '{nombre} (quedan {available}, se cobran {charged})' (con ' pzas' después de cada número en piezas) unidos por '; ' + '. Revise el inventario.'; null sin faltantes. Es el aviso al cobrar, que nunca bloquea (checkout.json).",
     "Stock bajo: activo, MinStock > 0 y CurrentStock <= MinStock; ordenado por CurrentStock (el orden de los empates no está definido).",
     "Caducidad: cuentan los lotes con piezas, sin marcar como agotados, abiertos (closedAtUtc nulo, desde v1.37.0) y de un producto activo. Vencido: caduca antes de hoy. Por vencer: de hoy a hoy + 30 días, los dos incluidos. Por fecha de caducidad.",
@@ -698,6 +698,86 @@
         "lotDelta": 4,
         "restDelta": -10,
         "stockAfter": 0
+      }
+    },
+    {
+      "name": "cerrar un lote · otro equipo ya lo cerró y aquí sigue abierto: su libro en 0 no es un lote de antes",
+      "input": {
+        "kind": "closeLot",
+        "lotQuantity": 5,
+        "lotLedger": 0,
+        "productStock": 10,
+        "lotPartWritten": true,
+        "restPartWritten": false
+      },
+      "expected": {
+        "lotDelta": 0,
+        "restDelta": 0,
+        "stockAfter": 10
+      }
+    },
+    {
+      "name": "cerrar un lote · otro equipo ya lo cerró y una venta posterior lo volvió a abrir",
+      "input": {
+        "kind": "closeLot",
+        "lotQuantity": 3,
+        "lotLedger": -2,
+        "productStock": 13,
+        "lotPartWritten": true,
+        "restPartWritten": false
+      },
+      "expected": {
+        "lotDelta": 0,
+        "restDelta": 0,
+        "stockAfter": 13
+      }
+    },
+    {
+      "name": "cerrar un lote · otro equipo ya lo cerró: ya llegó también la parte sin lote",
+      "input": {
+        "kind": "closeLot",
+        "lotQuantity": 5,
+        "lotLedger": 0,
+        "productStock": 10,
+        "lotPartWritten": true,
+        "restPartWritten": true
+      },
+      "expected": {
+        "lotDelta": 0,
+        "restDelta": 0,
+        "stockAfter": 10
+      }
+    },
+    {
+      "name": "cerrar un lote · otro equipo cerró un lote de antes con libro en 0: su cierre solo tiene la parte sin lote",
+      "input": {
+        "kind": "closeLot",
+        "lotQuantity": 5,
+        "lotLedger": 0,
+        "productStock": 10,
+        "lotPartWritten": false,
+        "restPartWritten": true
+      },
+      "expected": {
+        "lotDelta": 0,
+        "restDelta": 0,
+        "stockAfter": 10
+      }
+    },
+    {
+      "name": "cerrar un lote · otro equipo cerró un lote de antes: llegó la parte sin lote y falta la que lleva su libro",
+      "input": {
+        "kind": "closeLot",
+        "lotQuantity": 5,
+        "lotLedger": 2,
+        "productStock": 10,
+        "lotPartWritten": false,
+        "restPartWritten": true
+      },
+      "expected": {
+        "lotDelta": 0,
+        "restDelta": 0,
+        "stockAfter": 10
       }
     }
   ]

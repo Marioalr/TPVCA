@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "«Más vendidos» del panel «Negocio» (BusinessReportRules.TopProducts y TopServices): las mismas entradas y reglas de renglón que business-summary.json; sin canceladas.",
     "products: los renglones de producto del type (Medicamentos por omisión en la pantalla; sin type, todos los productos), uno por producto y por si son piezas sueltas (solo los renglones con isIndividualUnits true; sin la marca, paquetes; las piezas cuentan como piezas: quantityText '4 piezas sueltas'). ranking Quantity: Σ cantidad de mayor a menor, luego utilidad; Profit: utilidad, luego cantidad; después ventas de mayor a menor y el nombre (de hoy) con Collator es-MX. hasEstimatedCost si algún renglón no tiene costo guardado. top como máximo.",

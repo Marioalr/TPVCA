@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "El resumen del panel «Negocio» (Services/Rules/BusinessReportRules.cs; pedido del médico del 2026-10-22). Entradas: products (con unitCost, costExcludesVat y unitsPerPackage), services ({id, code, name, category}) y sales ({id, date en hora del consultorio, cancelled, items}); cada renglón {productId o serviceId, isService, code, description, quantity, unitPrice, subtotal, unitCost (SaleItems.UnitCost, revisión 18; falta = renglón de antes), isIndividualUnits (falta = renglón anterior a v1.47.0: paquetes)}. Periodos [from, to) en hora del consultorio. Importes con 2 decimales y porcentajes con 1 (texto invariante, ya redondeados por la regla; el formato no vuelve a redondear).",
     "period: 'hoy' es la fecha del consultorio en la zona del caso (nowUtc). Hoy; Esta semana del lunes a hoy; Este mes del día 1 a hoy; Mes anterior completo; Este año del 1 de enero a hoy; Personalizado de customFrom a customTo incluidos (al revés se voltean). El anterior igual: Esta semana, los mismos días de la semana anterior (desde el lunes anterior, tantos días como van); un rango o Hoy, los mismos días justo antes; Este mes y Este año, el mes o el año anterior desde su inicio con los mismos días transcurridos sin pasar de su fin; Mes anterior, el mes completo de antes. text: 'dd/MM/yyyy' o 'dd/MM/yyyy – dd/MM/yyyy' (el último día incluido).",

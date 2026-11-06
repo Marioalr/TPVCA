@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "«Compras» del panel «Negocio» (Services/Rules/BusinessStockRules.cs). Entradas: products como en business-summary.json y movements ({productId, date en hora del consultorio, type (MovementType), quantity, unitCost (InventoryMovements.UnitCost, revisión 18; falta = fila de antes), reason}).",
     "supplier: el motivo de un pedido es 'Pedido', 'Pedido {proveedor}' o 'Pedido {proveedor} #{número}' (InventoryService.SupplierOrderReason): isOrder si empieza con 'Pedido' seguido de nada o de un espacio; supplier = lo que va entre 'Pedido ' y ' #', 'Pedido sin proveedor' si no hay, y 'Entrada sin pedido' para cualquier otra entrada (un lote recibido, una entrada a mano).",

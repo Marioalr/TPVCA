@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "Hojas del paciente (paso 8.18; los insumos de un servicio desde la revisión 14): Patients.ActivePrescriptionJson, ActiveSuppliesJson y ActiveServicesJson son arreglos JSON de renglones con nombres PascalCase (se leen sin distinguir mayúsculas) y acentos sin escapar; '' es una hoja vacía. Los campos de cada columna, en su 'note' de sync/schema.json.",
     "RowId (GUID en minúsculas): uno nuevo se toma al azar. Al leer, el renglón sin RowId, con el GUID vacío o con uno que ya usó otro renglón de la misma hoja recibe uuid5(tpvc, 'sheetrow:' + SyncId del paciente en minúsculas + ':' + columna + ':' + posición desde 0 + ':' + el nombre tal cual: MedicineName, SupplyName o ServiceName); 'uuid5Name' es ese nombre. Se guarda con la siguiente escritura de la hoja: no hay relleno al arrancar.",

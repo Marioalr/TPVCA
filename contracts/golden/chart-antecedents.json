@@ -3,7 +3,7 @@
   "culture": "es-MX",
   "today": null,
   "now": null,
-  "contract": 22,
+  "contract": 23,
   "notes": [
     "Las secciones de antecedentes NOM-004 de la ficha (Services/Rules/PatientChartRules.BuildAntecedentSections, antes en PatientChartViewModel). La entrada son los campos de PatientRecord en camelCase ('fullName', 'gender', 'birthDate', 'storedAge', 'familyHistory', 'allergies', 'chronicDiseases', 'surgeries', 'hospitalizations', 'transfusions', 'immunizationSchedule', 'pregnanciesCount', 'cesareansCount', 'abortionsCount', 'menarcheAge', 'periodDuration', 'papSmear', 'sexualOnsetAge', 'isCurrentlyPregnant', 'gestationalWeeks', 'developmentalMilestones', 'occupation', 'diet', 'housingConditions', 'zoonosis', 'religion', 'phone', 'email', 'address', 'emergencyContactName', 'emergencyContactPhone'); 'storedAge' es la edad capturada sin fecha; 'today', el día del consultorio para la edad (patient-identity.json).",
     "Orden: Heredofamiliares; Patologicos (Alergias con su resumen de allergy-check.json, Enfermedades crónicas, Cirugías, Hospitalizaciones, Transfusiones y, solo si NO es pediátrico, Vacunación); Gineco (solo showsGynecoObstetric: 'Gestas / cesáreas / abortos: G2 C1 A0' si la suma es mayor que 0, 'Menarca: N años', Ciclo, Papanicolaou, 'Inicio de vida sexual' y 'Embarazo actual' o 'Embarazo actual: N semanas'); Desarrollo (solo pediátrico: Desarrollo y Vacunación); NoPatologicos (Ocupación, Alimentación, Vivienda, Animales, Religión); Contacto (Teléfono con el formato de patient-identity.json, Correo, Domicilio y 'Emergencia: nombre teléfono' sin espacios de más).",

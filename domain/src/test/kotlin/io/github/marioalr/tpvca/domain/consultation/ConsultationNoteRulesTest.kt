@@ -2,6 +2,7 @@ package io.github.marioalr.tpvca.domain.consultation
 
 import io.github.marioalr.tpvca.domain.consultation.ConsultationRecordRules.Medicine
 import io.github.marioalr.tpvca.domain.model.Product
+import io.github.marioalr.tpvca.domain.search.PrescriptionNaming
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -63,6 +64,12 @@ class ConsultationNoteRulesTest {
         // Sin catálogo, por el texto, con o sin el principio activo
         assertTrue(ConsultationRecordRules.sameMedicine(Medicine("LORATADINA 10 mg (Claritine)", "Claritine"), Medicine("loratadina 10 mg"), null))
         assertFalse(ConsultationRecordRules.sameMedicine(Medicine("Loratadina"), Medicine("Ibuprofeno"), null))
+    }
+
+    @Test
+    fun laPresentacionQueSeSurte() {
+        assertEquals("Caja con 20", PrescriptionNaming.presentation(Product(presentation = " Caja con 20 ")))
+        assertEquals("", PrescriptionNaming.presentation(Product()))
     }
 
     @Test

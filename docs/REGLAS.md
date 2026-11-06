@@ -123,7 +123,7 @@ Cómo difiere de la PC:
 - **`appendLine`** usa "\n"; la PC, `Environment.NewLine` ("\r\n" en Windows).
 - **`Product.syncId`, `ClinicalService.syncId`, `estimatedDurationMinutes` y `defaultProducts`** son nuevos, con valor por omisión: `:data` los debe llenar cuando una pantalla use estas reglas.
 
-`VitalSignsRules.format`, `bmiText` y `warning`, `AllergyRules`, `PrescriptionNaming` y `MedicineSearchRules` ya cubrían lo que llaman estas pantallas; a `CatalogSearchRules` le faltaba `cie10Suggestions`.
+`VitalSignsRules.format`, `bmiText` y `warning`, `AllergyRules`, `PrescriptionNaming` y `MedicineSearchRules` ya cubrían lo que llaman estas pantallas; a `CatalogSearchRules` le faltaba `cie10Suggestions` y a `PrescriptionNaming`, `presentation`.
 
 ## Pendientes (con el paso que los porta)
 

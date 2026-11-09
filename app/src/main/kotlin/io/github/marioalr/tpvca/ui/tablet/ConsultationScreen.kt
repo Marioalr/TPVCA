@@ -56,18 +56,15 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import io.github.marioalr.tpvca.domain.Clinic
 import io.github.marioalr.tpvca.domain.consultation.ConsultationNoteRules
-import io.github.marioalr.tpvca.domain.consultation.ConsultationRecordRules
+import io.github.marioalr.tpvca.domain.consultation.LabOrderRules
 import io.github.marioalr.tpvca.domain.model.Patient
 import io.github.marioalr.tpvca.domain.patients.VitalSignsRules
 import io.github.marioalr.tpvca.domain.text.MexicanText
 import io.github.marioalr.tpvca.sync.rules.consultation.ConsultationDraft
-import io.github.marioalr.tpvca.sync.rules.consultation.PrescriptionRow
-import io.github.marioalr.tpvca.sync.rules.consultation.SheetRows
 import io.github.marioalr.tpvca.ui.link.KeepScreenOn
 import io.github.marioalr.tpvca.ui.link.PatientDataWindow
 import io.github.marioalr.tpvca.ui.theme.LocalTpvcColors
 import kotlinx.coroutines.delay
-import kotlinx.serialization.json.JsonArray
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -165,14 +162,20 @@ fun ConsultationScreen(workspace: TabletWorkspace) {
 }
 
 /**
- * Aquí abren las hojas de las partes 2 y 3 (`ConsultationSheet`). TODO(K7 parte 2 y 3): el contenido de cada una. Hoy nada llega aquí, porque ninguna tiene `ready`.
+ * Aquí abren las hojas de las partes 2 y 3 (`ConsultationSheet`). TODO(K7 parte 2 y 3): las que faltan; hoy solo llegan las que tienen `ready`.
  */
 @Composable
 private fun ConsultationSheetHost(workspace: TabletWorkspace, sheet: ConsultationSheet) {
-    SheetFrame {
-        TCard(Modifier.widthIn(max = 480.dp)) {
-            TText(sheet.name, weight = FontWeight.SemiBold)
-            TButton("Cerrar", workspace.consultation::closeSheet, Modifier.padding(top = 12.dp))
+    when (sheet) {
+        ConsultationSheet.Prescription -> PrescriptionSheet(workspace)
+        ConsultationSheet.Supplies -> SuppliesSheet(workspace)
+        ConsultationSheet.Services -> ServicesSheet(workspace)
+        ConsultationSheet.CatalogBrowser -> CatalogBrowserSheet(workspace)
+        else -> SheetFrame {
+            TCard(Modifier.widthIn(max = 480.dp)) {
+                TText(sheet.name, weight = FontWeight.SemiBold)
+                TButton("Cerrar", workspace.consultation::closeSheet, Modifier.padding(top = 12.dp))
+            }
         }
     }
 }
@@ -356,7 +359,7 @@ private fun Sections(workspace: TabletWorkspace, draft: ConsultationDraft) {
     }
     Section(workspace, draft, 4, "Diagnóstico (CIE-10)", draft.diagnosis) { Diagnosis(workspace, draft, readOnly) }
     Section(workspace, draft, 5, "Tratamiento, receta e indicaciones", draft.treatmentPlan) { Treatment(workspace, draft, readOnly) }
-    Section(workspace, draft, 6, "Laboratorio", draft.labOrder?.takeUnless { it.isEmpty }?.studies?.joinToString(", ") { it.name } ?: "Sin estudios (opcional)") { Laboratory(workspace, draft, readOnly) }
+    Section(workspace, draft, 6, "Laboratorio", LabOrderRules.summary(draft.labOrder.studies)) { LabOrderSection(workspace, draft, readOnly) }
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         TButton("Agendar próxima cita", workspace::scheduleForChart, enabled = !readOnly, icon = TIcons.Calendar)
         if (!draft.isHandedOff) TButton("Terminar consulta", consultation::finalizeConsultation, kind = TButtonKind.Primary, enabled = !readOnly)
@@ -458,47 +461,18 @@ private fun Treatment(workspace: TabletWorkspace, draft: ConsultationDraft, read
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TLabelText("Receta")
         Box(Modifier.weight(1f))
-        // TODO(K7 parte 2): la vista previa y la hoja de receta
-        SheetButton(workspace, ConsultationSheet.PrescriptionPreview, "Vista previa")
-        SheetButton(workspace, ConsultationSheet.Prescription, "+ Medicamento")
+        PrescriptionPreviewButton(workspace)
+        SheetButton(workspace, ConsultationSheet.Prescription, "+ Medicamento", tag = SheetTags.OPEN_PRESCRIPTION)
     }
-    PreviousPrescription(workspace, draft)
+    PreviousPrescriptionNotice(workspace)
     val rows = consultation.sheets.prescriptions
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(colors.surfaceSubtle).padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        // TODO(K7 parte 2): «Se surte aquí», «Cambiar indicación» y el principio activo en cada renglón
-        for (row in rows) {
-            key(row.rowId) {
-                Column {
-                    TText(row.medicineName, size = TType.detail, weight = FontWeight.SemiBold)
-                    if (row.dosage.isNotBlank()) TCaption(row.dosage)
-                }
-            }
-        }
+        PrescriptionRows(workspace, consultation.prescription.planIndication, card = false)
         if (rows.isEmpty()) TCaption("Sin medicamentos en la receta.")
     }
     // Laboratorio es la sección 6, debajo de esta: el botón la abre y la trae a la vista
     TButton("Estudios de laboratorio", { consultation.setSection(6) }, icon = TIcons.Clipboard)
 }
-
-/** «Repetir la receta anterior»: aquí se dice cuál es; copiarla es de la parte 2. */
-@Composable
-private fun PreviousPrescription(workspace: TabletWorkspace, draft: ConsultationDraft) {
-    val consultation = workspace.consultation
-    val colors = LocalTpvcColors.current
-    val previous = draft.previousPrescriptions ?: return
-    val rows = remember(previous) { SheetRows.prescriptions(JsonArray(previous).toString(), draft.patientSyncId) }
-    val available = consultation.catalog?.account
-    val pending = remember(rows, draft.prescriptions, available) {
-        ConsultationRecordRules.pendingPreviousPrescription(rows, consultation.sheets.prescriptions, ::medicineOf, available?.let { it::findProduct })
-    }
-    if (pending.isEmpty() || consultation.readOnly) return
-    TNotice("Receta anterior: ${pending.joinToString(" · ") { it.medicineName }}", colors.infoSubtle, colors.infoText) {
-        // TODO(K7 parte 2): `RepeatPreviousPrescription`, que revisa otra vez alergias y existencias
-        TButton("Repetir", {}, nextVersion = true)
-    }
-}
-
-private fun medicineOf(row: PrescriptionRow) = ConsultationRecordRules.Medicine(row.medicineName, row.activeIngredient)
 
 /** Las medidas generales del consultorio (`GeneralMeasureTemplates`): la lista de la PC, con el tamaño de un dedo. */
 @Composable
@@ -524,26 +498,9 @@ private fun GeneralMeasures(workspace: TabletWorkspace, readOnly: Boolean) {
 
 /** Una entrada a una hoja de las partes 2 y 3: mientras no esté hecha se ve y dice «En la siguiente versión». */
 @Composable
-private fun SheetButton(workspace: TabletWorkspace, sheet: ConsultationSheet, text: String, modifier: Modifier = Modifier) {
+private fun SheetButton(workspace: TabletWorkspace, sheet: ConsultationSheet, text: String, modifier: Modifier = Modifier, tag: String? = null) {
     val consultation = workspace.consultation
-    TButton(text, { consultation.openSheet(sheet) }, modifier, nextVersion = !sheet.ready, enabled = !consultation.readOnly)
-}
-
-/** La sección 6. TODO(K7 parte 3): frecuentes, paquetes, búsqueda, indicaciones, vista previa e imprimir, sobre `draft.labOrder`. */
-@Composable
-private fun Laboratory(workspace: TabletWorkspace, draft: ConsultationDraft, readOnly: Boolean) {
-    TCaption("Opcional. Los estudios se guardan con la consulta y se imprimen en su propia hoja, con el membrete de la receta.")
-    SheetButton(workspace, ConsultationSheet.LabOrder, "Pedir estudios")
-    val studies = draft.labOrder?.studies.orEmpty()
-    for (study in studies) {
-        key(study.name) {
-            Column {
-                TText(study.name, size = TType.detail, weight = FontWeight.SemiBold)
-                if (study.area.isNotBlank()) TCaption(study.area)
-            }
-        }
-    }
-    if (studies.isEmpty()) TCaption("Sin estudios: la consulta puede terminar sin laboratorio.")
+    TButton(text, { consultation.openSheet(sheet) }, modifier, nextVersion = !sheet.ready, enabled = !consultation.readOnly, tag = tag)
 }
 
 /** «Cuenta de la consulta»: todo lo que se usó, listo para cobrar al terminar. */
@@ -571,10 +528,9 @@ private fun Account(workspace: TabletWorkspace) {
             }
         }
         Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            // TODO(K7 parte 2): las hojas de receta, insumos y servicios
             SheetButton(workspace, ConsultationSheet.Prescription, "Medicamento (receta)", Modifier.fillMaxWidth())
-            SheetButton(workspace, ConsultationSheet.Supplies, "Insumo o material", Modifier.fillMaxWidth())
-            SheetButton(workspace, ConsultationSheet.Services, "Servicio (inyección, curación…)", Modifier.fillMaxWidth())
+            SheetButton(workspace, ConsultationSheet.Supplies, "Insumo o material", Modifier.fillMaxWidth(), tag = SheetTags.OPEN_SUPPLIES)
+            SheetButton(workspace, ConsultationSheet.Services, "Servicio (inyección, curación…)", Modifier.fillMaxWidth(), tag = SheetTags.OPEN_SERVICES)
         }
         if (account != null) {
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(colors.surfaceSubtle).padding(horizontal = 10.dp, vertical = 8.dp)) {

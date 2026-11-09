@@ -73,7 +73,6 @@ import io.github.marioalr.tpvca.ui.phone.Loads
 import io.github.marioalr.tpvca.ui.phone.PreviewDoc
 import io.github.marioalr.tpvca.ui.phone.buildPrescriptionFile
 import io.github.marioalr.tpvca.ui.phone.load
-import io.github.marioalr.tpvca.ui.phone.openLabResult
 import io.github.marioalr.tpvca.ui.theme.LocalTpvcColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -124,7 +123,7 @@ fun PatientChartScreen(workspace: TabletWorkspace, chrome: TabletChrome, syncId:
                         Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             Column(Modifier.width(400.dp).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                                 Essentials(workspace, syncId, data, patient)
-                                LabCard(workspace, data.labs)
+                                LabResultsCard(workspace, syncId, data.labs)
                                 Antecedents(workspace, syncId, patient)
                             }
                             TCard(Modifier.weight(1f).fillMaxHeight(), padding = 0.dp) {
@@ -134,7 +133,7 @@ fun PatientChartScreen(workspace: TabletWorkspace, chrome: TabletChrome, syncId:
                     } else {
                         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             Essentials(workspace, syncId, data, patient)
-                            LabCard(workspace, data.labs)
+                            LabResultsCard(workspace, syncId, data.labs)
                             Antecedents(workspace, syncId, patient)
                             TCard(Modifier.fillMaxWidth(), padding = 0.dp) { History(workspace, syncId, data) }
                         }
@@ -142,6 +141,7 @@ fun PatientChartScreen(workspace: TabletWorkspace, chrome: TabletChrome, syncId:
                 }
             }
         }
+        workspace.labResults.form?.let { form -> LabResultFormDialog(workspace.labResults, form) }
     }
 }
 
@@ -213,53 +213,6 @@ private fun VitalGrid(vitals: List<VitalSummary>, modifier: Modifier = Modifier,
             }
         }
     })
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun LabCard(workspace: TabletWorkspace, labs: List<LabResultRow>) {
-    val colors = LocalTpvcColors.current
-    val scope = rememberCoroutineScope()
-    var opening by remember { mutableStateOf<String?>(null) }
-    TCard(Modifier.fillMaxWidth().semantics { contentDescription = "Resultados de laboratorio" }) {
-        Row(Modifier.padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            TLabel("RESULTADOS DE LABORATORIO", Modifier.weight(1f))
-            TButton("Agregar", {}, icon = TIcons.Plus, nextVersion = true)
-        }
-        for (lab in labs) {
-            Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Column(Modifier.widthIn(min = 52.dp)) {
-                    TText(lab.resultDate?.format(DAY).orEmpty(), weight = FontWeight.SemiBold)
-                    TCaption(lab.resultDate?.format(YEAR).orEmpty())
-                }
-                Column(Modifier.weight(1f)) {
-                    TText(lab.title, weight = FontWeight.SemiBold)
-                    if (lab.laboratory.isNotBlank()) TCaption(lab.laboratory)
-                    if (lab.notes.isNotBlank()) TText(lab.notes, size = TType.caption)
-                    TCaption("En la nube · se baja al abrirlo")
-                    // Abajo: en los 400 dp de la columna, al lado dejarían al título una sílaba por renglón
-                    FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                TButton(
-                    if (opening == lab.syncId) "Abriendo…" else "Abrir",
-                    {
-                        opening = lab.syncId
-                        scope.launch {
-                            val phone = workspace.env.phone
-                            val opened = withContext(Dispatchers.IO) { openLabResult(phone, lab, phone.documents.ticket()) }
-                            opening = null
-                            if (opened.doc != null) workspace.preview = opened.doc else workspace.info = opened.error ?: "No se pudo abrir el resultado."
-                        }
-                    },
-                    enabled = workspace.env.phone.labFiles != null && opening == null,
-                    description = "Abrir el resultado: ${lab.title}",
-                )
-                TButton("Quitar", {}, icon = TIcons.Trash, nextVersion = true)
-                    }
-                }
-            }
-        }
-        if (labs.isEmpty()) TCaption("Sin resultados. Agregue el PDF del laboratorio o fotos de las hojas.")
-    }
 }
 
 @Composable
@@ -531,13 +484,15 @@ fun consultationSections(c: Consultation): List<Pair<String, String>> = listOf(
     "Notas" to c.notes,
 ).filter { it.second.isNotBlank() }.map { it.first to it.second.trim() }
 
-/** La hoja de una consulta (`ConsultationDetailSheetView`). Corregir la receta es de la consulta (K7); verla y compartirla en PDF ya estaba en K4. */
+/** La hoja de una consulta (`ConsultationDetailSheetView`): el detalle, la receta con «Corregir receta» (K7) y verla en PDF (K4). */
 @Composable
 fun ConsultationDetailSheet(workspace: TabletWorkspace, row: ConsultationRow) {
     val c = row.consultation
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val page = workspace.page as? TabletPage.Chart
+    val correction = remember(row.syncId) { PrescriptionCorrection(workspace, scope) }
+    val canCorrect = page != null && correction.canEdit(page.syncId)
     Dialog({ workspace.detail = null }, DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
             TCard(Modifier.widthIn(max = 880.dp).fillMaxWidth().testTag(TabletTags.DETAIL), padding = 0.dp) {
@@ -564,25 +519,36 @@ fun ConsultationDetailSheet(workspace: TabletWorkspace, row: ConsultationRow) {
                     TDivider()
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         THeading("Receta", Modifier.weight(1f))
-                        TButton("Corregir receta", {}, nextVersion = true)
+                        if (!correction.editing) {
+                            TButton("Corregir receta", { if (page != null) correction.start(row, page.syncId) }, icon = TIcons.Edit, enabled = canCorrect, description = "Corregir la receta de esta consulta (no cambia lo que se cobró)", tag = SheetTags.CORRECT)
+                        }
                         if (c.prescriptions.isNotEmpty() && page != null) {
                             TButton("Imprimir", {
                                 scope.launch { openPrescription(workspace, context, page.syncId, row) }
                             }, icon = TIcons.File)
                         }
                     }
-                    for (item in c.prescriptions) {
-                        Column {
-                            TText(item.medicineName + item.sheetDetail, weight = FontWeight.SemiBold)
-                            if (!item.dosage.isNullOrBlank()) TText(item.dosage!!, size = TType.detail, color = LocalTpvcColors.current.textSecondary)
+                    if (correction.editing && page != null) {
+                        PrescriptionCorrectionEditor(correction, row, page.syncId)
+                    } else {
+                        for (item in c.prescriptions) {
+                            Column {
+                                TText(item.medicineName + item.sheetDetail, weight = FontWeight.SemiBold)
+                                if (!item.dosage.isNullOrBlank()) TText(item.dosage!!, size = TType.detail, color = LocalTpvcColors.current.textSecondary)
+                            }
                         }
+                        if (c.prescriptions.isEmpty()) TCaption("Esta consulta no tiene receta.")
+                        if (!canCorrect) TCaption("Hay una consulta en curso de este paciente: su receta se corrige dentro de la consulta.")
                     }
-                    if (c.prescriptions.isEmpty()) TCaption("Esta consulta no tiene receta.")
                     if (c.labStudies.isNotEmpty()) {
                         TDivider()
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             THeading("Laboratorio", Modifier.weight(1f))
-                            TButton("Imprimir", {}, nextVersion = true)
+                            if (page != null) {
+                                TButton("Imprimir", {
+                                    scope.launch { openLabOrder(workspace, context, page.syncId, row) }
+                                }, icon = TIcons.File, tag = LabTags.PREVIEW)
+                            }
                         }
                         for (study in c.labStudies) TText(study, weight = FontWeight.SemiBold)
                         if (c.labIndications.isNotBlank()) {
@@ -593,6 +559,24 @@ fun ConsultationDetailSheet(workspace: TabletWorkspace, row: ConsultationRow) {
                 }
             }
         }
+    }
+}
+
+/** La solicitud de laboratorio de una consulta anterior, con su fecha y su diagnóstico (`PrintLabOrder(consultation)` de la PC), en la vista del documento. */
+private suspend fun openLabOrder(workspace: TabletWorkspace, context: Context, syncId: String, row: ConsultationRow) {
+    val phone = workspace.env.phone
+    val c = row.consultation
+    val file = withContext(Dispatchers.IO) {
+        runCatching {
+            val patient = phone.reader.activePatient(syncId) ?: return@runCatching null
+            buildLabOrderFile(phone, context, patient, c.labOrderStudies, c.labIndications, c.diagnosis, c.date.toLocalDate())
+        }.getOrNull()
+    }
+    if (file == null) {
+        workspace.info = "No se pudo armar la solicitud de laboratorio."
+    } else {
+        workspace.detail = null
+        workspace.preview = PreviewDoc("Laboratorio", file, "application/pdf")
     }
 }
 

@@ -61,16 +61,15 @@ import java.time.temporal.ChronoUnit
 /**
  * Las hojas de la consulta que abren las partes 2 y 3. Cada botón de la pantalla llama a [ConsultationController.openSheet]; con [ready] en `false` se ve deshabilitado («En la siguiente versión»).
  *
- * TODO(K7 parte 2): Prescription (hoja de receta, alergias, posología, pediátrica, «Se surte aquí», «Repetir»), PrescriptionPreview (vista previa, imprimir y PDF), Supplies, Services, CatalogBrowser.
- * TODO(K7 parte 3): LabOrder (la sección 6 completa) y LabResults (agregar y quitar resultados).
+ * Las de la parte 2 ya están: Prescription, Supplies, Services y CatalogBrowser (`PrescriptionEditor`, `SuppliesEditor`, `ServicesEditor`, `CatalogBrowser`); la vista previa de la receta no es una hoja: abre la del documento (`PrescriptionEditor.openPreview`).
+ * La sección 6 (Laboratorio) ya no es una hoja: está completa en la pantalla (`LabOrderEditor`). TODO(K7 parte 3): LabResults (agregar y quitar resultados).
  * Al terminar cada una: `ready = true` y su contenido en `ConsultationSheetHost`.
  */
 enum class ConsultationSheet(val ready: Boolean = false) {
-    Prescription,
-    PrescriptionPreview,
-    Supplies,
-    Services,
-    CatalogBrowser,
+    Prescription(ready = true),
+    Supplies(ready = true),
+    Services(ready = true),
+    CatalogBrowser(ready = true),
     LabOrder,
     LabResults,
 }
@@ -124,6 +123,9 @@ class ConsultationStep internal constructor(draft: ConsultationDraft, val catalo
     fun updateDraft(change: (ConsultationDraft) -> ConsultationDraft) {
         draft = change(draft)
     }
+
+    /** La receta como va quedando en este paso: [sheets] es la de antes de empezar, y un paso que agrega varios renglones (como «Repetir») necesita verlos. */
+    fun prescriptions(): List<PrescriptionRow> = SheetRows.prescriptions(JsonArray(draft.prescriptions).toString(), draft.patientSyncId)
 
     /** La receta entera: va a `draft.prescriptions` y a `Patients.ActivePrescriptionJson`, en la misma transacción. Un renglón sin `RowId` recibe el suyo. */
     fun setPrescriptions(rows: List<PrescriptionRow>) {
@@ -329,8 +331,27 @@ class ConsultationController internal constructor(private val workspace: TabletW
         private set
     var previousConsultation by mutableStateOf<Consultation?>(null)
         private set
+
+    /** Las últimas consultas del paciente (el peso que sugiere la dosis pediátrica). */
+    var patientConsultations by mutableStateOf<List<Consultation>>(emptyList())
+        private set
     var checkout by mutableStateOf<ConsultationCheckout?>(null)
         private set
+
+    /** La hoja de receta y «Cambiar indicación» de la sección 5. */
+    val prescription = PrescriptionEditor(this, workspace, scope, io)
+
+    /** La hoja de insumos y material. */
+    val suppliesEditor = SuppliesEditor(this, workspace, scope, io)
+
+    /** La hoja de servicios y procedimientos. */
+    val servicesEditor = ServicesEditor(this, workspace, scope, io)
+
+    /** La sección 6: la orden de laboratorio. */
+    val labOrder = LabOrderEditor(this, workspace, scope, io)
+
+    /** El catálogo de medicamentos, insumos o servicios que abren las hojas. */
+    val catalogBrowser = CatalogBrowser(this, scope, io)
 
     /** La hoja abierta (partes 2 y 3). */
     var sheet by mutableStateOf<ConsultationSheet?>(null)
@@ -402,10 +423,12 @@ class ConsultationController internal constructor(private val workspace: TabletW
     private var finalizing = false
     private var timerLoaded = false
 
-    /** Parte 2: lo que falta guardar antes de terminar (`CommitPendingPrescriptionEditsAsync`). `false` detiene «Terminar consulta». */
-    var beforeFinalize: suspend () -> Boolean = { true }
-
     private fun engine(): WriteEngine = env.writes() ?: throw WriteRefused(WriteRefused.Reason.NOT_APPROVED, AgendaController.NOT_READY)
+
+    internal fun local(): LocalSide? = env.local()
+
+    /** El catálogo para **mostrar** sugerencias: el último leído, o se lee ahora. Al agregar, el paso vuelve a leerlo. */
+    suspend fun catalogForSearch(): ConsultationCatalog = catalog ?: withContext(io) { env.phone.reader.consultationCatalog() }.also { if (catalog == null) catalog = it }
 
     private fun prescriptionsOf(d: ConsultationDraft?): List<PrescriptionRow> =
         if (d == null) emptyList() else SheetRows.prescriptions(JsonArray(d.prescriptions).toString(), d.patientSyncId)
@@ -423,6 +446,7 @@ class ConsultationController internal constructor(private val workspace: TabletW
         val supplies: List<SupplyRow>,
         val services: List<ServiceRow>,
         val previous: Consultation?,
+        val consultations: List<Consultation>,
     )
 
     /** Siempre fuera del hilo principal. */
@@ -435,13 +459,15 @@ class ConsultationController internal constructor(private val workspace: TabletW
             row != null || downloaded -> ConsultationPatientStatus.Gone
             else -> ConsultationPatientStatus.Downloading
         }
+        val consultations = reader.consultations(d.patientSyncId, limit = PATIENT_CONSULTATIONS).map { it.consultation }.filter { it.folio != d.folio }
         return ReadState(
             status,
             patient,
             reader.consultationCatalog(),
             SheetRows.supplies(row?.get(PatientSheets.SUPPLIES) as String?, d.patientSyncId),
             SheetRows.services(row?.get(PatientSheets.SERVICES) as String?, d.patientSyncId),
-            reader.consultations(d.patientSyncId, limit = 2).firstOrNull { it.consultation.folio != d.folio }?.consultation,
+            consultations.firstOrNull(),
+            consultations,
         )
     }
 
@@ -453,6 +479,7 @@ class ConsultationController internal constructor(private val workspace: TabletW
         supplies = state.supplies
         services = state.services
         previousConsultation = state.previous
+        patientConsultations = state.consultations
         // Se acaba de borrar el expediente: ni el cobro ni una hoja se quedan abiertos para fallar después
         if (readOnly) {
             if (checkout?.writing != true) checkout = null
@@ -819,7 +846,12 @@ class ConsultationController internal constructor(private val workspace: TabletW
                 return ApplyResult.Failed
             }
             done.state?.let(::publish)
-            val committed = done.committed ?: return done.result
+            val committed = done.committed
+            if (committed == null) {
+                // Un paso que no cambió nada también puede tener algo que decir («no está en el inventario»)
+                if (done.result == ApplyResult.NoChange) done.step?.infoText?.let { workspace.info = it }
+                return done.result
+            }
             // Lo que se tecleó mientras se escribía sigue ahí, encima de lo escrito
             val typed = typedDuringStep.toList()
             val shown = typed.fold(committed) { d, typedChange -> typedChange(d) }
@@ -842,13 +874,40 @@ class ConsultationController internal constructor(private val workspace: TabletW
     /** La ✕ de «Cuenta de la consulta» (`RemoveItemFromActiveConsultation`): cada renglón, una vez. */
     fun removeAccountLine(line: AccountLine) = launchApply("quitar" to line) { account.removeLine(line) }
 
-    /** Abre una hoja de las partes 2 y 3. Las que aún no existen no abren nada: su botón se ve deshabilitado. */
+    /** Abre una hoja de las partes 2 y 3. Las que aún no existen no abren nada: su botón se ve deshabilitado. «+ Medicamento» guarda antes una «Cambiar indicación» abierta en la sección 5. */
     fun openSheet(which: ConsultationSheet) {
         if (draft == null || readOnly || !which.ready) return
+        if (which == ConsultationSheet.Prescription) {
+            scope.launch {
+                if (!prescription.commitPending()) return@launch
+                if (draft == null || readOnly) return@launch
+                prescription.onOpen()
+                sheet = which
+            }
+            return
+        }
+        if (which == ConsultationSheet.Supplies) suppliesEditor.onOpen()
+        if (which == ConsultationSheet.Services) servicesEditor.onOpen()
         sheet = which
     }
 
+    /** El catálogo encima de la hoja que lo abrió: al cerrarlo se vuelve a ella, con lo capturado intacto. */
+    internal fun openCatalog(mode: CatalogBrowser.Mode) {
+        if (draft == null || readOnly) return
+        catalogBrowser.open(mode, returnTo = sheet)
+        sheet = ConsultationSheet.CatalogBrowser
+    }
+
     fun closeSheet() {
+        val closing = sheet
+        if (closing == ConsultationSheet.CatalogBrowser) {
+            sheet = catalogBrowser.returnTo
+            catalogBrowser.returnTo = null
+            return
+        }
+        if (closing == ConsultationSheet.Prescription) prescription.onClose()
+        if (closing == ConsultationSheet.Supplies) suppliesEditor.onClose()
+        if (closing == ConsultationSheet.Services) servicesEditor.onClose()
         sheet = null
     }
 
@@ -895,8 +954,14 @@ class ConsultationController internal constructor(private val workspace: TabletW
         supplies = emptyList()
         services = emptyList()
         previousConsultation = null
+        patientConsultations = emptyList()
         cie10Suggestions = emptyList()
         autosaveStatus = ""
+        prescription.forget()
+        suppliesEditor.forget()
+        servicesEditor.forget()
+        labOrder.forget()
+        catalogBrowser.returnTo = null
     }
 
     // ------------------------------------------------------------------ terminar y cobrar
@@ -913,7 +978,8 @@ class ConsultationController internal constructor(private val workspace: TabletW
         finalizing = true
         scope.launch {
             try {
-                if (!beforeFinalize()) return@launch
+                // Una «Cambiar indicación» abierta se guarda antes (`CommitPendingPrescriptionEditsAsync`); si no se puede, no se termina
+                if (!prescription.commitPending()) return@launch
                 saveJob?.cancel()
                 saveTyped()
                 val current = draft ?: return@launch
@@ -1038,6 +1104,7 @@ class ConsultationController internal constructor(private val workspace: TabletW
 
     companion object {
         const val SECTION_COUNT = 6
+        private const val PATIENT_CONSULTATIONS = 20
         const val DOUBLE_TAP_MILLIS = 300L
         private const val DRAFT_PAUSE_MILLIS = 400L
         private const val MAX_SAVE_WAIT_MILLIS = 10_000L

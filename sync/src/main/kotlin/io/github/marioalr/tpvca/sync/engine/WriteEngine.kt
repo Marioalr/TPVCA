@@ -218,6 +218,26 @@ class WriteEngine(
         }
     }
 
+    /** La receta guardada en una consulta (`PrescriptionsJson`), tal cual: «Corregir receta» la abre con su cantidad, su `RowId` y lo que esta versión no conoce. */
+    fun consultationPrescriptions(consultationSyncId: String): String? = guarded {
+        writer.find(writer.table("PatientConsultations"), consultationSyncId)?.get("PrescriptionsJson") as String?
+    }
+
+    /**
+     * «Corregir receta» (`UpdateConsultationPrescriptionAsync`): la receta de una consulta ya terminada y, si es la última del paciente ([activePrescriptionJson]), también la vigente del expediente, **juntas**. Lo cobrado no cambia. `false` si la consulta ya no existe.
+     */
+    fun correctPrescription(consultationSyncId: String, patientSyncId: String, prescriptionsJson: String, activePrescriptionJson: String?): Boolean = guarded {
+        if (!WritePolicy.canWrite(requireWritable(), "PatientConsultations", creating = false)) refuse("corregir recetas")
+        if (activePrescriptionJson != null && !WritePolicy.canWrite(requireWritable(), "Patients", creating = false)) refuse("escribir en Patients")
+        val done = store.transaction {
+            val edited = writer.edit("PatientConsultations", consultationSyncId, mapOf("PrescriptionsJson" to prescriptionsJson))
+            if (edited && activePrescriptionJson != null) writer.edit("Patients", patientSyncId, mapOf(PatientSheets.PRESCRIPTION to activePrescriptionJson))
+            edited
+        }
+        if (done) recalculate(patientSyncId.lowercase(Locale.ROOT))
+        done
+    }
+
     /** Lo que deriva del expediente se recalcula después de cada guardado: no sube como cambio. */
     private fun afterWrite(table: String, syncId: String, values: Map<String, Any?>) {
         recalculate(referencedPatient(table, syncId) ?: (values["PatientRecordSyncId"] as String?)?.lowercase(Locale.ROOT))

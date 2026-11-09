@@ -56,12 +56,12 @@ fun ConsultationCheckoutSheet(workspace: TabletWorkspace, session: ConsultationC
             BoxWithConstraints(Modifier.fillMaxWidth().heightIn(max = 620.dp)) {
                 if (isWide(760.dp)) {
                     Row(Modifier.fillMaxWidth()) {
-                        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { NoteAndLines(session, draft) }
+                        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { NoteAndLines(workspace, session, draft) }
                         Column(Modifier.width(340.dp).fillMaxHeight().background(colors.surfaceSubtle).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Payment(workspace, session) }
                     }
                 } else {
                     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        NoteAndLines(session, draft)
+                        NoteAndLines(workspace, session, draft)
                         Payment(workspace, session)
                     }
                 }
@@ -71,7 +71,7 @@ fun ConsultationCheckoutSheet(workspace: TabletWorkspace, session: ConsultationC
 }
 
 @Composable
-private fun NoteAndLines(session: ConsultationCheckout, draft: ConsultationDraft) {
+private fun NoteAndLines(workspace: TabletWorkspace, session: ConsultationCheckout, draft: ConsultationDraft) {
     val colors = LocalTpvcColors.current
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         // A diferencia de la PC, que aquí ya guardó la nota, se escribe al cobrar: decir «guardada» sería falso
@@ -85,8 +85,8 @@ private fun NoteAndLines(session: ConsultationCheckout, draft: ConsultationDraft
             if (count == 0) {
                 TCaption("Sin medicamentos recetados.")
             } else {
-                // TODO(K7 parte 2): imprimir, vista previa y guardar PDF de la receta
-                TButton("Vista previa", {}, Modifier.padding(top = 6.dp), nextVersion = true)
+                // TODO(K10): imprimir en papel; la vista previa trae «Compartir», que también guarda el PDF
+                PrescriptionPreviewButton(workspace, Modifier.padding(top = 6.dp))
             }
         }
     }

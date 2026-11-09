@@ -119,6 +119,7 @@ data class ClinicalService(
     val syncId: String = "",
     val estimatedDurationMinutes: Int = 20,
     val defaultProducts: List<ServiceDefaultProduct> = emptyList(),
+    val description: String = "",
 )
 
 /** Un insumo por defecto de un servicio: el producto (`null` si este equipo no lo tiene) y sus piezas por unidad. */

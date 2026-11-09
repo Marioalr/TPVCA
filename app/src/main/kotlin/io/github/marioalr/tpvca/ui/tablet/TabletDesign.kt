@@ -96,6 +96,7 @@ object TIcons {
     }.build()
 
     val Plus by lazy { stroke("M12 5 V19 M5 12 H19") }
+    val Minus by lazy { stroke("M5 12 H19") }
     val Trash by lazy { stroke("M3 6 H21 M8 6 V4 A2 2 0 0 1 10 2 H14 A2 2 0 0 1 16 4 V6 M19 6 L18 20 A2 2 0 0 1 16 22 H8 A2 2 0 0 1 6 20 L5 6") }
     val More by lazy { stroke("M5 12 H5.01 M12 12 H12.01 M19 12 H19.01", 3f) }
     val Edit by lazy { stroke("M12 20 H21 M16.5 3.5 A2.12 2.12 0 0 1 19.5 6.5 L7 19 L3 20 L4 16 Z") }
@@ -228,8 +229,8 @@ fun TButton(
 
 /** Un botón con solo su icono. */
 @Composable
-fun TIconButton(icon: ImageVector, description: String, onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = LocalTpvcColors.current.textSecondary, tag: String? = null) {
-    var m = modifier.size(TOUCH_MIN).clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = description }
+fun TIconButton(icon: ImageVector, description: String, onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = LocalTpvcColors.current.textSecondary, tag: String? = null, enabled: Boolean = true) {
+    var m = modifier.size(TOUCH_MIN).clip(RoundedCornerShape(8.dp)).clickable(enabled = enabled, role = Role.Button, onClick = onClick).semantics { contentDescription = description }
     if (tag != null) m = m.testTag(tag)
     Box(m, contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(20.dp), tint = tint) }
 }
@@ -315,6 +316,7 @@ fun TField(
     keyboardType: KeyboardType = KeyboardType.Text,
     capitalization: KeyboardCapitalization = KeyboardCapitalization.Sentences,
     tag: String? = null,
+    description: String? = null,
 ) {
     val colors = LocalTpvcColors.current
     val source = remember { MutableInteractionSource() }
@@ -324,7 +326,7 @@ fun TField(
         BasicTextField(
             value,
             onChange,
-            (if (tag != null) Modifier.testTag(tag) else Modifier).fillMaxWidth().semantics { if (label != null) contentDescription = label },
+            (if (tag != null) Modifier.testTag(tag) else Modifier).fillMaxWidth().semantics { (description ?: label)?.let { contentDescription = it } },
             readOnly = readOnly,
             singleLine = !multiline,
             minLines = if (multiline) 3 else 1,

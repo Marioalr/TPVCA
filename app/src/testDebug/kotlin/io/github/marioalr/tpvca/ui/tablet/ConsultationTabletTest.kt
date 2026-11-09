@@ -8,6 +8,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -17,6 +18,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.room.Room
@@ -25,6 +27,11 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.marioalr.tpvca.data.RoomSyncStore
 import io.github.marioalr.tpvca.data.TpvcaDatabase
 import io.github.marioalr.tpvca.data.clinic.ClinicReader
+import io.github.marioalr.tpvca.sync.link.LabFileRules
+import io.github.marioalr.tpvca.documents.LabFileStore
+import io.github.marioalr.tpvca.documents.LabFileInput
+import io.github.marioalr.tpvca.data.security.SecretWrapper
+import io.github.marioalr.tpvca.data.security.LabFileCache
 import io.github.marioalr.tpvca.dev.NoCloud
 import io.github.marioalr.tpvca.dev.PhoneDemoSeed
 import io.github.marioalr.tpvca.dev.tabletDemoExtras
@@ -45,6 +52,8 @@ import io.github.marioalr.tpvca.sync.link.MemoryFolioNumbers
 import io.github.marioalr.tpvca.sync.rules.PatientSheets
 import io.github.marioalr.tpvca.sync.rules.consultation.ConsultationDraft
 import io.github.marioalr.tpvca.sync.rules.consultation.PrescriptionRow
+import io.github.marioalr.tpvca.sync.rules.consultation.ServiceRow
+import io.github.marioalr.tpvca.sync.rules.consultation.SheetRows
 import io.github.marioalr.tpvca.sync.rules.consultation.SupplyRow
 import io.github.marioalr.tpvca.ui.phone.PhoneEnv
 import io.github.marioalr.tpvca.ui.phone.PhoneStatus
@@ -58,6 +67,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -98,6 +108,18 @@ class ConsultationTabletTest {
         if (android.os.Looper.getMainLooper().isCurrentThread) onMainThread.incrementAndGet()
     }
 
+    /** Una llave en memoria en lugar del Keystore: lo guardado va «cifrado» al revés, suficiente para ver que no está en claro. */
+    private class PlainWrapper : SecretWrapper {
+        override fun wrap(plain: ByteArray): ByteArray = plain.reversedArray()
+
+        override fun unwrap(wrapped: ByteArray): ByteArray = wrapped.reversedArray()
+
+        override fun destroy() {}
+    }
+
+    private val labCache by lazy { LabFileCache(File(context.cacheDir, "lab-consulta-${System.nanoTime()}"), PlainWrapper(), 1_000_000) }
+    private var uploadsRequested = 0
+
     private fun env(): TabletEnv {
         val assets = File(context.cacheDir, "membrete-consulta")
         return TabletEnv(
@@ -118,6 +140,8 @@ class ConsultationTabletTest {
             noteLocalWrite = { saves++ },
             refreshNow = {},
             isOnline = { online },
+            labStore = LabFileStore(labCache),
+            uploadLabFiles = { uploadsRequested++ },
         )
     }
 
@@ -1032,6 +1056,726 @@ class ConsultationTabletTest {
         compose.waitForIdle()
         assertFalse(workspace.consultation.hasConsultation)
         assertEquals(TabletPage.Hub, workspace.page)
+    }
+
+    // ------------------------------------------------------------------ la hoja de receta (K7, parte 2)
+
+    private val sofia get() = patientId("EXP-2025-188")
+
+    private fun prescriptionJson(patient: String) = store.select("Patients", listOf("SyncId", PatientSheets.PRESCRIPTION)).first { it["SyncId"] == patient }[PatientSheets.PRESCRIPTION] as String
+
+    /** Abre la hoja desde «+ Medicamento» de la sección 5. */
+    private fun openPrescriptionSheet() {
+        openSection(5)
+        compose.onNodeWithTag(SheetTags.OPEN_PRESCRIPTION).performScrollTo().performClick()
+        waitTag(SheetTags.PRESCRIPTION)
+    }
+
+    /** Escribe en el buscador y elige la sugerencia. */
+    private fun pickMedicine(typed: String, name: String) {
+        compose.onNodeWithTag(SheetTags.MEDICINE).performTextReplacement(typed)
+        waitTag(SheetTags.picked(name))
+        compose.onNodeWithTag(SheetTags.picked(name)).performClick()
+        waitFor { workspace.consultation.prescription.isMedicineChosen }
+    }
+
+    private fun rows() = workspace.consultation.sheets.prescriptions
+
+    @Test
+    fun laHojaAgregaElMedicamentoYLoSurteSiHayExistencias() {
+        startAna()
+        openPrescriptionSheet()
+        pickMedicine("omepra", "Omeprazol 20 mg cápsulas")
+        assertEquals("Omeprazol 20 mg cápsulas", workspace.consultation.prescription.searchText)
+        waitText("Elegido del inventario")
+        compose.onNodeWithTag(SheetTags.DOSAGE).performTextReplacement("1 cápsula en ayunas por 14 días")
+        compose.onNodeWithTag(SheetTags.QUANTITY).performTextReplacement("2")
+        compose.onNodeWithTag(SheetTags.ADD).performClick()
+        waitFor { rows().any { it.medicineName == "Omeprazol 20 mg cápsulas" } }
+        val row = rows().single()
+        assertEquals("1 cápsula en ayunas por 14 días", row.dosage)
+        assertEquals(2, row.recommendedQuantity)
+        assertEquals("Caja con 14", row.presentation)
+        assertTrue("Con existencias se surte aquí", row.dispenseInClinic)
+        assertNull("Un genérico no lleva principio activo aparte", row.activeIngredient)
+        val line = workspace.consultation.account!!.lines.single()
+        assertEquals(2, line.quantity)
+        assertTrue(prescriptionJson(ana).contains("Omeprazol"))
+        assertEquals(1, storedDraft()!!.prescriptions.size)
+        // La captura queda limpia para el siguiente
+        assertEquals("", workspace.consultation.prescription.searchText)
+        assertEquals("", workspace.consultation.prescription.dosage)
+        assertEquals("1", workspace.consultation.prescription.quantityText)
+        waitText("Omeprazol 20 mg cápsulas")
+    }
+
+    @Test
+    fun sinExistenciasSeRecetaSinSurtirYLaCasillaLoCargaConAviso() {
+        startAna()
+        openPrescriptionSheet()
+        pickMedicine("tempra", "Tempra 500 mg tabletas")
+        compose.onNodeWithTag(SheetTags.ADD).performClick()
+        waitFor { rows().isNotEmpty() }
+        val row = rows().single()
+        assertEquals("Tempra 500 mg tabletas (Paracetamol)", row.medicineName)
+        assertEquals("Paracetamol", row.activeIngredient)
+        assertEquals(true, row.showActiveIngredient)
+        assertEquals(PrescriptionEditor.DEFAULT_DOSAGE, row.dosage)
+        assertFalse("Con -3 piezas no se surte solo", row.dispenseInClinic)
+        assertTrue(workspace.consultation.account!!.lines.isEmpty())
+        // A mano sí se carga, con el aviso de existencias
+        compose.onNodeWithTag(SheetTags.dispense(row.rowId)).performClick()
+        waitFor { rows().single().dispenseInClinic }
+        assertEquals("Tempra 500 mg tabletas (Paracetamol)", workspace.consultation.account!!.lines.single().name)
+        waitFor { workspace.toast?.warning == true }
+        // Y se descarga al desmarcar
+        compose.onNodeWithTag(SheetTags.dispense(row.rowId)).performClick()
+        waitFor { !rows().single().dispenseInClinic }
+        assertTrue(workspace.consultation.account!!.lines.isEmpty())
+    }
+
+    @Test
+    fun quitarUnRenglonSurtidoLoDescuentaDeLaCuenta() {
+        startAna()
+        openPrescriptionSheet()
+        pickMedicine("omepra", "Omeprazol 20 mg cápsulas")
+        compose.onNodeWithTag(SheetTags.ADD).performClick()
+        waitFor { rows().size == 1 && workspace.consultation.account!!.lines.size == 1 }
+        compose.onNodeWithTag(SheetTags.remove(rows().single().rowId)).performClick()
+        waitFor { rows().isEmpty() }
+        assertTrue(workspace.consultation.account!!.lines.isEmpty())
+        assertEquals("[]", prescriptionJson(ana))
+    }
+
+    @Test
+    fun laAlertaDeAlergiaPideConfirmarAntesDeRecetar() {
+        // Ana es alérgica a la penicilina
+        startAna()
+        openPrescriptionSheet()
+        pickMedicine("amoxi", "Amoxicilina 500 mg cápsulas")
+        compose.onNodeWithTag(SheetTags.ADD).performClick()
+        waitTag(SheetTags.ALLERGY_ALERT)
+        waitText("Penicilina, AINES")
+        compose.onNodeWithTag(SheetTags.ALLERGY_CANCEL).performClick()
+        waitFor { workspace.consultation.prescription.allergyAlert == null }
+        assertTrue(rows().isEmpty())
+        // Lo elegido sigue en la captura: se puede confirmar
+        assertTrue(workspace.consultation.prescription.isMedicineChosen)
+        compose.onNodeWithTag(SheetTags.ADD).performClick()
+        waitTag(SheetTags.ALLERGY_ALERT)
+        compose.onNodeWithTag(SheetTags.ALLERGY_OVERRIDE).performClick()
+        waitFor { rows().size == 1 }
+        assertEquals("Amoxicilina 500 mg cápsulas", rows().single().medicineName)
+        assertTrue("Con 2 piezas se surte", rows().single().dispenseInClinic)
+    }
+
+    @Test
+    fun escritoAManoSeRecetaSinCobrar() {
+        startAna()
+        openPrescriptionSheet()
+        compose.onNodeWithTag(SheetTags.MEDICINE).performTextReplacement("Vitamina C masticable")
+        compose.onNodeWithTag(SheetTags.DOSAGE).performTextReplacement("1 al día")
+        compose.onNodeWithTag(SheetTags.ADD).performClick()
+        waitFor { rows().size == 1 }
+        assertEquals("Vitamina C masticable", rows().single().medicineName)
+        assertFalse(rows().single().dispenseInClinic)
+        assertTrue(workspace.consultation.account!!.lines.isEmpty())
+        // Marcar «Se surte aquí» en algo que no está en el inventario avisa y no marca
+        compose.onNodeWithTag(SheetTags.dispense(rows().single().rowId)).performClick()
+        waitFor { workspace.info != null }
+        assertTrue(workspace.info!!.contains("no está en el inventario"))
+        assertFalse(rows().single().dispenseInClinic)
+    }
+
+    @Test
+    fun repetirCopiaLaRecetaAnteriorTalComoSeReceto() {
+        startAna()
+        openSection(5)
+        waitTag(SheetTags.REPEAT)
+        waitText("Receta anterior: Tempra 500 mg tabletas (Paracetamol)")
+        compose.onNodeWithTag(SheetTags.REPEAT).performScrollTo().performClick()
+        waitFor { rows().size == 1 }
+        val row = rows().single()
+        assertEquals("Tempra 500 mg tabletas (Paracetamol)", row.medicineName)
+        assertEquals("1 tableta cada 8 horas por 3 días", row.dosage)
+        assertEquals("Paracetamol", row.activeIngredient)
+        assertEquals(true, row.showActiveIngredient)
+        assertNotEquals("Un renglón nuevo, con su propio RowId", "10000000-0000-4000-8000-00000000d001", row.rowId)
+        assertFalse("Sin existencias no se surte", row.dispenseInClinic)
+        // Ya no falta nada: el aviso se va
+        waitFor { compose.onAllNodesWithTag(SheetTags.REPEAT).fetchSemanticsNodes().isEmpty() }
+    }
+
+    @Test
+    fun cambiarIndicacionGuardaSoloEseRenglon() {
+        startAna()
+        var result: ApplyResult? = null
+        scope.launch {
+            result = workspace.consultation.apply {
+                setPrescriptions(listOf(PrescriptionRow(medicineName = "Uno", dosage = "a"), PrescriptionRow(medicineName = "Dos", dosage = "b")))
+            }
+        }
+        waitFor { result == ApplyResult.Applied }
+        openSection(5)
+        val first = rows().first()
+        waitTag(SheetTags.change(first.rowId))
+        compose.onNodeWithTag(SheetTags.change(first.rowId)).performScrollTo().performClick()
+        waitTag(SheetTags.INDICATION_FIELD)
+        assertEquals("a", workspace.consultation.prescription.planIndication.text)
+        // Las frecuentes del consultorio escriben en el campo
+        compose.onNodeWithTag(SheetTags.INDICATION_TOGGLE).performScrollTo().performClick()
+        waitTag(SheetTags.indication("Cada 12 horas por 7 días"))
+        compose.onNodeWithTag(SheetTags.indication("Cada 12 horas por 7 días")).performScrollTo().performClick()
+        waitFor { workspace.consultation.prescription.planIndication.text == "1 cápsula cada 12 horas por 7 días" }
+        compose.onNodeWithTag(SheetTags.INDICATION_SAVE).performScrollTo().performClick()
+        waitFor { rows().first().dosage == "1 cápsula cada 12 horas por 7 días" }
+        assertEquals("b", rows()[1].dosage)
+        assertEquals(first.rowId, rows().first().rowId)
+        assertFalse(workspace.consultation.prescription.planIndication.isEditing)
+        // Terminar con una corrección abierta la guarda antes
+        compose.onNodeWithTag(SheetTags.change(rows()[1].rowId)).performScrollTo().performClick()
+        waitTag(SheetTags.INDICATION_FIELD)
+        compose.onNodeWithTag(SheetTags.INDICATION_FIELD).performTextReplacement("c")
+        compose.onNodeWithTag(TabletTags.CONSULTATION_FINISH).performClick()
+        waitTag(TabletTags.CHECKOUT)
+        assertEquals("c", rows()[1].dosage)
+    }
+
+    @Test
+    fun mostrarElPrincipioActivoCambiaElRenglonYLaEleccionSeRecuerda() {
+        startAna()
+        openPrescriptionSheet()
+        pickMedicine("tempra", "Tempra 500 mg tabletas")
+        waitTag(SheetTags.SHOW_CHOSEN)
+        waitText("Mostrar (Paracetamol)")
+        // Desmarcar la casilla de la captura: el buscador muestra el renglón como se va a agregar y queda para el siguiente
+        compose.onNodeWithTag(SheetTags.SHOW_CHOSEN).performClick()
+        waitFor { workspace.consultation.prescription.searchText == "Tempra 500 mg tabletas" }
+        compose.onNodeWithTag(SheetTags.ADD).performClick()
+        waitFor { rows().size == 1 }
+        assertEquals("Tempra 500 mg tabletas", rows().single().medicineName)
+        assertEquals(false, rows().single().showActiveIngredient)
+        waitFor { LocalSide(store).draft(LocalSide.PRESCRIPTION_INGREDIENT_HIDDEN) == "1" }
+        // La casilla del renglón lo vuelve a poner, sin cambiar la elección del equipo
+        compose.onNodeWithTag(SheetTags.show(rows().single().rowId)).performClick()
+        waitFor { rows().single().medicineName == "Tempra 500 mg tabletas (Paracetamol)" }
+        assertEquals(true, rows().single().showActiveIngredient)
+        assertEquals("1", LocalSide(store).draft(LocalSide.PRESCRIPTION_INGREDIENT_HIDDEN))
+        // El siguiente medicamento empieza con la última elección
+        pickMedicine("tempra", "Tempra 500 mg tabletas")
+        assertFalse(workspace.consultation.prescription.showChosenActiveIngredient)
+        assertEquals("Tempra 500 mg tabletas", workspace.consultation.prescription.searchText)
+    }
+
+    @Test
+    fun elCatalogoEligeElMedicamentoYVuelveALaHoja() {
+        startAna()
+        openPrescriptionSheet()
+        compose.onNodeWithTag(SheetTags.OPEN_CATALOG).performClick()
+        waitTag(SheetTags.CATALOG)
+        waitText("Catálogo de Medicamentos")
+        compose.onNodeWithTag(SheetTags.CATALOG_SEARCH).performTextReplacement("omep")
+        waitTag(SheetTags.catalogPick("Omeprazol 20 mg cápsulas"))
+        assertTrue(compose.onAllNodesWithTag(SheetTags.catalogPick("Tempra 500 mg tabletas")).fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag(SheetTags.catalogPick("Omeprazol 20 mg cápsulas")).performClick()
+        waitTag(SheetTags.PRESCRIPTION)
+        assertEquals(ConsultationSheet.Prescription, workspace.consultation.sheet)
+        assertTrue(workspace.consultation.prescription.isMedicineChosen)
+        assertEquals("Omeprazol 20 mg cápsulas", workspace.consultation.prescription.searchText)
+        assertTrue(rows().isEmpty())
+    }
+
+    @Test
+    fun guardarAgregaLoPendienteYCierraConAviso() {
+        startAna()
+        openPrescriptionSheet()
+        pickMedicine("omepra", "Omeprazol 20 mg cápsulas")
+        compose.onNodeWithTag(SheetTags.SAVE).performClick()
+        waitFor { workspace.consultation.sheet == null }
+        assertEquals(1, rows().size)
+        assertEquals("¡Receta médica guardada correctamente en el expediente de Paciente Ana Ejemplo Ruiz!", workspace.toast!!.text)
+        // Con alergia, «Guardar» deja la hoja abierta hasta que se decida
+        openPrescriptionSheet()
+        pickMedicine("amoxi", "Amoxicilina 500 mg cápsulas")
+        compose.onNodeWithTag(SheetTags.SAVE).performClick()
+        waitTag(SheetTags.ALLERGY_ALERT)
+        assertEquals(ConsultationSheet.Prescription, workspace.consultation.sheet)
+        compose.onNodeWithTag(SheetTags.ALLERGY_CANCEL).performClick()
+        waitFor { workspace.consultation.prescription.allergyAlert == null }
+        assertEquals(1, rows().size)
+    }
+
+    @Test
+    fun laDosisPediatricaSoloEnMenoresYEscribeLaIndicacion() {
+        // Ana es adulta: sin calculadora
+        startAna()
+        openPrescriptionSheet()
+        assertTrue(compose.onAllNodesWithTag(SheetTags.PEDIATRIC_RULE).fetchSemanticsNodes().isEmpty())
+        workspace.consultation.closeSheet()
+        compose.waitForIdle()
+        compose.onNodeWithTag(TabletTags.CONSULTATION_DISCARD).performClick()
+        waitFor { workspace.confirm != null }
+        workspace.answer(true)
+        waitFor { !workspace.consultation.hasConsultation }
+        // Sofía tiene 7 años
+        workspace.openChart(sofia)
+        waitTag(TabletTags.CHART_PRIMARY)
+        compose.onNodeWithTag(TabletTags.CHART_PRIMARY).performClick()
+        waitTag(TabletTags.CONSULTATION)
+        waitFor { workspace.consultation.account != null }
+        openSection(2)
+        compose.onNodeWithTag(TabletTags.field("Weight")).performTextReplacement("20")
+        openPrescriptionSheet()
+        waitTag(SheetTags.PEDIATRIC_RULE)
+        compose.onNodeWithTag(SheetTags.PEDIATRIC_RULE).performClick()
+        waitTag(SheetTags.rule("Paracetamol 3.2 g/100 ml"))
+        compose.onNodeWithTag(SheetTags.rule("Paracetamol 3.2 g/100 ml")).performClick()
+        // El peso de la consulta en curso llena la calculadora
+        waitFor { workspace.consultation.prescription.pediatricWeight == "20" }
+        waitText("9.4 ml (188 gotas) por dosis")
+        compose.onNodeWithTag(SheetTags.PEDIATRIC_USE).performClick()
+        waitFor { workspace.consultation.prescription.dosage.startsWith("Dar 9.4 ml (188 gotas) vía oral") }
+        assertEquals("Paracetamol 3.2 g/100 ml", workspace.consultation.prescription.medicineName)
+        compose.onNodeWithTag(SheetTags.ADD).performClick()
+        waitFor { rows().size == 1 }
+        assertEquals("Paracetamol 3.2 g/100 ml", rows().single().medicineName)
+        assertEquals("Dar 9.4 ml (188 gotas) vía oral cada ___ hrs por ___ días", rows().single().dosage)
+        assertFalse("No está en el inventario: no se cobra", rows().single().dispenseInClinic)
+    }
+
+    @Test
+    fun laVistaPreviaArmaLaRecetaDeAhoraYSinMedicamentosAvisa() {
+        startAna()
+        openSection(5)
+        compose.onNodeWithTag(SheetTags.PREVIEW).performScrollTo().performClick()
+        waitFor { workspace.info != null }
+        assertEquals(PrescriptionEditor.NO_MEDICINES_TO_PREVIEW, workspace.info)
+        workspace.info = null
+        compose.onNodeWithTag(SheetTags.REPEAT).performScrollTo().performClick()
+        waitFor { rows().size == 1 }
+        compose.onNodeWithTag(SheetTags.PREVIEW).performScrollTo().performClick()
+        // El PDF de verdad solo se puede dibujar en un equipo (`DocumentPdfDeviceTest`): en la JVM se comprueba que se intentó con la receta de ahora y que se dice si no se pudo
+        waitFor { workspace.preview != null || workspace.info != null }
+        val preview = workspace.preview
+        if (preview != null) {
+            assertEquals("Receta", preview.title)
+            assertTrue(preview.file.exists())
+        } else {
+            assertEquals("No se pudo armar la receta.", workspace.info)
+        }
+    }
+
+    // ------------------------------------------------------------------ la hoja de insumos (K7, parte 2)
+
+    private fun supplies() = workspace.consultation.sheets.supplies
+
+    private fun accountLine(name: String) = workspace.consultation.account!!.lines.firstOrNull { it.name == name }
+
+    private fun openSuppliesSheet() {
+        compose.onNodeWithTag(SheetTags.OPEN_SUPPLIES).performScrollTo().performClick()
+        waitTag(SheetTags.SUPPLIES)
+    }
+
+    @Test
+    fun laHojaDeInsumosAgregaYCargaYMasMenosMuevenSoloLoDeEstaConsulta() {
+        startAna()
+        openSuppliesSheet()
+        compose.onNodeWithTag(SheetTags.SUPPLY_SEARCH).performTextReplacement("jering")
+        compose.onNodeWithTag(SheetTags.SUPPLY_INSTRUCTIONS).performTextReplacement("Aplicación IM")
+        compose.onNodeWithTag(SheetTags.SUPPLY_QUANTITY).performTextReplacement("2")
+        waitTag(SheetTags.picked("Jeringa 5 ml con aguja"))
+        compose.onNodeWithTag(SheetTags.picked("Jeringa 5 ml con aguja")).performClick()
+        waitFor { supplies().size == 1 }
+        val row = supplies().single()
+        assertEquals("Jeringa 5 ml con aguja (Pieza estéril)", row.supplyName)
+        assertEquals("Aplicación IM", row.instructions)
+        assertEquals(2, row.quantity)
+        assertEquals(2, row.chargedUnits)
+        assertEquals(workspace.consultation.draft!!.folio, row.chargedConsultationFolio)
+        assertEquals("producto", row.chargedLineKind)
+        assertEquals(2, accountLine("Jeringa 5 ml con aguja (Pieza estéril)")!!.quantity)
+        assertEquals(BigDecimal("12.00").compareTo(accountLine("Jeringa 5 ml con aguja (Pieza estéril)")!!.unitPrice), 0)
+        // La captura queda limpia
+        assertEquals("", workspace.consultation.suppliesEditor.searchText)
+        assertEquals("1", workspace.consultation.suppliesEditor.quantityText)
+        // + y − mueven la cuenta
+        compose.onNodeWithTag(SheetTags.supplyMore(row.rowId)).performClick()
+        waitFor { supplies().single().quantity == 3 }
+        assertEquals(3, accountLine("Jeringa 5 ml con aguja (Pieza estéril)")!!.quantity)
+        assertEquals(3, supplies().single().chargedUnits)
+        compose.onNodeWithTag(SheetTags.supplyLess(row.rowId)).performClick()
+        waitFor { supplies().single().quantity == 2 }
+        assertEquals(2, accountLine("Jeringa 5 ml con aguja (Pieza estéril)")!!.quantity)
+        // A mano, tras la pausa
+        compose.onNodeWithTag(SheetTags.supplyLine(row.rowId)).performTextReplacement("5")
+        waitFor { supplies().single().quantity == 5 }
+        assertEquals(5, accountLine("Jeringa 5 ml con aguja (Pieza estéril)")!!.quantity)
+        // La ✕ descuenta todo
+        compose.onNodeWithTag(SheetTags.supplyRemove(row.rowId)).performClick()
+        waitFor { supplies().isEmpty() }
+        assertTrue(workspace.consultation.account!!.lines.isEmpty())
+        assertEquals("[]", store.select("Patients", listOf("SyncId", PatientSheets.SUPPLIES)).first { it["SyncId"] == ana }[PatientSheets.SUPPLIES])
+    }
+
+    @Test
+    fun unInsumoEscritoAManoSeCobraComoCargoLibre() {
+        startAna()
+        openSuppliesSheet()
+        compose.onNodeWithTag(SheetTags.SUPPLY_SEARCH).performTextReplacement("Algodón especial")
+        compose.onNodeWithTag(SheetTags.SUPPLY_ADD).performClick()
+        waitFor { supplies().size == 1 }
+        val row = supplies().single()
+        assertEquals("Algodón especial", row.supplyName)
+        assertEquals(SuppliesEditor.DEFAULT_INSTRUCTIONS, row.instructions)
+        assertEquals(0, SuppliesEditor.FREE_SUPPLY_PRICE.compareTo(row.unitPrice))
+        assertEquals("libre", row.chargedLineKind)
+        val line = accountLine("Algodón especial")!!
+        assertEquals("libre", line.lineKind)
+        assertEquals(0, SuppliesEditor.FREE_SUPPLY_PRICE.compareTo(line.unitPrice))
+        // Y − llega a cero: se quita como la ✕
+        compose.onNodeWithTag(SheetTags.supplyLess(row.rowId)).performClick()
+        waitFor { supplies().isEmpty() }
+        assertTrue(workspace.consultation.account!!.lines.isEmpty())
+    }
+
+    @Test
+    fun loDeUnaConsultaAnteriorSeVeYNoSeCobraEnEsta() {
+        val earlier = SupplyRow(rowId = "10000000-0000-4000-8000-00000000e001", supplyName = "Gasa estéril 10x10 cm (Sobre con 5)", instructions = "Curación", quantity = 2, unitPrice = BigDecimal("18.00"), chargedConsultationFolio = "CNS-ANTES", chargedUnits = 2)
+        LocalWriter(store, { "otro" }).edit("Patients", ana, mapOf(PatientSheets.SUPPLIES to SheetRows.write(listOf(earlier))))
+        store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))
+        startAna()
+        openSuppliesSheet()
+        waitText("De una consulta anterior: no se cobra en esta")
+        compose.onNodeWithTag(SheetTags.supplyMore(earlier.rowId)).assertIsNotEnabled()
+        assertTrue(workspace.consultation.account!!.lines.isEmpty())
+        // La ✕ la quita del expediente sin tocar la cuenta
+        compose.onNodeWithTag(SheetTags.supplyRemove(earlier.rowId)).performClick()
+        waitFor { supplies().isEmpty() }
+        assertTrue(workspace.consultation.account!!.lines.isEmpty())
+    }
+
+    @Test
+    fun elCatalogoDeInsumosAgregaYGuardarCierraConAviso() {
+        startAna()
+        openSuppliesSheet()
+        compose.onNodeWithTag(SheetTags.OPEN_CATALOG).performClick()
+        waitTag(SheetTags.CATALOG)
+        waitText("Catálogo de Insumos")
+        waitTag(SheetTags.catalogPick("Venda elástica 10 cm con un nombre bastante largo para ver cómo se parte"))
+        assertTrue("Los medicamentos no salen", compose.onAllNodesWithTag(SheetTags.catalogPick("Omeprazol 20 mg cápsulas")).fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag(SheetTags.catalogPick("Venda elástica 10 cm con un nombre bastante largo para ver cómo se parte")).performScrollTo().performClick()
+        waitTag(SheetTags.SUPPLIES)
+        waitFor { supplies().size == 1 }
+        assertTrue(supplies().single().supplyName.startsWith("Venda elástica"))
+        assertEquals(1, accountLine(supplies().single().supplyName)!!.quantity)
+        compose.onNodeWithTag(SheetTags.SAVE).performClick()
+        waitFor { workspace.consultation.sheet == null }
+        assertEquals("¡Insumos y materiales clínicos guardados correctamente en el expediente de Paciente Ana Ejemplo Ruiz!", workspace.toast!!.text)
+    }
+
+    // ------------------------------------------------------------------ la hoja de servicios (K7, parte 2)
+
+    private fun services() = workspace.consultation.sheets.services
+
+    private fun openServicesSheet() {
+        compose.onNodeWithTag(SheetTags.OPEN_SERVICES).performScrollTo().performClick()
+        waitTag(SheetTags.SERVICES)
+    }
+
+    @Test
+    fun laHojaDeServiciosCargaElServicioConSusInsumosYLosAjustaSoloEnEstaConsulta() {
+        startAna()
+        openServicesSheet()
+        compose.onNodeWithTag(SheetTags.SERVICE_SEARCH).performTextReplacement("inyec")
+        compose.onNodeWithTag(SheetTags.SERVICE_NOTES).performTextReplacement("Glúteo derecho")
+        waitTag(SheetTags.picked("Aplicación de inyección"))
+        compose.onNodeWithTag(SheetTags.picked("Aplicación de inyección")).performClick()
+        waitFor { services().size == 1 }
+        val row = services().single()
+        assertEquals("Aplicación de inyección", row.serviceName)
+        assertEquals("Glúteo derecho", row.notes)
+        assertNotNull(row.serviceSyncId)
+        assertEquals(0, BigDecimal("80.00").compareTo(row.price))
+        assertEquals(1, row.quantity)
+        assertEquals(1, row.chargedUnits)
+        assertEquals(workspace.consultation.draft!!.folio, row.chargedConsultationFolio)
+        assertEquals(listOf("Jeringa 5 ml con aguja" to 1), row.supplies!!.map { it.supplyName to it.quantity })
+        assertEquals(1, accountLine("Aplicación de inyección")!!.quantity)
+        assertEquals(1, accountLine("Jeringa 5 ml con aguja")!!.quantity)
+        // + y − mueven el servicio y sus insumos por defecto
+        compose.onNodeWithTag(SheetTags.serviceMore(row.rowId)).performClick()
+        waitFor { services().single().quantity == 2 }
+        assertEquals(2, services().single().chargedUnits)
+        assertEquals(2, accountLine("Aplicación de inyección")!!.quantity)
+        assertEquals(2, accountLine("Jeringa 5 ml con aguja")!!.quantity)
+        assertEquals(2, services().single().supplies!!.single().quantity)
+        compose.onNodeWithTag(SheetTags.serviceLess(row.rowId)).performClick()
+        waitFor { services().single().quantity == 1 }
+        assertEquals(1, accountLine("Jeringa 5 ml con aguja")!!.quantity)
+        // «Ajustar insumos»: una jeringa más solo en esta consulta; el servicio no cambia
+        compose.onNodeWithTag(SheetTags.serviceAdjust(row.rowId)).performScrollTo().performClick()
+        waitTag(SheetTags.entryMore("Jeringa 5 ml con aguja"))
+        compose.onNodeWithTag(SheetTags.entryMore("Jeringa 5 ml con aguja")).performClick()
+        waitFor { services().single().supplies!!.single().quantity == 2 }
+        assertEquals(1, services().single().quantity)
+        assertEquals(2, accountLine("Jeringa 5 ml con aguja")!!.quantity)
+        compose.onNodeWithTag(SheetTags.entryRemove("Jeringa 5 ml con aguja")).performClick()
+        waitFor { services().single().supplies!!.isEmpty() }
+        assertNull(accountLine("Jeringa 5 ml con aguja"))
+        waitText("Sin insumos en esta consulta.")
+        // Agregar una pieza individual de un paquete de varias
+        compose.onNodeWithTag(SheetTags.SERVICE_SUPPLY_SEARCH).performTextReplacement("gasa")
+        waitTag(SheetTags.picked("Gasa estéril 10x10 cm"))
+        compose.onNodeWithTag(SheetTags.picked("Gasa estéril 10x10 cm")).performClick()
+        waitFor { services().single().supplies!!.size == 1 }
+        assertEquals("Gasa estéril 10x10 cm", services().single().supplies!!.single().supplyName)
+        val gasa = accountLine("Gasa estéril 10x10 cm")!!
+        assertTrue(gasa.isIndividualUnits)
+        assertEquals(0, BigDecimal("3.60").compareTo(gasa.unitPrice))
+        assertEquals("", workspace.consultation.servicesEditor.supplySearchText)
+        // La ✕ descuenta el servicio y su lista
+        compose.onNodeWithTag(SheetTags.serviceRemove(row.rowId)).performScrollTo().performClick()
+        waitFor { services().isEmpty() }
+        assertTrue(workspace.consultation.account!!.lines.isEmpty())
+        assertEquals("[]", store.select("Patients", listOf("SyncId", PatientSheets.SERVICES)).first { it["SyncId"] == ana }[PatientSheets.SERVICES])
+    }
+
+    @Test
+    fun unServicioEscritoAManoEsCargoLibreYLoDeAntesNoSeCobra() {
+        val earlier = ServiceRow(rowId = "10000000-0000-4000-8000-00000000f001", serviceCode = "SERV-021", serviceName = "Nebulización", category = "Procedimiento", notes = "Antes", price = BigDecimal("120.00"), quantity = 1, chargedConsultationFolio = "CNS-ANTES", chargedUnits = 1)
+        LocalWriter(store, { "otro" }).edit("Patients", ana, mapOf(PatientSheets.SERVICES to SheetRows.write(listOf(earlier))))
+        store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))
+        startAna()
+        openServicesSheet()
+        waitText("De una consulta anterior: no se cobra en esta")
+        assertTrue(compose.onAllNodesWithTag(SheetTags.serviceMore(earlier.rowId)).fetchSemanticsNodes().isEmpty())
+        assertTrue(workspace.consultation.account!!.lines.isEmpty())
+        compose.onNodeWithTag(SheetTags.SERVICE_SEARCH).performTextReplacement("Revisión especial")
+        compose.onNodeWithTag(SheetTags.SERVICE_ADD).performClick()
+        waitFor { services().size == 2 }
+        val free = services().first { it.serviceName == "Revisión especial" }
+        assertNull(free.serviceSyncId)
+        assertEquals(ServicesEditor.FREE_SERVICE_CODE, free.serviceCode)
+        assertEquals(ServicesEditor.FREE_SERVICE_CATEGORY, free.category)
+        assertEquals(ServicesEditor.DEFAULT_NOTES, free.notes)
+        assertEquals(0, ServicesEditor.FREE_SERVICE_PRICE.compareTo(free.price))
+        assertEquals(emptyList<Any>(), free.supplies)
+        val line = accountLine("Revisión especial")!!
+        assertEquals("libre", line.lineKind)
+        assertEquals(0, ServicesEditor.FREE_SERVICE_PRICE.compareTo(line.unitPrice))
+        // Quitar lo de antes no toca la cuenta de hoy
+        compose.onNodeWithTag(SheetTags.serviceRemove(earlier.rowId)).performScrollTo().performClick()
+        waitFor { services().size == 1 }
+        assertEquals(1, workspace.consultation.account!!.lines.size)
+    }
+
+    @Test
+    fun elCatalogoDeServiciosAgregaYGuardarCierraConAviso() {
+        startAna()
+        openServicesSheet()
+        compose.onNodeWithTag(SheetTags.OPEN_CATALOG).performClick()
+        waitTag(SheetTags.CATALOG)
+        waitText("Catálogo de Servicios")
+        waitTag(SheetTags.catalogPick("Nebulización"))
+        compose.onNodeWithTag(SheetTags.catalogPick("Nebulización")).performScrollTo().performClick()
+        waitTag(SheetTags.SERVICES)
+        waitFor { services().size == 1 }
+        assertEquals("Nebulización", services().single().serviceName)
+        assertEquals(1, accountLine("Nebulización")!!.quantity)
+        compose.onNodeWithTag(SheetTags.SAVE).performClick()
+        waitFor { workspace.consultation.sheet == null }
+        assertEquals("¡Servicios clínicos guardados correctamente en el expediente de Paciente Ana Ejemplo Ruiz!", workspace.toast!!.text)
+    }
+
+    // ------------------------------------------------------------------ corregir la receta de una consulta terminada (K7, parte 2)
+
+    private fun latestConsultation(patient: String) = kotlinx.coroutines.runBlocking(Dispatchers.IO) { workspace.env.phone.reader.consultations(patient, limit = 1).single() }
+
+    @Test
+    fun corregirLaRecetaDeLaUltimaConsultaLaDejaVigenteYConservaElPrincipioActivo() {
+        workspace.openChart(ana)
+        show()
+        waitTag(TabletTags.CHART_PRIMARY)
+        val latest = latestConsultation(ana)
+        workspace.detail = latest
+        waitTag(TabletTags.DETAIL)
+        compose.onNodeWithTag(SheetTags.CORRECT).assertIsEnabled().performScrollTo().performClick()
+        waitFor { workspace.info != null || compose.onAllNodesWithTag(SheetTags.correctName(0)).fetchSemanticsNodes().isNotEmpty() }
+        assertNull(workspace.info, workspace.info)
+        waitTag(SheetTags.correctName(1))
+        // Tempra (Paracetamol) cambia de indicación, la amoxicilina se va y entra uno escrito a mano
+        compose.onNodeWithTag(SheetTags.correctDosage(0)).performScrollTo().performTextReplacement("1 tableta cada 6 horas")
+        compose.onNodeWithTag(SheetTags.correctRemove(1)).performScrollTo().performClick()
+        waitFor { compose.onAllNodesWithTag(SheetTags.correctName(1)).fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithTag(SheetTags.CORRECT_NEW).performScrollTo().performTextReplacement("Loratadina 10 mg")
+        compose.onNodeWithTag(SheetTags.CORRECT_TYPED).performScrollTo().performClick()
+        waitTag(SheetTags.correctName(1))
+        compose.onNodeWithTag(SheetTags.CORRECT_SAVE).performScrollTo().performClick()
+        waitFor { workspace.toast?.text == "Receta corregida; es la vigente del expediente" }
+        val saved = store.select("PatientConsultations", listOf("SyncId", "PrescriptionsJson")).first { it["SyncId"] == latest.syncId }["PrescriptionsJson"] as String
+        assertTrue(saved.contains("1 tableta cada 6 horas"))
+        assertFalse(saved.contains("Amoxicilina"))
+        assertTrue(saved.contains("Loratadina 10 mg"))
+        assertTrue("El principio activo se conserva si el nombre no cambió", saved.contains("\"ActiveIngredient\":\"Paracetamol\""))
+        assertFalse("La receta corregida no vuelve a cobrar nada", saved.contains("\"DispenseInClinic\":true"))
+        val active = prescriptionJson(ana)
+        assertTrue(active.contains("Loratadina 10 mg") && !active.contains("Amoxicilina"))
+        assertTrue("Sube", store.outbox().isNotEmpty())
+        // La hoja muestra la receta corregida y sale de la corrección
+        waitText("Loratadina 10 mg")
+        assertTrue(compose.onAllNodesWithTag(SheetTags.CORRECT_SAVE).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun conLaConsultaEnCursoLaRecetaDeAntesSeCorrigeDentroDeLaConsulta() {
+        startAna()
+        workspace.showChartFromConsultation(ana)
+        waitTag(TabletTags.ALLERGY)
+        workspace.detail = latestConsultation(ana)
+        waitTag(TabletTags.DETAIL)
+        compose.onNodeWithTag(SheetTags.CORRECT).assertIsNotEnabled()
+        waitText("Hay una consulta en curso de este paciente")
+    }
+
+    // ------------------------------------------------------------------ laboratorio (K7, parte 3)
+
+    private fun labStudies() = workspace.consultation.draft!!.labOrder?.studies.orEmpty().map { it.name }
+
+    @Test
+    fun laSeccionDeLaboratorioArmaLaOrdenYSeGuardaConLaNota() {
+        startAna()
+        openSection(6)
+        // Sin estudios no hay vista previa
+        compose.onNodeWithTag(LabTags.PREVIEW).performScrollTo().performClick()
+        waitFor { workspace.info == LabOrderEditor.NO_STUDIES }
+        workspace.info = null
+        compose.onNodeWithTag(LabTags.frequent("BH")).performScrollTo().performClick()
+        waitFor { labStudies() == listOf("Biometría hemática completa") }
+        // El paquete no repite la BH
+        compose.onNodeWithTag(LabTags.panel("Chequeo general")).performScrollTo().performClick()
+        waitFor { labStudies().size == 4 }
+        assertEquals(listOf("Biometría hemática completa", "Química sanguínea de 6 elementos", "Perfil de lípidos", "Examen general de orina"), labStudies())
+        compose.onNodeWithTag(LabTags.panel("Chequeo general")).performScrollTo().performClick()
+        waitFor { workspace.toast?.text == "Los estudios de \"Chequeo general\" ya están en la orden" }
+        // Buscar: el catálogo y lo que el consultorio ya pidió (Ana trae «Química sanguínea» en sus consultas)
+        compose.onNodeWithTag(LabTags.SEARCH).performScrollTo().performTextReplacement("hba1c")
+        waitTag(LabTags.suggestion("Hemoglobina glucosilada"))
+        compose.onNodeWithTag(LabTags.suggestion("Hemoglobina glucosilada")).performScrollTo().performClick()
+        waitFor { labStudies().contains("Hemoglobina glucosilada") }
+        assertEquals("", workspace.consultation.labOrder.searchText)
+        compose.onNodeWithTag(LabTags.SEARCH).performScrollTo().performTextReplacement("quimica sang")
+        waitTag(LabTags.suggestion("Química sanguínea"))
+        assertTrue(workspace.consultation.labOrder.suggestions.first { it.name == "Química sanguínea" }.isCustom)
+        // Lo escrito tal cual queda en «Otros»
+        compose.onNodeWithTag(LabTags.SEARCH).performScrollTo().performTextReplacement("Prueba de aliento")
+        compose.onNodeWithTag(LabTags.ADD_TYPED).performScrollTo().performClick()
+        waitFor { labStudies().contains("Prueba de aliento") }
+        assertEquals("Otros", workspace.consultation.draft!!.labOrder!!.studies.last().area)
+        compose.onNodeWithTag(LabTags.remove("Examen general de orina")).performScrollTo().performClick()
+        waitFor { !labStudies().contains("Examen general de orina") }
+        // Las indicaciones, de un toque y a mano
+        compose.onNodeWithTag(LabTags.preset("Ayuno")).performScrollTo().performClick()
+        waitFor { workspace.consultation.draft!!.labOrder!!.indications == "Ayuno de 8 a 12 horas (puede tomar agua)." }
+        compose.onNodeWithTag(LabTags.preset("Ayuno")).performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals("No se repite", "Ayuno de 8 a 12 horas (puede tomar agua).", workspace.consultation.draft!!.labOrder!!.indications)
+        compose.onNodeWithTag(LabTags.INDICATIONS).performScrollTo().performTextReplacement("En ayunas")
+        waitFor { storedDraft()?.labOrder?.indications == "En ayunas" }
+        assertEquals(5, storedDraft()!!.labOrder!!.studies.size)
+        // Al cobrar, la orden va con la nota
+        val folio = workspace.consultation.draft!!.folio
+        openCheckout()
+        charge()
+        waitFor { !workspace.consultation.hasConsultation }
+        val saved = store.select("PatientConsultations", listOf("Folio", "LabOrderJson")).first { it["Folio"] == folio }["LabOrderJson"] as String
+        assertTrue(saved.contains("Hemoglobina glucosilada") && saved.contains("\"Area\":\"Otros\"") && saved.contains("En ayunas"))
+    }
+
+    // ------------------------------------------------------------------ resultados de laboratorio (K7, parte 3)
+
+    private val samplePdf = ("%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n3 0 obj << /Type /Page /Parent 2 0 R >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n").toByteArray()
+
+    private fun labRows() = store.select("LabResults", listOf("SyncId", "PatientRecordSyncId", "Title", "Laboratory", "ResultDate", "MimeType", "PageCount", "SizeBytes", "ContentSha256", "FileName", "Notes")).filter { it["PatientRecordSyncId"] == ana }
+
+    @Test
+    fun agregarUnResultadoGuardaElArchivoAntesQueSuFilaYLoDejaPendienteDeSubir() {
+        workspace.openChart(ana)
+        show()
+        waitTag(TabletTags.CHART_PRIMARY)
+        val before = labRows().size
+        compose.onNodeWithTag(LabResultTags.ADD).performScrollTo().assertIsEnabled()
+        workspace.labResults.startAdd(ana, listOf(LabFileInput("bh.pdf", samplePdf)), emptyList())
+        waitTag(LabResultTags.FORM)
+        waitText("bh.pdf")
+        // Sin estudio no se guarda
+        compose.onNodeWithTag(LabResultTags.SAVE).performClick()
+        waitTag(LabResultTags.ERROR)
+        waitText("Escriba qué estudio es")
+        compose.onNodeWithTag(LabResultTags.TITLE).performTextReplacement("Biometría hemática")
+        compose.onNodeWithTag(LabResultTags.LABORATORY).performTextReplacement("Laboratorio Central")
+        compose.onNodeWithTag(LabResultTags.NOTES).performTextReplacement("Hb 12.1")
+        // Una fecha futura tampoco (el campo lleva la máscara: se teclea dígito por dígito)
+        compose.onNodeWithTag(LabResultTags.DATE).performTextClearance()
+        compose.onNodeWithTag(LabResultTags.DATE).performTextInput("31122099")
+        waitFor { workspace.labResults.form?.dateText == "31/12/2099" }
+        compose.onNodeWithTag(LabResultTags.SAVE).performClick()
+        waitText("no puede ser futura")
+        compose.onNodeWithTag(LabResultTags.DATE).performTextClearance()
+        compose.onNodeWithTag(LabResultTags.DATE).performTextInput("05112026")
+        waitFor { workspace.labResults.form?.dateText == "05/11/2026" }
+        compose.onNodeWithTag(LabResultTags.SAVE).performClick()
+        waitFor { workspace.labResults.form == null }
+        waitFor { labRows().size == before + 1 }
+        val sha = LabFileRules.sha256(samplePdf)
+        val row = labRows().single { it["ContentSha256"] == sha }
+        assertEquals("Biometría hemática", row["Title"])
+        assertEquals("Laboratorio Central", row["Laboratory"])
+        assertEquals("Hb 12.1", row["Notes"])
+        assertEquals("application/pdf", row["MimeType"])
+        assertEquals(1L, row["PageCount"])
+        assertEquals(samplePdf.size.toLong(), row["SizeBytes"])
+        assertEquals(sha, row["ContentSha256"])
+        assertEquals("bh.pdf", row["FileName"])
+        assertTrue((row["ResultDate"] as String).startsWith("2026-11-05"))
+        // El archivo está aquí, cifrado y pendiente de subir; se pidió subirlo y la fila sube
+        assertEquals(listOf(sha), labCache.pending())
+        assertArrayEquals(samplePdf, labCache.read(sha))
+        assertTrue(uploadsRequested >= 1)
+        assertTrue("La fila sube", store.outbox().any { it.syncId == row["SyncId"] })
+        assertEquals("Resultado agregado al expediente", workspace.toast!!.text)
+        waitText("Biometría hemática")
+        waitText("En este equipo · se sube a la nube")
+        waitText("Laboratorio Central · PDF, 1 página · 1 KB")
+        // Subido: la caché normal
+        labCache.settle(sha)
+        workspace.changed()
+        waitText("En este equipo")
+        // Quitar: pregunta y borra la fila; el archivo se queda
+        compose.onNodeWithTag(LabResultTags.delete(row["SyncId"] as String)).performScrollTo().performClick()
+        waitFor { workspace.confirm != null }
+        assertTrue(workspace.confirm!!.message.startsWith("¿Quitar «Biometría hemática» del expediente?"))
+        workspace.answer(true)
+        waitFor { labRows().size == before }
+        assertNotNull("El archivo se queda", labCache.read(sha))
+    }
+
+    /** Las fotos de verdad solo se decodifican en un equipo; en la JVM se comprueba lo que no depende de eso: dos PDF a la vez. */
+    @Test
+    fun loQueNoSePuedeAgregarSeDiceYElFormularioSigueAbierto() {
+        workspace.openChart(ana)
+        show()
+        waitTag(TabletTags.CHART_PRIMARY)
+        workspace.labResults.startAdd(ana, listOf(LabFileInput("a.pdf", samplePdf), LabFileInput("b.pdf", samplePdf)), emptyList())
+        waitTag(LabResultTags.FORM)
+        waitText("2 archivos: a.pdf, b.pdf")
+        compose.onNodeWithTag(LabResultTags.TITLE).performTextReplacement("Algo")
+        compose.onNodeWithTag(LabResultTags.SAVE).performClick()
+        waitTag(LabResultTags.ERROR)
+        waitText("Elija un solo PDF")
+        assertTrue(labCache.pending().isEmpty())
+        waitFor { workspace.labResults.form?.busy == false }
+        compose.onNodeWithTag(LabResultTags.CANCEL).assertIsEnabled().performClick()
+        waitFor { workspace.labResults.form == null }
     }
 
     @Test

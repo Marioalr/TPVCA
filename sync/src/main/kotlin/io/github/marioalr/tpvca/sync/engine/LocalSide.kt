@@ -94,6 +94,9 @@ class LocalSide(private val store: SyncStore, private val guard: (() -> Any?) ->
         /** El cronómetro de la consulta oculto: se recuerda en este equipo, como `HideConsultationTimer` de la PC. */
         const val CONSULTATION_TIMER_HIDDEN = "ConsultationTimerHidden"
 
+        /** «Mostrar (…)» desmarcada la última vez, en este equipo (`LocalPreferences.HidePrescriptionActiveIngredient`). No se sincroniza. */
+        const val PRESCRIPTION_INGREDIENT_HIDDEN = "PrescriptionIngredientHidden"
+
         /** `LocalDataLabel` de la PC, con mayúscula. */
         fun labelOf(entityType: String): String = when (entityType) {
             "Category" -> "Categorías propias"

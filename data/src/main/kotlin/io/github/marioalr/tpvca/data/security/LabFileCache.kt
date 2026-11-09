@@ -5,13 +5,19 @@ import java.io.File
 
 /**
  * Los resultados de laboratorio ya bajados: cifrados con AES-GCM ([SecretWrapper] con su propia llave del Keystore), en `noBackupFilesDir` y por SHA-256. LRU con
- * tope ([maxBytes]: 200 MB en el celular, `PENDIENTES_ANDROID.md`). Se borra al revocar el equipo, llave incluida. Lo leído se revisa contra su SHA-256: un archivo
+ * tope ([maxBytes]: 200 MB en el celular, 500 en la tablet, `PENDIENTES_ANDROID.md`). Se borra al revocar el equipo, llave incluida. Lo leído se revisa contra su SHA-256: un archivo
  * dañado o una llave perdida solo vuelve a bajar.
+ *
+ * **Lo que la tablet agregó y falta subir** (K7) vive aparte, en `pendientes/`, igual de cifrado: no entra al LRU (nunca se tira lo que no está en la nube) y estar ahí es lo que
+ * dice que falta subirlo, como `LabFileState.UploadedTo` de la PC. Al subirse pasa a la caché ([settle]).
  */
 class LabFileCache(private val dir: File, private val wrapper: SecretWrapper, private val maxBytes: Long = PHONE_MAX_BYTES) {
+    private val pendingDir = File(dir, PENDING)
+
     @Synchronized
-    fun read(sha256: String): ByteArray? {
-        val file = File(dir, name(sha256))
+    fun read(sha256: String): ByteArray? = readFrom(File(pendingDir, name(sha256)), sha256, touch = false) ?: readFrom(File(dir, name(sha256)), sha256, touch = true)
+
+    private fun readFrom(file: File, sha256: String, touch: Boolean): ByteArray? {
         if (!file.isFile) return null
         return try {
             val plain = wrapper.unwrap(file.readBytes())
@@ -19,7 +25,7 @@ class LabFileCache(private val dir: File, private val wrapper: SecretWrapper, pr
                 file.delete()
                 null
             } else {
-                file.setLastModified(System.currentTimeMillis())
+                if (touch) file.setLastModified(System.currentTimeMillis())
                 plain
             }
         } catch (_: SecretUnreadableException) {
@@ -30,11 +36,42 @@ class LabFileCache(private val dir: File, private val wrapper: SecretWrapper, pr
 
     @Synchronized
     fun write(sha256: String, content: ByteArray) {
-        dir.mkdirs()
-        val temporary = File(dir, name(sha256) + ".tmp")
-        temporary.writeBytes(wrapper.wrap(content))
-        check(temporary.renameTo(File(dir, name(sha256)))) { "No se pudo guardar el resultado." }
+        writeTo(dir, sha256, content)
         trim(keep = name(sha256))
+    }
+
+    private fun writeTo(folder: File, sha256: String, content: ByteArray) {
+        folder.mkdirs()
+        val temporary = File(folder, name(sha256) + ".tmp")
+        temporary.writeBytes(wrapper.wrap(content))
+        check(temporary.renameTo(File(folder, name(sha256)))) { "No se pudo guardar el resultado." }
+    }
+
+    /** Un resultado agregado en este equipo: se guarda antes que su fila y queda pendiente de subir. Ya subido, o ya en la caché, no se vuelve a pendiente. */
+    @Synchronized
+    fun writePending(sha256: String, content: ByteArray) {
+        if (File(dir, name(sha256)).isFile || File(pendingDir, name(sha256)).isFile) return
+        writeTo(pendingDir, sha256, content)
+    }
+
+    /** Los SHA-256 que faltan por subir, los más nuevos primero. */
+    @Synchronized
+    fun pending(): List<String> = pendingDir.listFiles().orEmpty().filter { it.isFile && !it.name.endsWith(".tmp") }.sortedByDescending { it.lastModified() }.map { it.name }
+
+    @Synchronized
+    fun isPending(sha256: String): Boolean = File(pendingDir, name(sha256)).isFile
+
+    /** Ya está en la nube (o ya no hace falta): pasa a la caché como cualquier otro, donde el LRU manda. */
+    @Synchronized
+    fun settle(sha256: String) {
+        val pending = File(pendingDir, name(sha256))
+        if (!pending.isFile) return
+        dir.mkdirs()
+        val target = File(dir, name(sha256))
+        if (target.isFile || pending.renameTo(target)) {
+            pending.delete()
+            trim(keep = name(sha256))
+        }
     }
 
     private fun trim(keep: String) {
@@ -60,5 +97,7 @@ class LabFileCache(private val dir: File, private val wrapper: SecretWrapper, pr
 
     companion object {
         const val PHONE_MAX_BYTES = 200_000_000L
+        const val TABLET_MAX_BYTES = 500_000_000L
+        private const val PENDING = "pendientes"
     }
 }

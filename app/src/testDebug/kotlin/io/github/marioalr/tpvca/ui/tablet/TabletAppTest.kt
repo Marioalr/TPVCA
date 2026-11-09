@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -1126,14 +1127,22 @@ class TabletAppTest {
         assertEquals("11:30", form.slotTime)
     }
 
+    /** Desde K7 «Quitar» es de verdad: pregunta antes, y al «No» el resultado sigue. Sin caché de archivos en esta prueba, «Agregar» se ve deshabilitado. */
     @Test
-    fun quitarUnResultadoSeVeDeshabilitado() {
+    fun quitarUnResultadoPreguntaAntesYAgregarPideLaCache() {
         workspace.openChart(anaId())
         show()
         waitText("Biometría hemática")
-        val node = compose.onAllNodesWithContentDescription("Quitar, en la siguiente versión").fetchSemanticsNodes().single()
-        assertTrue(SemanticsProperties.Disabled in node.config)
-        assertFalse(SemanticsActions.OnClick in node.config)
+        val quitar = compose.onAllNodesWithContentDescription("Quitar el resultado: Biometría hemática").fetchSemanticsNodes().single()
+        assertTrue(SemanticsActions.OnClick in quitar.config)
+        assertFalse(SemanticsProperties.Disabled in quitar.config)
+        compose.onNodeWithContentDescription("Quitar el resultado: Biometría hemática").performScrollTo().performClick()
+        waitFor { workspace.confirm != null }
+        assertTrue(workspace.confirm!!.message.startsWith("¿Quitar «Biometría hemática» del expediente?"))
+        workspace.answer(false)
+        compose.waitForIdle()
+        waitText("Biometría hemática")
+        compose.onNodeWithTag(LabResultTags.ADD).assertIsNotEnabled()
     }
 
     private fun hasTextExactly(value: String) = androidx.compose.ui.test.hasText(value)

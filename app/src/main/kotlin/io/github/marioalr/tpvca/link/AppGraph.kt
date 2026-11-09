@@ -19,6 +19,7 @@ import io.github.marioalr.tpvca.data.security.KeystoreSecretWrapper
 import io.github.marioalr.tpvca.data.security.LabFileCache
 import io.github.marioalr.tpvca.data.security.WrappedFile
 import io.github.marioalr.tpvca.documents.DeviceFiles
+import io.github.marioalr.tpvca.documents.LabFileStore
 import io.github.marioalr.tpvca.domain.devices.DeviceRole
 import io.github.marioalr.tpvca.documents.LabFiles
 import io.github.marioalr.tpvca.documents.SharedDocuments
@@ -55,7 +56,7 @@ class AppGraph(context: Context) {
     /** Se cierra antes de borrar nada; se abre otra vez cuando hay datos. */
     private val gate = DataGate()
     private val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val labCache = LabFileCache(File(app.noBackupFilesDir, "laboratorio"), KeystoreSecretWrapper(app, "tpvca.laboratorio"))
+    private val labCache = LabFileCache(File(app.noBackupFilesDir, "laboratorio"), KeystoreSecretWrapper(app, "tpvca.laboratorio"), labCacheBytes(app))
     private val deviceFiles = DeviceFiles(app, labCache)
     private val assetsDir = File(app.filesDir, "membrete")
 
@@ -97,6 +98,9 @@ class AppGraph(context: Context) {
 
     private fun currentRole(): DeviceRole? = flow.role
 
+    /** Los archivos de laboratorio que la tablet agrega y sube (K7); el celular no sube nada clínico. */
+    private val labStore = LabFileStore(labCache, gate)
+
     val controller = LinkController(
         flow,
         states,
@@ -105,6 +109,7 @@ class AppGraph(context: Context) {
         CoroutineScope(SupervisorJob() + Dispatchers.Default),
         Dispatchers.IO,
         syncingFlow = syncing,
+        labUploads = labStore,
     )
 
     /** Lo que leen y comparten las pantallas del celular. Abre la base hasta que haga falta. */
@@ -137,6 +142,8 @@ class AppGraph(context: Context) {
                 quickSync = { controller.quickSync() },
                 noteLocalWrite = { controller.noteLocalWrite() },
                 refreshNow = { controller.refreshNow() },
+                labStore = labStore,
+                uploadLabFiles = { controller.uploadLabFiles() },
                 isOnline = {
                     val connectivity = app.getSystemService(android.net.ConnectivityManager::class.java)
                     connectivity?.getNetworkCapabilities(connectivity.activeNetwork)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
@@ -180,6 +187,9 @@ class AppGraph(context: Context) {
 
     private companion object {
         const val FOLIO_WAIT_SECONDS = 2L
+
+        /** 500 MB en una tablet, 200 en un celular (`PENDIENTES_ANDROID.md`): el ancho más corto de la pantalla lo dice. */
+        fun labCacheBytes(context: Context): Long = if (context.resources.configuration.smallestScreenWidthDp >= 600) LabFileCache.TABLET_MAX_BYTES else LabFileCache.PHONE_MAX_BYTES
 
         /** Sin datos del paciente en el nombre. La PC lo abre con *Importar*. */
         const val EXPORT_FILE = "tpvc-cambios-sin-subir.db"

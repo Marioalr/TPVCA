@@ -82,7 +82,7 @@ Prueba: `LinkCodeGoldenTest`. Cómo se usa: [`SINCRONIZACION.md`](SINCRONIZACION
 
 | Vector | Kotlin | Casos | Estado |
 |---|---|---|---|
-| `lab-files.json` | `LabFileRules.chunks`, `chunkCount`, `sha256`, `STATE_SQL`, `READ_CHUNKS_SQL` y los topes de bajar; `LabFileDownloader` (en `:sync`) | 6/6 (de `sql`, lo de bajar: `state` y `readChunks`) | 🟡 Lo de bajar. Subir es de la tablet: **K7** |
+| `lab-files.json` | `LabFileRules.chunks`, `chunkCount`, `sha256`, `travelBytes`, el SQL de bajar y de subir y los topes; `LabFileDownloader` y, desde K7, `LabFileUploader` (en `:sync`). Lo de la PC principal (`archived`, `evictionCandidates`, `evictChunks`, `evict`, `orphans`) no se porta: Kotlin nunca desaloja ni borra trozos | 6/6 | ✅ |
 
 Prueba: `LabFilesGoldenTest`. Lo demás de K4 no trae vector nuevo: arma lo portado para las pantallas, con pruebas propias (`BusinessPanelTest`):
 
@@ -112,7 +112,7 @@ En `:domain`, paquete `consultation`; lo que usa los renglones de las hojas o se
 | `synced-json-columns.json` | `SheetRows`, `ServiceRowSupplies`, sobre `PatientSheets` (en `:sync`) | 63/63 | ✅ |
 | `sheet-charges.json` | `ConsultationAccount` (en `:sync`) | 13/13 | ✅ |
 
-Pruebas: `ConsultationGoldenTest` (`:domain`) y `ConsultationRulesGoldenTest` (`:sync`). Lo que no trae vector, con pruebas propias: `CheckoutCartTest`, `ConsultationNoteRulesTest` (`ConsultationNoteRules`: T/A, chips, los valores por omisión de la nota, el reloj; `ConsultationRecordRules`: «Repetir» la receta anterior) y `ConsultationAccountTest`.
+Pruebas: `ConsultationGoldenTest` (`:domain`) y `ConsultationRulesGoldenTest` (`:sync`). Lo que no trae vector, con pruebas propias: `CheckoutCartTest`, `ConsultationNoteRulesTest` (`ConsultationNoteRules`: T/A, chips, los valores por omisión de la nota, el reloj; `ConsultationRecordRules`: «Repetir» la receta anterior), `ConsultationAccountTest`, `LabCatalogTest` (`LabCatalog`, `LabOrderRules` y `LabOrderSheet`, con los casos de `LabOrderTests.cs` de la PC: la búsqueda por abreviatura y palabras, los frecuentes y paquetes, los estudios que el consultorio ya pidió, la orden sin repetidos, la hoja por áreas y sus dos columnas) y `JpegPdfWriterTest` (`JpegPdfWriter`: el PDF con una foto por página, en `:domain`). En `:sync`, `LabFileUploaderTest`: subir con el SQL del vector, continuar tras un corte, el tope de la nube y el freno del día.
 
 Cómo difiere de la PC:
 

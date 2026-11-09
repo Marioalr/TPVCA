@@ -27,6 +27,7 @@ import io.github.marioalr.tpvca.ui.agenda.AgendaController
 import io.github.marioalr.tpvca.ui.agenda.AgendaPatient
 import io.github.marioalr.tpvca.ui.agenda.AppointmentFormState
 import io.github.marioalr.tpvca.ui.phone.PhoneEnv
+import io.github.marioalr.tpvca.documents.LabFileStore
 import io.github.marioalr.tpvca.ui.phone.PreviewDoc
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -52,6 +53,10 @@ class TabletEnv(
     val refreshNow: () -> Unit,
     /** Hay red de verdad: en la app, una red validada; decide si el folio de la consulta lleva la letra del equipo. */
     val isOnline: () -> Boolean,
+    /** Los archivos de laboratorio de este equipo (K7): guardar el que se agrega y saber cuál está aquí. `null` sin caché (pruebas). */
+    val labStore: LabFileStore? = null,
+    /** Se agregó un resultado: se intenta subir ya. */
+    val uploadLabFiles: () -> Unit = {},
 )
 
 sealed interface TabletPage {
@@ -125,6 +130,9 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
 
     /** La consulta en curso (K7). */
     val consultation = ConsultationController(this, scope, io)
+
+    /** Los resultados de laboratorio de la ficha: agregar y quitar (K7). */
+    val labResults = LabResultsEditor(this, scope, io)
 
     class Toast(val text: String, val warning: Boolean, val action: ToastAction? = null)
 

@@ -45,6 +45,35 @@ class LabFileCacheTest {
     }
 
     @Test
+    fun loPendienteDeSubirNoEntraAlTopeYAlSubirsePasaALaCache() {
+        val cache = cache(max = 1000)
+        val content = bytes(5)
+        val sha = LabFileRules.sha256(content)
+        cache.writePending(sha, content)
+        assertEquals(listOf(sha), cache.pending())
+        assertTrue(cache.isPending(sha))
+        assertArrayEquals("Se lee igual que uno bajado", content, cache.read(sha))
+        assertFalse("En disco va cifrado", File(temp.root, "lab/pendientes/$sha").readBytes().toList().windowed(16).contains(content.take(16)))
+        // Llenar la caché no lo tira
+        for (i in 10..14) {
+            val other = bytes(i)
+            cache.write(LabFileRules.sha256(other), other)
+        }
+        assertArrayEquals(content, cache.read(sha))
+        assertEquals(listOf(sha), cache.pending())
+        // Subido: a la caché, donde ya sí manda el LRU
+        cache.settle(sha)
+        assertTrue(cache.pending().isEmpty())
+        assertFalse(cache.isPending(sha))
+        assertTrue(File(temp.root, "lab/$sha").isFile)
+        assertArrayEquals(content, cache.read(sha))
+        // Volver a agregar lo que ya está no lo vuelve pendiente
+        cache.writePending(sha, content)
+        assertTrue(cache.pending().isEmpty())
+        cache.settle("0".repeat(64))
+    }
+
+    @Test
     fun conElTopeSaleLoMenosUsado() {
         val cache = cache(max = 1000)
         val shas = (1..3).map { i ->

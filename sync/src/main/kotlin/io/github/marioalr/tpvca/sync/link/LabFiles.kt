@@ -10,19 +10,55 @@ import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 
 /**
- * Los archivos de laboratorio al bajarlos (regla «Resultados de laboratorio», paso 8.12b, `TursoSyncService.LabFiles.cs`). Vectores:
- * `contracts/golden/lab-files.json`. El SQL es literal. El celular nunca sube ni archiva: lo de subir es de K7.
+ * Los archivos de laboratorio (regla «Resultados de laboratorio», paso 8.12b, `TursoSyncService.LabFiles.cs`). Vectores: `contracts/golden/lab-files.json`. El SQL es literal.
+ * Subir es solo de la tablet ([LabFileUploader]); el celular solo baja. Lo de la PC principal (archivar, desalojar, huérfanos) no se porta: Kotlin nunca desaloja ni borra trozos.
  */
 object LabFileRules {
     const val CHUNK_SIZE = 524_288
     const val CHUNKS_PER_READ = 4
     const val MAX_FILE_BYTES = 10_485_760L
+    const val LARGE_PDF_BYTES = 3_145_728L
+    const val MAX_LONG_SIDE_PIXELS = 2000
+    const val JPEG_QUALITY = 80
+    const val MAX_PHOTOS = 20
+    const val PDF_MIME_TYPE = "application/pdf"
+    const val JPEG_MIME_TYPE = "image/jpeg"
+
+    /** El tope de los resultados en la nube. */
+    const val CLOUD_CAP_BYTES = 2_000_000_000L
+
+    /** Si toda la base pasa de esto, no se sube ningún archivo. */
+    const val CLOUD_SPACE_STOP_BYTES = 4_000_000_000L
+
+    /** El freno de subida de la tablet: 150 MB de base64 al día. */
+    const val ANDROID_UP_BYTES_PER_DAY = 150_000_000L
 
     /** `state`. */
     const val STATE_SQL = "SELECT SizeBytes, ChunkSize, ChunkCount, MimeType, OriginDeviceId, CompletedAtUtc, ArchivedAtUtc, EvictedAtUtc FROM LabBlobs WHERE Sha256 = ?;"
 
     /** `readChunks`: del primer trozo que falta, de [CHUNKS_PER_READ] en [CHUNKS_PER_READ]. */
     const val READ_CHUNKS_SQL = "SELECT ChunkIndex, Data FROM LabBlobChunks WHERE Sha256 = ? AND ChunkIndex >= ? ORDER BY ChunkIndex LIMIT 4;"
+
+    /** `existingChunks`. */
+    const val EXISTING_CHUNKS_SQL = "SELECT ChunkIndex FROM LabBlobChunks WHERE Sha256 = ?;"
+
+    /** `usage`. */
+    const val USAGE_SQL = "SELECT COUNT(*) AS Files, ifnull(SUM(SizeBytes), 0) AS Bytes FROM LabBlobs WHERE EvictedAtUtc IS NULL;"
+
+    /** `cloudSpace`: (page_count − freelist_count) × page_size. */
+    val CLOUD_SPACE_SQL = listOf("PRAGMA page_count;", "PRAGMA freelist_count;", "PRAGMA page_size;")
+
+    /** `register`: Sha256, SizeBytes, ChunkSize, ChunkCount, MimeType, OriginDeviceId. */
+    const val REGISTER_SQL = "INSERT INTO LabBlobs (Sha256, SizeBytes, ChunkSize, ChunkCount, MimeType, CreatedAtUtc, OriginDeviceId) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f','now'), ?) ON CONFLICT(Sha256) DO NOTHING;"
+
+    /** `insertChunk`: Sha256, ChunkIndex, Data. */
+    const val INSERT_CHUNK_SQL = "INSERT INTO LabBlobChunks (Sha256, ChunkIndex, Data) VALUES (?, ?, ?) ON CONFLICT(Sha256, ChunkIndex) DO NOTHING;"
+
+    /** `close`: Sha256, Sha256. Solo cierra si ya están todos sus trozos. */
+    const val CLOSE_SQL = "UPDATE LabBlobs SET CompletedAtUtc = strftime('%Y-%m-%d %H:%M:%f','now') WHERE Sha256 = ? AND CompletedAtUtc IS NULL AND (SELECT COUNT(*) FROM LabBlobChunks WHERE Sha256 = ?) = ChunkCount;"
+
+    /** Lo que viaja de un trozo: su base64, 4 × ceil(bytes / 3). Es lo que cuenta el freno. */
+    fun travelBytes(bytes: Long): Long = 4 * ((bytes + 2) / 3)
 
     data class Chunk(val index: Int, val size: Int, val sha256: String)
 

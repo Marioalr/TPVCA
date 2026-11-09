@@ -162,7 +162,7 @@ fun ConsultationScreen(workspace: TabletWorkspace) {
 }
 
 /**
- * Aquí abren las hojas de las partes 2 y 3 (`ConsultationSheet`). TODO(K7 parte 2 y 3): las que faltan; hoy solo llegan las que tienen `ready`.
+ * Aquí abren las hojas de la consulta (`ConsultationSheet`).
  */
 @Composable
 private fun ConsultationSheetHost(workspace: TabletWorkspace, sheet: ConsultationSheet) {

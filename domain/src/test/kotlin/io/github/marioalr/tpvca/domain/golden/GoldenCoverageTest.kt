@@ -67,7 +67,7 @@ class GoldenCoverageTest {
 
     /** Portados en parte: archivo → los tipos de caso que faltan y su paso (la prueba del archivo los salta por nombre). */
     private val partial = mapOf(
-        "lab-files.json" to "K7 (subir y lo de la PC principal: el celular solo baja)",
+        "lab-files.json" to "solo de la PC principal: archived, evictionCandidates, evictChunks, evict y orphans (Android nunca desaloja ni borra trozos)",
     )
 
     /** Los vectores pendientes: archivo → el paso que los porta. */

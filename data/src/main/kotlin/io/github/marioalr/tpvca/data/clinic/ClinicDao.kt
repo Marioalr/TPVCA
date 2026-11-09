@@ -106,6 +106,10 @@ interface ClinicDao {
     @Query("SELECT * FROM PatientConsultations WHERE PatientRecordSyncId = :patient AND LabOrderJson <> '' ORDER BY Date DESC")
     fun labOrderConsultations(patient: String): List<PatientConsultationEntity>
 
+    /** Las órdenes de laboratorio de todas las consultas: lo que el consultorio ya pidió fuera del catálogo se vuelve a sugerir. */
+    @Query("SELECT LabOrderJson FROM PatientConsultations WHERE LabOrderJson <> ''")
+    fun labOrderJsons(): List<String>
+
     @Query("SELECT * FROM LabResults WHERE PatientRecordSyncId = :patient ORDER BY ResultDate DESC, SyncId")
     fun labResults(patient: String): List<LabResultEntity>
 

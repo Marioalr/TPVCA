@@ -1,5 +1,6 @@
 package io.github.marioalr.tpvca.data.clinic
 
+import io.github.marioalr.tpvca.domain.model.LabStudy
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -141,8 +142,8 @@ class ClinicReaderTest {
         assertEquals("Escrito a mano", rows[2].medicineName)
         assertEquals("2", rows[2].dosage)
         assertEquals(emptyList<Any>(), ClinicMappers.prescriptions("esto no es JSON"))
-        assertEquals(listOf("BH") to "En ayunas", ClinicMappers.labOrder("""{"Studies":[{"Name":"BH","Area":"H"}],"Indications":"En ayunas"}"""))
-        assertEquals(emptyList<String>() to "", ClinicMappers.labOrder(""))
+        assertEquals(listOf(LabStudy("BH", "H")) to "En ayunas", ClinicMappers.labOrder("""{"Studies":[{"Name":"BH","Area":"H"}],"Indications":"En ayunas"}"""))
+        assertEquals(emptyList<LabStudy>() to "", ClinicMappers.labOrder(""))
     }
 
     @Test

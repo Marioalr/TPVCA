@@ -1,5 +1,7 @@
 package io.github.marioalr.tpvca.data.clinic
 
+import io.github.marioalr.tpvca.domain.consultation.LabCatalog
+import io.github.marioalr.tpvca.domain.consultation.LabCatalogStudy
 import io.github.marioalr.tpvca.data.entity.InventoryMovementEntity
 import io.github.marioalr.tpvca.data.entity.LabResultEntity
 import io.github.marioalr.tpvca.data.entity.PatientConsultationEntity
@@ -110,6 +112,9 @@ class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -
     private fun consultationRow(e: PatientConsultationEntity) = ConsultationRow(e.syncId, ClinicMappers.consultation(e))
 
     fun labResults(patient: String): List<LabResultRow> = gate.read { dao().labResults(patient).map(::labResult) }
+
+    /** Los estudios que el consultorio ya pidió fuera del catálogo, los más pedidos primero (`GetCustomLabStudiesAsync`). */
+    fun customLabStudies(): List<LabCatalogStudy> = gate.read { LabCatalog.customStudies(dao().labOrderJsons().flatMap { ClinicMappers.labOrder(it).first }) }
 
     private fun labResult(e: LabResultEntity) = LabResultRow(
         e.syncId, e.title, e.laboratory, ClinicMappers.dateOnlyOrNull(e.resultDate), e.notes, e.mimeType, e.pageCount.toInt(), e.sizeBytes, e.fileName, e.contentSha256,

@@ -97,6 +97,8 @@ class CatalogBrowser internal constructor(private val consultation: Consultation
 
     /** El botón de un producto: un medicamento se elige en la receta; un insumo se agrega. El catálogo se cierra. */
     fun pick(product: Product) {
+        // El segundo de dos toques: el catálogo ya se cerró, y otro `closeSheet` cerraría también la hoja de abajo
+        if (consultation.sheet != ConsultationSheet.CatalogBrowser) return
         when (mode) {
             Mode.Medications -> consultation.prescription.choose(product)
             Mode.Supplies -> consultation.suppliesEditor.add(product)
@@ -106,6 +108,7 @@ class CatalogBrowser internal constructor(private val consultation: Consultation
     }
 
     fun pick(service: ClinicalService) {
+        if (consultation.sheet != ConsultationSheet.CatalogBrowser) return
         consultation.servicesEditor.add(service)
         consultation.closeSheet()
     }

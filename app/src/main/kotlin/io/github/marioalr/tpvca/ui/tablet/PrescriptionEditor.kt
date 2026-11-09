@@ -253,6 +253,8 @@ class PrescriptionEditor internal constructor(private val consultation: Consulta
 
     /** La hoja se abre: la captura empieza limpia y la casilla vuelve a la última elección de este equipo. */
     internal fun onOpen() {
+        // Nunca una alerta de antes: su «Recetar de todos modos» agregaría un medicamento viejo
+        allergyAlert = null
         resetCapture()
         planIndication.cancel()
         sheetIndication.cancel()
@@ -263,6 +265,8 @@ class PrescriptionEditor internal constructor(private val consultation: Consulta
     }
 
     internal fun onClose() {
+        // Cerrar la hoja con la alerta abierta es contestarla «No recetarlo», lo seguro (`AllergyAlertView` de la PC no se cierra sin respuesta)
+        allergyAlert = null
         search.cancel()
         captureIndications.close()
         sheetIndication.cancel()
@@ -435,6 +439,8 @@ class PrescriptionEditor internal constructor(private val consultation: Consulta
         val patient = consultation.patient
         val check = AllergyRules.checkMedication(patient, pending.product, pending.name, pending.activeIngredient, catalog.account.products)
         if (check.hasConflict) {
+            // Se cerró la hoja mientras se leía el catálogo: es «No recetarlo»; una alerta sin hoja no se vería ni se podría contestar
+            if (consultation.sheet != ConsultationSheet.Prescription) return false
             allergyAlert = AllergyAlert(check.warningDetails, patient?.allergies?.ifBlank { null } ?: "Sin alergias declaradas", pending)
             return true
         }
@@ -638,6 +644,8 @@ class PrescriptionEditor internal constructor(private val consultation: Consulta
      * alerta de alergia pide confirmar): la salida no sigue y nada se pierde.
      */
     suspend fun commitPending(addPendingMedicine: Boolean = false): Boolean {
+        // Una alerta de alergia sin contestar: nada sigue hasta que el médico la conteste
+        if (allergyAlert != null) return false
         for (editor in listOf(planIndication, sheetIndication)) {
             if (!editor.isEditing) continue
             editor.saveNow()

@@ -36,8 +36,8 @@ class LabFileStore(private val cache: LabFileCache, private val gate: DataGate =
         return sha
     }
 
-    /** Está en este equipo (bajado o agregado aquí). */
-    fun isLocal(sha256: String): Boolean = runCatching { gate.read { cache.read(sha256) != null } }.getOrDefault(false)
+    /** Está en este equipo (bajado o agregado aquí), como `File.Exists` de la PC: sin descifrarlo. Si estuviera dañado, al abrirlo se vuelve a bajar. */
+    fun isLocal(sha256: String): Boolean = runCatching { gate.read { cache.contains(sha256) } }.getOrDefault(false)
 
     /** Agregado aquí y todavía sin subir. */
     fun isPending(sha256: String): Boolean = runCatching { gate.read { cache.isPending(sha256) } }.getOrDefault(false)

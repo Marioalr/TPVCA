@@ -1014,9 +1014,9 @@ class ConsultationController internal constructor(private val workspace: TabletW
         session.charging = true
         scope.launch {
             try {
-                val step = session.cart.chargeStep()
+                val first = session.cart.chargeStep()
                 session.change { }
-                if (step is ChargeStep.Refused) return@launch
+                if (first is ChargeStep.Refused) return@launch
                 // H11: 3 s como máximo, sin red no espera. Sin conexión se cobra igual
                 try {
                     env.quickSync()
@@ -1027,6 +1027,11 @@ class ConsultationController internal constructor(private val workspace: TabletW
                 }
                 // Regresó a la consulta mientras se esperaba a la nube: no se cobra nada
                 if (checkout !== session) return@launch
+                // Como la PC (`ChargeAsync`): los renglones, el total y el efectivo salen de la cuenta de ahora, no de la del toque. Si se vació mientras tanto, no se cobra nada
+                val step = session.cart.chargeStep()
+                session.change { }
+                if (step is ChargeStep.Refused) return@launch
+                if (first is ChargeStep.Ready && step !is ChargeStep.Ready) return@launch
                 session.writing = true
                 saveJob?.cancel()
                 val ready = step as? ChargeStep.Ready

@@ -79,6 +79,8 @@ fun TabletApp(workspace: TabletWorkspace, chrome: TabletChrome) {
         onDispose { lifecycle.lifecycle.removeObserver(observer) }
     }
     BackHandler(enabled = workspace.preview == null && (workspace.page != TabletPage.Hub || workspace.agendaOpen || workspace.detail != null)) { workspace.back() }
+    // La vista del PDF tapa todo: Atrás la cierra a ella, nunca la app
+    BackHandler(enabled = workspace.preview != null) { workspace.preview = null }
 
     Box(Modifier.fillMaxSize().background(colors.background)) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
@@ -98,7 +100,11 @@ fun TabletApp(workspace: TabletWorkspace, chrome: TabletChrome) {
         if (workspace.agendaOpen) AgendaPanel(workspace, chrome.dataVersion)
         workspace.detail?.let { ConsultationDetailSheet(workspace, it) }
         Toast(workspace)
-        workspace.preview?.let { doc -> PreviewScreen(workspace.env.phone, doc) { workspace.preview = null } }
+        workspace.preview?.let { doc ->
+            Box(Modifier.fillMaxSize().background(colors.background).safeDrawingPadding()) {
+                PreviewScreen(workspace.env.phone, doc) { workspace.preview = null }
+            }
+        }
         workspace.confirm?.let { request ->
             AlertDialog(
                 onDismissRequest = { workspace.answer(false) },

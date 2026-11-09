@@ -365,6 +365,24 @@ class ConsultationTabletTest {
         assertEquals(0, store.outbox().size)
     }
 
+    /** La vista del PDF tapa la consulta: Atrás la cierra a ella, nunca la app, y la consulta sigue ahí. */
+    @Test
+    fun atrasEnLaVistaDelPdfSoloLaCierra() {
+        workspace.goPatients()
+        show()
+        waitTag(TabletTags.attend("10:30"))
+        compose.onNodeWithTag(TabletTags.attend("10:30")).performClick()
+        waitTag(TabletTags.CONSULTATION)
+        val file = java.io.File(ApplicationProvider.getApplicationContext<Context>().cacheDir, "vista-prueba.pdf").apply { writeText("%PDF-1.4") }
+        compose.runOnIdle { workspace.preview = io.github.marioalr.tpvca.ui.phone.PreviewDoc("Receta", file, "application/pdf") }
+        compose.waitForIdle()
+        compose.runOnIdle { (activity as androidx.activity.ComponentActivity).onBackPressedDispatcher.onBackPressed() }
+        compose.waitForIdle()
+        assertNull(workspace.preview)
+        assertFalse(activity!!.isFinishing)
+        compose.onNodeWithTag(TabletTags.CONSULTATION).assertExists()
+    }
+
     /** Dos toques seguidos, y un toque en otra acción, con el primero todavía en camino: una sola consulta y un solo borrador. */
     @Test
     fun dosToquesAlEmpezarHacenUnaConsulta() {

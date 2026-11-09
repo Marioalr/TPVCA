@@ -108,6 +108,8 @@ class ConsultationWritesTest {
         val sale = done.sale!!
         assertEquals(d.chargeSaleSyncId, sale.syncId)
         assertTrue(sale.folio, sale.folio.startsWith("TKT-") && "-T1-" !in sale.folio)
+        val saleRow = rows("Sales").getValue(sale.syncId)
+        assertEquals("El ticket dice el paciente, en las dos columnas como la PC", listOf("Ana", "Ana"), listOf(saleRow["CustomerName"], saleRow["PatientName"]))
 
         val note = rows("PatientConsultations").values.single()
         assertEquals(d.folio, note["Folio"])

@@ -572,7 +572,7 @@ class WriteEngine(
 
         val saleTable = writer.table("Sales")
         val sale = mapOf<String, Any?>(
-            "Folio" to folio, "LedgerVersion" to CURRENT_LEDGER_VERSION.toString(), "Date" to now, "CustomerName" to client, "PaymentMethod" to method, "Cashier" to responsible, "Total" to total.toPlainString(),
+            "Folio" to folio, "LedgerVersion" to CURRENT_LEDGER_VERSION.toString(), "Date" to now, "CustomerName" to client, "PatientName" to client, "PaymentMethod" to method, "Cashier" to responsible, "Total" to total.toPlainString(),
         )
         writes.add(0, RowWrite(saleTable.table, saleId, writer.buildRow(saleTable, saleId, sale, saleStamp), isNew = true))
         marks.add(0, writer.mark(saleTable, saleId))

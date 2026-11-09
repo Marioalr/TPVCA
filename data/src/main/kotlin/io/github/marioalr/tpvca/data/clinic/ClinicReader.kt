@@ -269,7 +269,7 @@ class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -
                 folio = it.folio,
                 originalFolio = it.originalFolio,
                 date = ClinicMappers.dateTime(it.date),
-                patientName = it.patientName,
+                patientName = it.patientName.ifBlank { it.customerName },
                 paymentMethod = it.paymentMethod,
                 cashier = it.cashier,
                 items = items.map { i -> SaleReceiptItem(i.productName, i.quantity.toInt(), ClinicMappers.decimal(i.unitPrice)) },

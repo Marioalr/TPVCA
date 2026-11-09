@@ -217,12 +217,13 @@ private fun TopBar(workspace: TabletWorkspace, draft: ConsultationDraft) {
             Column(Modifier.widthIn(min = 200.dp)) {
                 TText(patient?.fullName ?: draft.patientName, size = TType.heading, weight = FontWeight.Bold)
                 TCaption(metaLine(patient, workspace.today(), draft.folio))
+                // Debajo y no junto a los botones: así su largo no empuja «Terminar consulta» a otro renglón
+                if (consultation.autosaveStatus.isNotEmpty()) TCaption(consultation.autosaveStatus)
             }
             if (patient != null) AllergyBadge(patient)
             TimerButton(consultation.timerVisible, elapsed, consultation::toggleTimer)
             Box(Modifier.weight(1f, fill = true))
             TButton("Expediente", { workspace.showChartFromConsultation(draft.patientSyncId) }, tag = TabletTags.CONSULTATION_CHART)
-            if (consultation.autosaveStatus.isNotEmpty()) TCaption(consultation.autosaveStatus)
             // Enviada a otro equipo: se ve, pero aquí no se descarta ni se termina
             if (!draft.isHandedOff) {
                 TButton("Descartar", consultation::discard, kind = TButtonKind.DangerGhost, tag = TabletTags.CONSULTATION_DISCARD)

@@ -429,26 +429,36 @@ private fun TaField(value: String, readOnly: Boolean, onChange: (String) -> Unit
 private fun Diagnosis(workspace: TabletWorkspace, draft: ConsultationDraft, readOnly: Boolean) {
     val consultation = workspace.consultation
     val colors = LocalTpvcColors.current
-    TField(draft.diagnosis, consultation::setDiagnosis, Modifier.fillMaxWidth(), readOnly = readOnly, tag = TabletTags.field("Diagnosis"))
-    TCaption("Escriba la clave o el nombre: aparecen sugerencias del catálogo CIE-10.")
-    if (consultation.cie10Suggestions.isNotEmpty()) {
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, colors["ThemeBorder"], RoundedCornerShape(8.dp))) {
-            for (item in consultation.cie10Suggestions) {
-                key(item.code) {
-                    Row(
-                        Modifier.fillMaxWidth().heightIn(min = TOUCH_MIN).clickable(role = Role.Button) { consultation.selectCie10(item) }.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        TBadge(item.code, colors.surfaceSubtle, colors.text)
-                        TText(item.name, Modifier.weight(1f), size = TType.detail)
-                        TCaption(item.category)
+    // Con el teclado abierto la lista quedaba debajo de él: el campo y su lista se traen juntos a la vista cada vez que cambia
+    val suggestionsInView = remember { BringIntoViewRequester() }
+    LaunchedEffect(consultation.cie10Suggestions) {
+        if (consultation.cie10Suggestions.isNotEmpty()) {
+            kotlinx.coroutines.delay(150)
+            suggestionsInView.bringIntoView()
+        }
+    }
+    Column(Modifier.fillMaxWidth().bringIntoViewRequester(suggestionsInView), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        TField(draft.diagnosis, consultation::setDiagnosis, Modifier.fillMaxWidth(), readOnly = readOnly, tag = TabletTags.field("Diagnosis"))
+        TCaption("Escriba la clave o el nombre: aparecen sugerencias del catálogo CIE-10.")
+        if (consultation.cie10Suggestions.isNotEmpty()) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, colors["ThemeBorder"], RoundedCornerShape(8.dp))) {
+                for (item in consultation.cie10Suggestions) {
+                    key(item.code) {
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = TOUCH_MIN).clickable(role = Role.Button) { consultation.selectCie10(item) }.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            TBadge(item.code, colors.surfaceSubtle, colors.text)
+                            TText(item.name, Modifier.weight(1f), size = TType.detail)
+                            TCaption(item.category)
+                        }
                     }
                 }
             }
         }
+        NextButton(workspace)
     }
-    NextButton(workspace)
 }
 
 @Composable

@@ -65,7 +65,11 @@ class PatientFieldStamps private constructor(private val entries: TreeMap<String
     /** Purga los renglones quitados más de 90 días antes de la marca más nueva. Depende solo de las marcas: dos equipos purgan lo mismo. */
     fun purge(sheetColumns: Collection<String> = PatientSheets.COLUMNS) {
         val newest = newest() ?: return
-        val horizon = ProtocolDate.format(ProtocolDate.parse(newest)!!.minusDays(REMOVED_ROW_RETENTION_DAYS))
+        purgeBefore(horizonOf(newest), sheetColumns)
+    }
+
+    /** Purga los renglones quitados antes de [horizon] (`PurgeBefore`): al aceptar una consulta recibida, el horizonte es el de las marcas de aquí, no el de la copia. */
+    fun purgeBefore(horizon: String, sheetColumns: Collection<String> = PatientSheets.COLUMNS) {
         for (column in sheetColumns) {
             for (key in entries.keys.toList()) {
                 val parsed = parseRowKey(key, column) ?: continue
@@ -87,6 +91,9 @@ class PatientFieldStamps private constructor(private val entries: TreeMap<String
         const val FLOOR_KEY = "#piso"
         const val REMOVED_SUFFIX = "/quitado"
         const val REMOVED_ROW_RETENTION_DAYS = 90L
+
+        /** 90 días antes de [newest]: lo quitado antes de eso ya se purgó o se purgará en todos los equipos. */
+        fun horizonOf(newest: String): String = ProtocolDate.format(ProtocolDate.parse(newest)!!.minusDays(REMOVED_ROW_RETENTION_DAYS))
 
         private val STAMP = Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{7}$")
 

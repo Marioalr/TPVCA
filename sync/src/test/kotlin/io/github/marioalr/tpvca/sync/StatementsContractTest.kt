@@ -22,22 +22,16 @@ class StatementsContractTest {
         }.toSet()
     }
 
-    /** Las que usan K2 y K3. Si `statements.json` trae una nueva, esta prueba falla hasta decidir de qué paso es. */
+    /** Las que usan K2, K3 y K8. Si `statements.json` trae una nueva, esta prueba falla hasta decidir de qué paso es. */
     private val usedByK2 = setOf(
         "meta.all", "handshake", "generation", "profile", "registry.own", "asset.meta", "asset.chunk", "heartbeat.readNonce", "heartbeat.write", "heartbeat.writeAfterPush", "meta.schema", "folio.take", "folio.raise",
+        "registry.primary", "check.incoming", "check.outgoing", "check.peerPush", "check.peers.serverNow", "check.peers.devices", "check.peers.registry",
     )
     private val laterSteps = mapOf(
-        "registry.primary" to "K9b: Equipos vinculados en la tablet; vincular no lo necesita",
         "asset.exists" to "K9b",
         "asset.writeChunk" to "K9b",
         "asset.writeMeta" to "K9b",
         "profile.write" to "K9b",
-        "check.incoming" to "K8",
-        "check.outgoing" to "K8",
-        "check.peerPush" to "K8: la revisión; K5 sincroniza por cadencia",
-        "check.peers.serverNow" to "K8",
-        "check.peers.devices" to "K8",
-        "check.peers.registry" to "K8",
     )
 
     @Test
@@ -71,6 +65,22 @@ class StatementsContractTest {
         assertEquals(statements["heartbeat.write"], Statements.HEARTBEAT_WRITE)
         assertEquals(statements["asset.meta"], Statements.ASSET_META)
         assertEquals(statements["asset.chunk"], Statements.ASSET_CHUNK)
+        // K8: la revisión de la consulta entre equipos, literal (con otro WHERE, SQLite no usa el índice parcial)
+        assertEquals(statements["registry.primary"], Statements.REGISTRY_PRIMARY)
+        assertEquals(statements["check.incoming"], Statements.CHECK_INCOMING)
+        assertEquals(statements["check.outgoing"], Statements.CHECK_OUTGOING)
+        assertEquals(statements["check.peerPush"], Statements.CHECK_PEER_PUSH)
+        assertEquals(statements["check.peers.serverNow"], Statements.CHECK_PEERS_SERVER_NOW)
+        assertEquals(statements["check.peers.devices"], Statements.CHECK_PEERS_DEVICES)
+        assertEquals(statements["check.peers.registry"], Statements.CHECK_PEERS_REGISTRY)
+    }
+
+    /** Las escrituras de la consulta entre equipos tienen el texto de las grabaciones `handoff-*.jsonl`. */
+    @Test
+    fun laConsultaEntreEquiposEsLaDeLasGrabaciones() {
+        for (sql in listOf(Statements.HANDOFF_SEND, Statements.HANDOFF_RESOLVE, Statements.HANDOFF_ACK, Statements.HANDOFF_ACCEPT, Statements.HANDOFF_ACCEPT_STATE, Statements.HANDOFF_CLEAR_PAYLOAD)) {
+            assertTrue(sql.take(80), sql in recorded)
+        }
     }
 
     @Test

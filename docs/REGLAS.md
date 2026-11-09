@@ -125,6 +125,14 @@ Cómo difiere de la PC:
 
 `VitalSignsRules.format`, `bmiText` y `warning`, `AllergyRules`, `PrescriptionNaming` y `MedicineSearchRules` ya cubrían lo que llaman estas pantallas; a `CatalogSearchRules` le faltaba `cie10Suggestions` y a `PrescriptionNaming`, `presentation`.
 
+## Portados en K8 (la consulta entre equipos)
+
+Cómo difiere de la PC:
+
+- **La copia se trabaja como JSON**, no como `ConsultationDraft`: así conserva lo que esta versión no conoce y entiende tanto el borrador de la PC (con sus Id locales, en los casos `prepare-*`) como el de esta app (ya por `SyncId`). Las fechas van en ISO 8601 y los decimales como números, porque así los escribe y los lee `System.Text.Json`; las pruebas comparan por significado.
+- **Sin Id locales al recibir:** un cargo que se encontró queda con el `SyncId` del producto o servicio de este equipo (si cambió, los renglones de las hojas que cargó esa consulta lo siguen: `WriteEngine.adoptReceivedConsultation`); el que no, con `LineKind` `libre` y sin `CatalogSyncId`. El vector pide el Id local de la PC: la prueba lo toma del renglón del catálogo que se encontró.
+- **`ChargeSaleSyncId`** (el ticket de esta app) no viaja; al recibir se toma uno nuevo.
+
 ## Pendientes (con el paso que los porta)
 
 | Vector | Paso | Qué es |
@@ -136,9 +144,9 @@ Cómo difiere de la PC:
 | `duplicate-patients.json` | K5, hecho | `DuplicatePatientRules`: el aviso de posibles duplicados después de bajar (`SyncNotices`). `PatientsGoldenTest`. |
 | `folios.json` | K5, hecho | `rules/FolioFactory`: los folios con y sin conexión. `WriteRulesGoldenTest`. |
 | `date-mask.json` | K6, hecho | `DateMaskText`: el campo de fecha dd/mm/aaaa, con su cursor (31/31). `PatientsGoldenTest`. `applyChange` lo convierte desde lo que entrega el teclado de Android. |
-| `handoff-payload.json` | K8 | La consulta entre equipos: la copia que viaja |
-| `handoff-accept.json` | K8 | La consulta entre equipos: aceptar la copia |
-| `linked-device.json` | K8 | A quién se le ofrece «Enviar a…» |
+| `handoff-payload.json` | K8, hecho | `rules/consultation/HandoffPayload` (en `:sync`): la copia que viaja (`prepareForSending`), su traducción al recibir (`receive`), la búsqueda de cada cargo (`findCatalogRef`) y qué versión se entiende (`canRead`). `HandoffGoldenTest`. |
+| `handoff-accept.json` | K8, hecho | `HandoffPayload.checkArrival`: qué le falta a este equipo para tomar una consulta recibida (la versión del expediente, sus marcas por campo contando el piso de aquí, la nota). `HandoffGoldenTest`. |
+| `linked-device.json` | K8, hecho | `devices/LinkedDevices` (en `:domain`): los equipos vinculados vistos desde un equipo, a quién se le ofrece «Enviar a…» y los textos de cada uno. `LinkedDeviceGoldenTest`. |
 | `duplicate-catalog.json` | K9b | Productos y servicios duplicados entre equipos |
 
 ## Cómo se repite .NET en Kotlin

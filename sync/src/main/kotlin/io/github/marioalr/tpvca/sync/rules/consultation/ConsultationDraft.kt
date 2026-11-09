@@ -42,8 +42,8 @@ data class PatientSummaryBefore(
  * La copia de trabajo de la consulta en curso (`Models/ConsultationDraft.cs`), con los mismos nombres. Vive en `Draft:Consultation` de la **base cifrada**: sobrevive a girar, a que Android cierre el proceso
  * y al bloqueo, el borrado de todo se la lleva, y no va al estado que Android restaura ni viaja. Solo hay una por equipo, como en la PC: una consulta nueva no puede pisar a otra.
  *
- * Todo lo que vale en otro equipo va por `SyncId`: es la forma que K8 necesita para mandarla. `Handoff` y `ReceivedHandoff*` todavía no los escribe nadie (K8): con `Handoff` puesto la consulta está en otro equipo
- * y aquí es de solo lectura ([isHandedOff]).
+ * Todo lo que vale en otro equipo va por `SyncId`: es la forma que viaja entre equipos (K8, `HandoffPayload`). `Handoff` es la marca del envío en el equipo que envía (`HandoffMarker`): con ella puesta la consulta
+ * está en otro equipo y aquí es de solo lectura ([isHandedOff]). `ReceivedHandoffId` y `ReceivedHandoffToken` solo van en el borrador del equipo que la recibió: con ellos guardados se borra la copia de la nube.
  *
  * [chargeSaleSyncId] es solo de la tablet: el `SyncId` del ticket de esta consulta. Se toma al empezar y no cambia, así que dos toques en «Cobrar» no pueden hacer dos ventas.
  */
@@ -98,6 +98,9 @@ data class ConsultationDraft(
     fun encode(): String = JSON.encodeToString(serializer(), this)
 
     companion object {
+        /** La versión del borrador que esta app entiende (`ConsultationDraft.CurrentVersion`). */
+        const val CURRENT_VERSION = 1
+
         private val JSON = Json {
             ignoreUnknownKeys = true
             encodeDefaults = false
@@ -107,7 +110,7 @@ data class ConsultationDraft(
         /** `null` si no se entiende o es de una versión más nueva: nunca se adivina qué dice una consulta. */
         fun decode(text: String?): ConsultationDraft? {
             if (text.isNullOrBlank()) return null
-            return runCatching { JSON.decodeFromString(serializer(), text) }.getOrNull()?.takeIf { it.version <= 1 }
+            return runCatching { JSON.decodeFromString(serializer(), text) }.getOrNull()?.takeIf { it.version <= CURRENT_VERSION }
         }
     }
 }

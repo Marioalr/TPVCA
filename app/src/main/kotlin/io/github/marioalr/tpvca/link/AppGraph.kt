@@ -53,6 +53,9 @@ class AppGraph(context: Context) {
 
     private val syncing = MutableStateFlow(false)
 
+    /** Lo que trae cada revisión de la consulta entre equipos (K8). */
+    private val handoffChecks = MutableStateFlow<io.github.marioalr.tpvca.sync.link.HandoffCheck?>(null)
+
     /** Se cierra antes de borrar nada; se abre otra vez cuando hay datos. */
     private val gate = DataGate()
     private val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -92,6 +95,7 @@ class AppGraph(context: Context) {
         // El número de la nube espera 2 s como máximo; después, el folio sale con la letra del equipo
         connectFolio = { url, token -> HranaClient(url, token, BuildConfig.VERSION_NAME, http.newBuilder().callTimeout(FOLIO_WAIT_SECONDS, TimeUnit.SECONDS).build()) },
         writeGuard = { write -> gate.write(gate.ticket()) { write() } },
+        onHandoffCheck = { handoffChecks.value = it },
     )
 
     private val follower = WorkFollower { state, role -> runCatching { BackgroundWork.follow(app, state, role) } }
@@ -110,6 +114,7 @@ class AppGraph(context: Context) {
         Dispatchers.IO,
         syncingFlow = syncing,
         labUploads = labStore,
+        handoffChecks = handoffChecks,
     )
 
     /** Lo que leen y comparten las pantallas del celular. Abre la base hasta que haga falta. */
@@ -144,6 +149,7 @@ class AppGraph(context: Context) {
                 refreshNow = { controller.refreshNow() },
                 labStore = labStore,
                 uploadLabFiles = { controller.uploadLabFiles() },
+                handoff = controller.handoff,
                 isOnline = {
                     val connectivity = app.getSystemService(android.net.ConnectivityManager::class.java)
                     connectivity?.getNetworkCapabilities(connectivity.activeNetwork)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true

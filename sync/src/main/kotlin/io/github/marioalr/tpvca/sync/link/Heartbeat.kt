@@ -24,10 +24,10 @@ object Heartbeat {
     const val PLATFORM = "Android"
 
     /**
-     * 0 hasta K8. La PC ofrece consultas a quien trae `HandoffProtocol >= 1` y, si viene vacío, a quien trae `AppVersion >= 1.17.0`: el
-     * 0 explícito no deja que esta app reciba una consulta que todavía no sabe tomar.
+     * Esta app ya sabe tomar y mandar una consulta (K8, §4.5). La PC ofrece consultas a quien trae `HandoffProtocol >= 1` y, si viene vacío, a quien trae
+     * `AppVersion >= 1.17.0`; el celular lo escribe igual, pero su rol lo deja fuera de «Enviar a…».
      */
-    const val HANDOFF_PROTOCOL = 0
+    const val HANDOFF_PROTOCOL = 1
 
     /** [afterPush]: el de al final de una subida, con `LastPushUtc`. */
     fun statements(info: HeartbeatInfo, afterPush: Boolean = false): List<Statement> = listOf(

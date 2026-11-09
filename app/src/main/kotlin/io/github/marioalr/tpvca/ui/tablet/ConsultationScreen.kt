@@ -131,9 +131,10 @@ fun ConsultationScreen(workspace: TabletWorkspace) {
     val checkout = consultation.checkout
     Box(Modifier.fillMaxSize()) {
         // Con la hoja encima, lo de abajo no se toca ni se lee con TalkBack
-        Column(Modifier.fillMaxSize().testTag(TabletTags.CONSULTATION).imePadding().then(if (checkout != null || consultation.sheet != null) Modifier.clearAndSetSemantics { } else Modifier)) {
+        val handoff = workspace.handoff
+        Column(Modifier.fillMaxSize().testTag(TabletTags.CONSULTATION).imePadding().then(if (checkout != null || consultation.sheet != null || handoff.sheetOpen) Modifier.clearAndSetSemantics { } else Modifier)) {
             TopBar(workspace, draft)
-            consultation.readOnlyNotice?.let { ReadOnlyBanner(it, draft) }
+            consultation.readOnlyNotice?.let { ReadOnlyBanner(workspace, it, draft) }
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)) {
                 when {
                     isWide(1100.dp) -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -158,6 +159,7 @@ fun ConsultationScreen(workspace: TabletWorkspace) {
         }
         if (checkout != null) ConsultationCheckoutSheet(workspace, checkout, draft)
         consultation.sheet?.let { ConsultationSheetHost(workspace, it) }
+        if (handoff.sheetOpen) SendConsultationSheet(workspace)
     }
 }
 
@@ -223,6 +225,12 @@ private fun TopBar(workspace: TabletWorkspace, draft: ConsultationDraft) {
             Box(Modifier.weight(1f, fill = true))
             TButton("Expediente", { workspace.showChartFromConsultation(draft.patientSyncId) }, tag = TabletTags.CONSULTATION_CHART)
             if (consultation.autosaveStatus.isNotEmpty()) TCaption(consultation.autosaveStatus)
+            // «Enviar a…» (K8): solo con la nube vinculada, y deshabilitado mientras la última revisión no llegó a la nube
+            val handoff = workspace.handoff
+            if (handoff.showsSendButton) {
+                TButton("Enviar a…", handoff::openSendSheet, enabled = handoff.canSend, tag = TabletTags.HANDOFF_SEND)
+                if (handoff.sendHint.isNotEmpty()) TCaption(handoff.sendHint, color = colors.warningText)
+            }
             // Enviada a otro equipo: se ve, pero aquí no se descarta ni se termina
             if (!draft.isHandedOff) {
                 TButton("Descartar", consultation::discard, kind = TButtonKind.DangerGhost, tag = TabletTags.CONSULTATION_DISCARD)
@@ -248,13 +256,17 @@ private fun TimerButton(visible: Boolean, elapsed: String, onToggle: () -> Unit)
     }
 }
 
-/** Solo lectura. «Recuperar» es del paso K8: se ve, y dice que todavía no está. */
+/** Solo lectura: el expediente borrado o por bajar, o la consulta enviada a otro equipo, con «Recuperar» y, cuando el envío no se puede resolver, «Liberar este equipo» (K8). */
 @Composable
-private fun ReadOnlyBanner(text: String, draft: ConsultationDraft) {
+private fun ReadOnlyBanner(workspace: TabletWorkspace, text: String, draft: ConsultationDraft) {
     val colors = LocalTpvcColors.current
-    TNotice(text, colors.warningSubtle, colors.warningText, Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp), tag = TabletTags.CONSULTATION_READ_ONLY) {
-        // TODO(K8): «Recuperar» y «Liberar este equipo» de `ConsultationHandoffViewModel`
-        if (draft.isHandedOff) TButton("Recuperar", {}, nextVersion = true)
+    val handoff = workspace.handoff
+    val detail = handoff.bannerDetail?.takeIf { draft.isHandedOff }
+    TNotice(if (detail != null) "$text\n$detail" else text, colors.warningSubtle, colors.warningText, Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp), tag = TabletTags.CONSULTATION_READ_ONLY) {
+        if (draft.isHandedOff) {
+            if (handoff.canReleaseLocally) TButton("Liberar este equipo", handoff::releaseLocally, kind = TButtonKind.Ghost, color = colors.warningText, enabled = !handoff.recovering, tag = TabletTags.HANDOFF_RELEASE)
+            TButton(if (handoff.recovering) "Recuperando…" else "Recuperar", handoff::recover, enabled = !handoff.recovering, tag = TabletTags.HANDOFF_RECOVER)
+        }
     }
 }
 

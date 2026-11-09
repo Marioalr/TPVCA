@@ -123,6 +123,9 @@ class SyncEngine(
         return outcome
     }
 
+    /** Lo automático está en pausa (cuota agotada, freno, token rechazado): la revisión de la consulta entre equipos tampoco pregunta a la nube (K8). */
+    fun automaticPaused(): Boolean = brake.isTripped || pausedOutcome(SyncTrigger.AUTOMATIC) != null
+
     /** Lo automático no llega a Turso con la cuota agotada, el freno activo o el token rechazado. */
     private fun pausedOutcome(trigger: SyncTrigger): SyncOutcome? {
         if (trigger != SyncTrigger.AUTOMATIC) return null
@@ -560,8 +563,8 @@ class SyncEngine(
         pullTable(run, tombstonesTable, cursors.getValue(tombstonesTable), firstPages?.get(tombstonesTable), upTo, skipOwnRows, idle) { page, meta ->
             applyTombstones(run, page.map(::tombstoneOf), meta)
         }
-        // Las tablas sin nada nuevo avanzan hasta la marca de agua, todas en una escritura
-        if (idle.isNotEmpty()) store.apply(StoreChanges(meta = idle))
+        // Las tablas sin nada nuevo avanzan hasta la marca de agua, todas en una escritura; y la marca de agua de esta bajada buena, para la marca de cambios de la revisión (K8)
+        store.apply(StoreChanges(meta = idle + (LAST_PULL_WATERMARK to watermark)))
         retryParked(run)
         retryWaitingReapply(run)
     }
@@ -1665,6 +1668,9 @@ class SyncEngine(
         const val LAST_ERROR = "Status:LastError"
         const val LAST_SUCCESS = "Status:LastSuccessUtc"
         const val FIRST_DOWNLOAD_DONE = "Sync:FirstDownloadDoneUtc"
+
+        /** La hora de la nube (marca de agua) de la última bajada buena: la marca de cambios de otro equipo posterior a ella dispara una sincronización (regla «Cadencia»). */
+        const val LAST_PULL_WATERMARK = "Sync:LastPullWatermark"
         const val FULL_IN_PROGRESS = "Sync:FullPullInProgress"
         const val SUMMARY_DAY = "Sync:SummaryDay"
 

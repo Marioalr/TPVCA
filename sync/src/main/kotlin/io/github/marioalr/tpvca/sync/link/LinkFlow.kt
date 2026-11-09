@@ -1,5 +1,6 @@
 package io.github.marioalr.tpvca.sync.link
 
+import io.github.marioalr.tpvca.domain.devices.DevicePermissions
 import io.github.marioalr.tpvca.domain.devices.DeviceRole
 import io.github.marioalr.tpvca.sync.Statements
 import io.github.marioalr.tpvca.sync.SyncContract
@@ -89,6 +90,8 @@ class LinkFlow(
     private val connectFolio: (url: String, token: String) -> HranaConnection = connect,
     /** Alrededor de cada escritura de los casos de uso: en la app, `DataGate`. */
     private val writeGuard: (() -> Any?) -> Any? = { it() },
+    /** Cada revisión de la consulta entre equipos (K8): lo que trajo, o por qué no llegó a la nube. La pantalla de Pacientes la escucha. */
+    private val onHandoffCheck: (HandoffCheck) -> Unit = {},
 ) {
     @Volatile
     private var credential: DeviceCredential? = null
@@ -126,6 +129,52 @@ class LinkFlow(
 
     /** El latido de una subida vio el nonce de otra instalación: se resuelve al terminar la sincronización. */
     private var duplicateSeen = false
+
+    /** La cadencia de la revisión de la consulta entre equipos (regla «Cadencia»), con el reloj monótono. */
+    val handoffCadence = HandoffCadence(elapsedMillis)
+
+    /** El envío propio que espera a que lo acepten (`Id` del renglón), para preguntar su estado en cada revisión; lo pone la pantalla. */
+    @Volatile
+    private var handoffOutgoingId: String? = null
+
+    /** Lo que la pantalla sabe y la cadencia necesita: si el médico está en Pacientes y si hay un envío pendiente. Al entrar a Pacientes se revisa enseguida. */
+    fun setHandoffContext(inPatients: Boolean, outgoingId: String?) {
+        handoffOutgoingId = outgoingId
+        handoffCadence.pendingSend = outgoingId != null
+        handoffCadence.setInPatients(inPatients)
+    }
+
+    /** La consulta entre equipos con la nube de ahora (`ConsultationHandoffService`); `null` sin vinculación. Sus llamadas van fuera de esta clase: no esperan a la sincronización. */
+    fun handoffService(): HandoffService? {
+        val saved = credential ?: return null
+        val token = saved.token ?: return null
+        return HandoffService(connect(saved.url, token), saved.deviceId, deviceName, saved.url)
+    }
+
+    /** El latido para «Enviar a…» (la lista se lee con el latido de este equipo al día) y lo que hace con lo que leyó. */
+    fun handoffHeartbeat(): List<Statement>? {
+        val saved = credential ?: return null
+        return Heartbeat.statements(heartbeatInfo(saved))
+    }
+
+    /** Después de leer la lista de equipos con su latido: si otra instalación usa este `DeviceId`, se toma uno nuevo. */
+    @Synchronized
+    fun afterHandoffHeartbeat(before: ResultSet, peerCount: Int) {
+        val saved = credential ?: return
+        lastHeartbeat = clock.instant()
+        handoffCadence.noteHeartbeat()
+        handoffCadence.onPeersRefreshed(peerCount)
+        handoffCadence.onCloudReachable()
+        val duplicate = Heartbeat.otherInstallation(before, nonceWrittenFor == saved.deviceId, nonce)
+        nonceWrittenFor = saved.deviceId
+        if (duplicate) {
+            takeNewIdentity(saved)
+            publish(waiting(credential!!, newIdentity = true))
+        }
+    }
+
+    /** Algo de la consulta entre equipos llegó a la nube (enviar, tomar, recuperar): la revisión vuelve a su paso. */
+    fun handoffReachedCloud() = handoffCadence.onCloudReachable()
 
     /** Al abrir la app: lo que quedó guardado, sin tocar la red. */
     @Synchronized
@@ -331,11 +380,61 @@ class LinkFlow(
         if (current is LinkState.WaitingApproval) return pollApproval(saved, current, reason)
         val every = if (current is LinkState.Downloading) LinkCadence.WAITING_HEARTBEAT else LinkCadence.sync(saved.effectiveRole)
         if (reason == Refresh.TICK && !isDue(lastCheck, every)) {
+            if (current is LinkState.Linked && checksHandoffs(saved)) return handoffTick(saved)
             if (current is LinkState.Linked && heartbeatFoundOtherInstallation(saved, force = false)) return publish(waiting(credential!!, newIdentity = true))
             return state
         }
         val trigger = if (reason == Refresh.USER) SyncTrigger.USER else SyncTrigger.AUTOMATIC
         return syncNow(saved, trigger, forceHeartbeat = reason == Refresh.OPENED)
+    }
+
+    /** Un equipo que lleva consultas (la tablet) y ya bajó todo hace la revisión de la consulta entre equipos; el celular solo baja y escribe su latido (§3.3). */
+    private fun checksHandoffs(saved: DeviceCredential): Boolean =
+        DevicePermissions.canTakeConsultations(saved.effectiveRole) && database.store().meta(SyncEngine.FIRST_DOWNLOAD_DONE) != null
+
+    /**
+     * Un paso de la cadencia del paso 8.24 entre dos sincronizaciones de las de siempre: la revisión cuando toca (con el latido y la lista de compañeros dentro, cuando tocan) y,
+     * si la marca de cambios de otro equipo es posterior a la última bajada, una sincronización en ese momento. Con lo automático en pausa (cuota, freno, token) no se pregunta nada.
+     * A diferencia de la PC, la revisión espera a que termine una sincronización en curso: comparten este candado.
+     */
+    private fun handoffTick(saved: DeviceCredential): LinkState {
+        val engine = session(saved).engine
+        if (engine.automaticPaused()) return state
+        if (handoffCadence.checkDue()) {
+            val duplicate = runHandoffCheck(saved)
+            if (duplicate) return publish(waiting(credential!!, newIdentity = true))
+        }
+        if (handoffCadence.syncDue(database.store().meta(SyncEngine.LAST_PULL_WATERMARK))) return syncNow(saved, SyncTrigger.AUTOMATIC, forceHeartbeat = false)
+        return state
+    }
+
+    /** La revisión, en una petición. `true` si el latido vio otra instalación con este `DeviceId` (ya se tomó uno nuevo). */
+    private fun runHandoffCheck(saved: DeviceCredential): Boolean {
+        val service = HandoffService(session(saved).connection, saved.deviceId, deviceName, saved.url)
+        val heartbeat = if (handoffCadence.heartbeatDue() && isDue(lastHeartbeat, LinkCadence.heartbeat(saved.effectiveRole))) Heartbeat.statements(heartbeatInfo(saved)) else null
+        val peers = handoffCadence.peersDue()
+        val poll = try {
+            service.poll(handoffOutgoingId, heartbeat, peers)
+        } catch (e: HranaException) {
+            val connectivity = HandoffErrors.isConnectivityFailure(e)
+            handoffCadence.onCheckFailed(connectivity)
+            onHandoffCheck(HandoffCheck(null, HandoffErrors.describe(e)))
+            return false
+        }
+        var duplicate = false
+        poll.heartbeatBefore?.let { before ->
+            lastHeartbeat = clock.instant()
+            handoffCadence.noteHeartbeat()
+            duplicate = Heartbeat.otherInstallation(before, nonceWrittenFor == saved.deviceId, nonce)
+            nonceWrittenFor = saved.deviceId
+        }
+        handoffCadence.onCheckSucceeded(poll.result, peers)
+        if (duplicate) {
+            takeNewIdentity(saved)
+            return true
+        }
+        onHandoffCheck(HandoffCheck(poll.result, null))
+        return false
     }
 
     /** Sin aprobar, solo su fila y, de vez en cuando, su latido: una sola petición y nada de `_tpvc_meta`. */
@@ -369,12 +468,17 @@ class LinkFlow(
     private fun syncNow(saved: DeviceCredential, trigger: SyncTrigger, forceHeartbeat: Boolean, background: Boolean = false): LinkState {
         lastCheck = clock.instant()
         onSyncing(true)
+        handoffCadence.onSyncStarting()
         try {
             // Un equipo revocado no sube nada en segundo plano: espera a que se abra la app
             val outcome = session(saved).engine.sync(trigger, uploadIfRevoked = !background)
             lastFailed = outcome is SyncOutcome.Failed
+            // Una sincronización buena: la revisión espaciada por la red vuelve a su paso
+            if (outcome is SyncOutcome.Completed) handoffCadence.onCloudReachable()
             return publish(settle(saved, outcome, forceHeartbeat, background))
         } finally {
+            // Una sincronización que corrió, buena o no, ya atendió las marcas de cambios de ese momento
+            handoffCadence.onSyncFinished()
             onSyncing(false)
         }
     }

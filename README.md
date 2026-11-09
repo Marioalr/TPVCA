@@ -24,7 +24,7 @@ según ese rol (`DevicePermissions`, la misma matriz que `Models/TursoConfig.cs`
 
 | Módulo | Tipo | Qué tiene |
 |---|---|---|
-| `:sync` | Kotlin/JVM | El contrato de sincronización (`SyncSchema`, `SyncContract.REVISION`), el cliente Hrana, los motores de lectura y escritura, la vinculación con la revocación y las reglas del 401, y la bajada y subida de los archivos de laboratorio ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)). Después: consulta entre equipos. |
+| `:sync` | Kotlin/JVM | El contrato de sincronización (`SyncSchema`, `SyncContract.REVISION`), el cliente Hrana, los motores de lectura y escritura, la vinculación con la revocación y las reglas del 401, la bajada y subida de los archivos de laboratorio y la consulta entre equipos (`HandoffService`, `HandoffPayload`, la cadencia de la revisión; [`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)). |
 | `:domain` | Kotlin/JVM | Reglas portadas de la PC con sus vectores (K1, lo del celular): roles y permisos (`DevicePermissions`), búsqueda, negocio e inventario, pacientes y agenda, receta y ticket. Cada vector → función → estado en [`docs/REGLAS.md`](docs/REGLAS.md). Después: cuenta, folios, dosis y cobro. |
 | `:data` | Biblioteca de Android | Room con SQLCipher: entidades generadas de `schema.json` y `RoomSyncStore`. La llave de la base y la credencial, envueltas con el Keystore. Las lecturas de las pantallas (`ClinicDao`, `ClinicReader`) y la caché cifrada de laboratorio, con lo que la tablet agregó y falta subir. |
 | `:app` | App de Android | Compose + Material 3, tema con la paleta de la PC (claro, oscuro, ámbar y personalizado), el inicio, las pantallas de vincular, el bloqueo de la app, las del celular (`ui/phone`, con la receta y el ticket en PDF en `documents`) y las de la tablet (`ui/tablet`; la agenda en `ui/agenda`, para que K4b la use). |
@@ -48,7 +48,7 @@ Pila: Jetpack Compose con Material 3, Room + SQLCipher, OkHttp, kotlinx.serializ
 | **K5** | Motor de escritura: cola de salida, LWW, cerca de generación, combinación de pacientes, movimientos, folios y WorkManager | Hecho ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)) |
 | **K6** | Tablet: inicio, ficha, agenda con aviso de empalme, alta y edición con aviso de duplicado, avisos y «Volver a aplicar» (`ui/tablet`). La consulta y lo demás se ven deshabilitados | ✅ Hecho |
 | **K7** | Consulta completa: receta, insumos, servicios, cuenta, terminar y cobrar, también sin conexión; la orden de laboratorio y los resultados desde la tablet, con su subida ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)) | ✅ Hecho |
-| K8 | Consulta entre equipos. **Con K5–K8, primera versión de la tablet** | Pendiente |
+| **K8** | Consulta entre equipos: «Enviar a…», «Recuperar», «Liberar este equipo» y «Continuar aquí», con la revisión de la cadencia del paso 8.24 ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)). **Con K5–K8, primera versión de la tablet** | ✅ Hecho |
 | K9 | Punto de venta en la tablet | Pendiente |
 | K9b | El resto de la copia de la PC: panel, negocio, productos, lotes, kardex, servicios, médico y consultorio | Pendiente |
 | K10 | Accesibilidad, tema oscuro, revisión de textos y, después, impresión ESC/POS por Bluetooth | Pendiente |

@@ -197,7 +197,7 @@ class LinkFlowTest {
             args.take(5).map { it.text },
         )
         assertEquals(SyncContract.CLIENT_PROTOCOL.toString(), args[5].text)
-        assertEquals("No recibe consultas hasta K8", "0", args[6].text)
+        assertEquals("Recibe consultas (K8)", "1", args[6].text)
         assertEquals(SyncContract.REVISION.toString(), args[7].text)
         assertEquals("0", args[8].text)
         assertEquals(HranaValue.Null, args[9])

@@ -28,6 +28,7 @@ import io.github.marioalr.tpvca.ui.agenda.AgendaPatient
 import io.github.marioalr.tpvca.ui.agenda.AppointmentFormState
 import io.github.marioalr.tpvca.ui.phone.PhoneEnv
 import io.github.marioalr.tpvca.documents.LabFileStore
+import io.github.marioalr.tpvca.link.HandoffLink
 import io.github.marioalr.tpvca.ui.phone.PreviewDoc
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -57,6 +58,8 @@ class TabletEnv(
     val labStore: LabFileStore? = null,
     /** Se agregó un resultado: se intenta subir ya. */
     val uploadLabFiles: () -> Unit = {},
+    /** La consulta entre equipos (K8): la nube, la sincronización que espera y lo que trae cada revisión. `null` sin vinculación (pruebas): «Enviar a…» no aparece. */
+    val handoff: HandoffLink? = null,
 )
 
 sealed interface TabletPage {
@@ -133,6 +136,13 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
 
     /** Los resultados de laboratorio de la ficha: agregar y quitar (K7). */
     val labResults = LabResultsEditor(this, scope, io)
+
+    /** La consulta entre equipos (K8): «Enviar a…», «Recuperar», «Liberar este equipo» y «Continuar aquí». */
+    val handoff = HandoffController(this, scope, io)
+
+    init {
+        env.handoff?.let { link -> scope.launch { link.checks.collect { check -> if (check != null) handoff.onCheck(check) } } }
+    }
 
     class Toast(val text: String, val warning: Boolean, val action: ToastAction? = null)
 
@@ -277,6 +287,7 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
     fun back(): Boolean {
         when {
             detail != null -> detail = null
+            handoff.sheetOpen -> handoff.closeSendSheet()
             agendaOpen -> closeAgenda()
             consultation.checkout != null -> consultation.closeCheckout()
             consultation.sheet != null -> consultation.closeSheet()
@@ -790,6 +801,7 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         info = null
         toast = null
         consultation.clearMemory()
+        handoff.clearMemory()
         page = TabletPage.Hub
         restored = false
     }

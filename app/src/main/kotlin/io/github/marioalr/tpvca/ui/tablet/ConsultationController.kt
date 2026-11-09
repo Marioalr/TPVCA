@@ -35,7 +35,16 @@ import io.github.marioalr.tpvca.sync.rules.SyncIds
 import io.github.marioalr.tpvca.sync.rules.consultation.AccountLine
 import io.github.marioalr.tpvca.sync.rules.consultation.AccountLines
 import io.github.marioalr.tpvca.sync.rules.consultation.ConsultationAccount
+import io.github.marioalr.tpvca.sync.rules.consultation.CatalogRef
 import io.github.marioalr.tpvca.sync.rules.consultation.ConsultationDraft
+import io.github.marioalr.tpvca.sync.rules.consultation.HandoffPayload
+import io.github.marioalr.tpvca.sync.link.HandoffMarker
+import io.github.marioalr.tpvca.sync.link.HandoffPhase
+import io.github.marioalr.tpvca.sync.link.HandoffRow
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 import io.github.marioalr.tpvca.sync.rules.consultation.PatientSummaryBefore
 import io.github.marioalr.tpvca.sync.rules.consultation.PrescriptionRow
 import io.github.marioalr.tpvca.sync.rules.consultation.ServiceRow
@@ -387,7 +396,11 @@ class ConsultationController internal constructor(private val workspace: TabletW
         get() {
             val d = draft ?: return null
             return when {
-                d.isHandedOff -> "La consulta se envió a ${d.handoffTargetName}: aquí está en solo lectura."
+                d.isHandedOff -> when (outgoingMarker?.phase) {
+                    HandoffPhase.Sent -> "Enviada a ${d.handoffTargetName}: aquí queda en solo lectura hasta que la acepte"
+                    HandoffPhase.Unconfirmed -> "No se pudo confirmar el envío a ${d.handoffTargetName}: en solo lectura hasta resolverlo"
+                    else -> "Enviando a ${d.handoffTargetName}…"
+                }
                 patientStatus == ConsultationPatientStatus.Gone -> "El expediente de ${d.patientName} ya no existe: esta consulta está en solo lectura y no se puede cobrar. Descártela para poder atender a otro paciente."
                 patientStatus == ConsultationPatientStatus.Downloading -> "El expediente de ${d.patientName} todavía está bajando: la consulta queda en solo lectura hasta que termine."
                 else -> null
@@ -401,6 +414,9 @@ class ConsultationController internal constructor(private val workspace: TabletW
     }
 
     fun isConsultationFor(patientSyncId: String): Boolean = draft?.patientSyncId == patientSyncId
+
+    /** La marca del envío propio (`OutgoingMarker`), del borrador; `null` si la consulta no se envió. */
+    val outgoingMarker: HandoffMarker? get() = HandoffMarker.fromJson(draft?.handoff)
 
     /** «Última receta» de la ficha durante la consulta de ese paciente: la de antes, no la que se está escribiendo. `null` si no aplica. */
     fun chartPrescription(patientSyncId: String): List<PrescriptionRow>? {
@@ -689,29 +705,34 @@ class ConsultationController internal constructor(private val workspace: TabletW
     }
 
     private suspend fun saveTyped() {
-        lock.withLock {
-            val d = draft ?: return
-            if (d === lastSaved || d.isHandedOff) return
-            val stamped = d.copy(savedAt = nowText())
-            val saved = try {
-                withContext(io) { engine().saveConsultation(stamped) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                if (draft != null) autosaveStatus = "No se pudo guardar automáticamente"
-                return
-            }
-            if (saved) {
-                lastSaved = d
-                lastSaveNanos = System.nanoTime()
-                autosaveStatus = "Guardado ${workspace.localNow().format(CLOCK)}"
-            } else if (draft?.folio == d.folio) {
-                // Ya no es la de este equipo: otro camino la terminó. Nada se revive
-                forget()
-                workspace.showHomeIfOnConsultation()
-                workspace.info = "Esa consulta ya no está en curso en este equipo."
-            }
+        lock.withLock { saveTypedLocked() }
+    }
+
+    /** Lo tecleado al borrador, ya con el candado tomado. `false` si no se pudo escribir (la consulta sigue en pantalla). */
+    private suspend fun saveTypedLocked(): Boolean {
+        val d = draft ?: return true
+        if (d === lastSaved || d.isHandedOff) return true
+        val stamped = d.copy(savedAt = nowText())
+        val saved = try {
+            withContext(io) { engine().saveConsultation(stamped) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            if (draft != null) autosaveStatus = "No se pudo guardar automáticamente"
+            return false
         }
+        if (saved) {
+            lastSaved = d
+            lastSaveNanos = System.nanoTime()
+            autosaveStatus = "Guardado ${workspace.localNow().format(CLOCK)}"
+        } else if (draft?.folio == d.folio) {
+            // Ya no es la de este equipo: otro camino la terminó. Nada se revive
+            forget()
+            workspace.showHomeIfOnConsultation()
+            workspace.info = "Esa consulta ya no está en curso en este equipo."
+            return false
+        }
+        return true
     }
 
     /** Al irse la app: lo que falte, ya. */
@@ -964,6 +985,134 @@ class ConsultationController internal constructor(private val workspace: TabletW
         catalogBrowser.returnTo = null
     }
 
+    // ------------------------------------------------------------------ la consulta entre equipos (K8)
+
+    /**
+     * La marca del envío (`EnterHandedOffState`, `LeaveHandedOffState` y el cambio de fase): primero lo tecleado va al borrador, y luego la marca, en la base; con ella la consulta queda en solo
+     * lectura antes de que el otro equipo pueda verla y sobrevive a cerrar la app. `null` la quita. `false` si no se pudo escribir.
+     */
+    suspend fun markHandoff(marker: HandoffMarker?): Boolean = lock.withLock {
+        val d = draft ?: return@withLock false
+        saveJob?.cancel()
+        if (marker != null && !d.isHandedOff && !saveTypedLocked()) return@withLock false
+        val current = draft ?: return@withLock false
+        val written = try {
+            withContext(io) { engine().setConsultationHandoff(current.folio, marker?.toJson()) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            false
+        }
+        if (!written) return@withLock false
+        val updated = current.copy(handoff = marker?.toJson())
+        draft = updated
+        lastSaved = updated
+        if (marker != null) {
+            sheet = null
+            if (checkout?.writing != true) checkout = null
+        }
+        workspace.changed()
+        true
+    }
+
+    /**
+     * El otro equipo la aceptó, o «Liberar este equipo» (`ReleaseHandedOffConsultation`): se cierra aquí **sin descartar** (la nota, la receta y la cuenta siguen allá) y sin tocar el expediente.
+     * Con [archive] la copia se aparta antes. `false` si ya no estaba.
+     */
+    suspend fun releaseHandedOff(folio: String, archive: Boolean = false): Boolean {
+        val d = draft?.takeIf { it.folio == folio } ?: return false
+        saveJob?.cancel()
+        val released = lock.withLock {
+            try {
+                withContext(io) { engine().releaseConsultation(folio, archive) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                false
+            }
+        }
+        if (!released) return false
+        forget()
+        workspace.changed()
+        workspace.afterConsultation(d.patientSyncId)
+        return true
+    }
+
+    /**
+     * «Continuar aquí» (`ApplyReceivedConsultation`): la copia recibida se vuelve la consulta de este equipo, con la misma nota, signos, receta, cuenta, folio y hora de inicio. `false` si ya hay otra
+     * consulta guardada (una consulta nunca pisa a otra).
+     */
+    suspend fun adoptReceived(received: ConsultationDraft, handoffId: String, renamedSyncIds: Map<String, String>, fromDeviceName: String): Boolean {
+        class Adopted(val other: ConsultationDraft?, val state: ReadState?)
+        val result = lock.withLock {
+            withContext(io) {
+                val other = engine().adoptReceivedConsultation(received, handoffId, renamedSyncIds)
+                if (other != null) Adopted(other, null) else Adopted(null, readState(received))
+            }
+        }
+        if (result.other != null) return false
+        adopt(received, result.state!!)
+        autosaveStatus = "Recibida de $fromDeviceName · ${workspace.localNow().format(CLOCK_SHORT)}"
+        env.noteLocalWrite()
+        workspace.changed()
+        workspace.showConsultation()
+        return true
+    }
+
+    /** El catálogo de este equipo como lo ve la consulta entre equipos: cada producto (también los inactivos, con su marca) y cada servicio por su `SyncId`, código y nombre. */
+    private fun catalogRefs(catalog: ConsultationCatalog): List<CatalogRef> =
+        catalog.account.allProducts.filter { it.syncId.isNotBlank() }.map { CatalogRef(CatalogRef.PRODUCT, it.syncId, it.code, it.name, it.isActive) } +
+            catalog.account.services.filter { it.syncId.isNotBlank() }.map { CatalogRef(CatalogRef.SERVICE, it.syncId, it.code, it.name, it.isActive) }
+
+    /**
+     * La copia que viaja (`BuildHandoffPayloadAsync`): el borrador de ahora con el expediente, la nota, la cita y el honorario por su `SyncId`, las marcas por campo del expediente en este equipo y
+     * cada cargo con su clase. Fuera del hilo principal. `null` si el expediente ya no está.
+     */
+    fun buildHandoffPayload(): String? {
+        val d = draft ?: return null
+        val engine = engine()
+        val row = engine.patientRow(d.patientSyncId) ?: return null
+        val catalog = env.phone.reader.consultationCatalog()
+        val note = engine.progressNote(d.patientSyncId, d.folio)
+        val fee = ConsultationAccount(catalog.account, d.items, d.feeServiceSyncId, true, workspace::localNow).feeService?.syncId?.takeIf { it.isNotBlank() }
+        val sending = HandoffPayload.Sending(
+            patientSyncId = d.patientSyncId,
+            patientUpdatedAtUtc = row["UpdatedAtUtc"] as String?,
+            patientFieldStampsJson = row["FieldStampsJson"] as String?,
+            progressNoteSyncId = note?.first,
+            progressNoteUpdatedAtUtc = note?.second,
+            appointmentSyncId = d.attendingAppointmentSyncId,
+            feeServiceSyncId = fee,
+            savedAt = workspace.localNow(),
+        )
+        return HandoffPayload.prepareForSending(Json.parseToJsonElement(d.encode()).jsonObject, catalogRefs(catalog), sending).toString()
+    }
+
+    /** Lo que dejó traducir una copia recibida: lo traducido, o por qué todavía no se puede tomar. */
+    class MappedHandoff(val received: HandoffPayload.Received?, val problem: String?)
+
+    /**
+     * `MapIncomingDraftAsync`, después de sincronizar: el expediente debe estar aquí con al menos la versión de la copia y sus marcas por campo, y la nota en su versión (`handoff-accept.json`);
+     * luego cada cargo al catálogo de este equipo. Fuera del hilo principal.
+     */
+    fun mapReceived(payload: JsonObject, row: HandoffRow): MappedHandoff {
+        val patientSyncId = (payload["PatientSyncId"] as? JsonPrimitive)?.contentOrNull ?: return MappedHandoff(null, "La copia recibida no trae el expediente.")
+        val engine = engine()
+        val patient = engine.patientRow(patientSyncId)
+        val noteId = (payload["ProgressNoteSyncId"] as? JsonPrimitive)?.contentOrNull
+        val noteUpdated = noteId?.let(engine::noteUpdatedAt)
+        val arrival = HandoffPayload.checkArrival(payload, patient != null, patient?.get("UpdatedAtUtc") as String?, patient?.get("FieldStampsJson") as String?, noteUpdated != null, noteUpdated)
+        val problem = when (arrival) {
+            HandoffPayload.Arrival.PatientMissing -> "Todavía no llega el expediente de ${row.patientName} a este equipo. Intente de nuevo en unos segundos."
+            HandoffPayload.Arrival.PatientBehind -> "Todavía no llegan los últimos cambios del expediente de ${row.patientName}. Intente de nuevo en unos segundos."
+            HandoffPayload.Arrival.NoteMissing -> "Todavía no llega el avance de la nota de esta consulta. Intente de nuevo en unos segundos."
+            HandoffPayload.Arrival.NoteBehind -> "Todavía no llega la última versión del avance de la nota de esta consulta. Intente de nuevo en unos segundos."
+            HandoffPayload.Arrival.Ready -> null
+        }
+        if (problem != null) return MappedHandoff(null, problem)
+        return MappedHandoff(HandoffPayload.receive(payload, catalogRefs(env.phone.reader.consultationCatalog())), null)
+    }
+
     // ------------------------------------------------------------------ terminar y cobrar
 
     /** «Terminar consulta» (`FinalizeConsultationAsync`): las existencias de ahora y la cuenta. **Nada se escribe aquí:** la nota se escribe al cobrar, junto con todo lo demás. La consulta sigue viva hasta entonces. */
@@ -1109,6 +1258,7 @@ class ConsultationController internal constructor(private val workspace: TabletW
         private const val DRAFT_PAUSE_MILLIS = 400L
         private const val MAX_SAVE_WAIT_MILLIS = 10_000L
         private val CLOCK = DateTimeFormatter.ofPattern("HH:mm:ss", Clinic.LOCALE)
+        private val CLOCK_SHORT = DateTimeFormatter.ofPattern("HH:mm", Clinic.LOCALE)
         private val RECOVERED = DateTimeFormatter.ofPattern("dd/MM HH:mm", Clinic.LOCALE)
 
         const val UNREADABLE = "Hay una consulta guardada en este equipo que esta versión de la app no puede abrir. Se conserva tal cual: actualice la app para seguirla."

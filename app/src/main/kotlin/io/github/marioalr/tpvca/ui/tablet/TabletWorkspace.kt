@@ -109,8 +109,19 @@ class FormSession(
  * va además a un borrador cifrado (`LocalSide`) que sobrevive a que Android cierre el proceso y que el borrado de todo se lleva. Nada de esto va al estado que Android restaura.
  */
 class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, private val io: CoroutineDispatcher = Dispatchers.IO) {
-    var page by mutableStateOf<TabletPage>(TabletPage.Hub)
-        private set
+    private var currentPage by mutableStateOf<TabletPage>(TabletPage.Hub)
+
+    /** Al entrar a Pacientes (desde el inicio o Sincronización), lo pospuesto con «Más tarde» se vuelve a ofrecer (`OnEnterPatientsSectionForHandoff`); ir entre el inicio y la ficha no cuenta. */
+    var page: TabletPage
+        get() = currentPage
+        private set(value) {
+            val entering = !isPatientsSection(currentPage) && isPatientsSection(value)
+            currentPage = value
+            if (entering) handoff.onEnterPatients()
+        }
+
+    /** Pacientes, como la cadencia lo cuenta: todo menos el inicio y Sincronización. */
+    internal fun isPatientsSection(page: TabletPage = this.page): Boolean = page != TabletPage.Hub && page != TabletPage.Sync
     var homeQuery by mutableStateOf("")
         private set
     var agendaOpen by mutableStateOf(false)
@@ -449,20 +460,28 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
     )
 
     /** Editar: el formulario se abre con la fila de ahora, y esa es su foto. [section]: «Editar esta sección». */
-    fun editPatient(syncId: String, section: String? = null) = startForm(
-        build = {
-            val day = today()
-            val row = withContext(io) { engine().patientRow(syncId) }
-            if (row == null) {
-                info = "El expediente ya no existe en la base de datos."
-                null
-            } else {
-                val form = PatientFormFields.formOf(row, day, section ?: "Identificacion")
-                val baseline = PatientFormFields.columnsOf(form, day, form.age(day)).mapValues { (column, value) -> PatientFormFields.comparable(column, value) }
-                FormSession(syncId, null, null, form, form, baseline, PatientFormFields.snapshotOf(row, day))
-            }
-        },
-    )
+    fun editPatient(syncId: String, section: String? = null) {
+        if (handoff.blockIfPatientHandedOff(syncId)) return
+        startForm(
+            build = {
+                val day = today()
+                val row = withContext(io) { engine().patientRow(syncId) }
+                // Se envió su consulta mientras se leía
+                if (handoff.blockIfPatientHandedOff(syncId, row?.get("FullName") as String?)) return@startForm null
+                editSession(syncId, section, row, day)
+            },
+        )
+    }
+
+    private fun editSession(syncId: String, section: String?, row: io.github.marioalr.tpvca.sync.engine.LocalRow?, day: LocalDate): FormSession? {
+        if (row == null) {
+            info = "El expediente ya no existe en la base de datos."
+            return null
+        }
+        val form = PatientFormFields.formOf(row, day, section ?: "Identificacion")
+        val baseline = PatientFormFields.columnsOf(form, day, form.age(day)).mapValues { (column, value) -> PatientFormFields.comparable(column, value) }
+        return FormSession(syncId, null, null, form, form, baseline, PatientFormFields.snapshotOf(row, day))
+    }
 
     private fun openForm(session: FormSession) {
         if (form != null) return
@@ -724,12 +743,19 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
 
     /** Baja lógica (`DeletePatientAsync`): deja de aparecer en las búsquedas; sus consultas y recetas se conservan. */
     fun deletePatient(syncId: String, fullName: String) {
+        if (handoff.blockIfPatientHandedOff(syncId, fullName)) return
         if (consultation.isConsultationFor(syncId)) {
             info = "Termine o descarte la consulta en curso antes de eliminar el expediente."
             return
         }
         scope.launch {
             if (!ask("Eliminar expediente", "¿Eliminar el expediente de $fullName?\n\nDejará de aparecer en la búsqueda. Sus consultas y recetas se conservan.")) return@launch
+            // Mientras se preguntaba pudo llegar una consulta suya, o enviarse
+            if (handoff.blockIfPatientHandedOff(syncId, fullName)) return@launch
+            if (consultation.isConsultationFor(syncId)) {
+                info = "Termine o descarte la consulta en curso antes de eliminar el expediente."
+                return@launch
+            }
             try {
                 withContext(io) { engine().edit("Patients", syncId, mapOf("IsActive" to false)) }
             } catch (e: Exception) {

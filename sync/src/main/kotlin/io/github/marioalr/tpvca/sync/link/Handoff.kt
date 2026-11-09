@@ -11,11 +11,16 @@ import io.github.marioalr.tpvca.sync.hrana.ResultSet
 import io.github.marioalr.tpvca.sync.hrana.Row
 import io.github.marioalr.tpvca.sync.hrana.Statement
 import io.github.marioalr.tpvca.sync.hrana.text
+import io.github.marioalr.tpvca.sync.engine.ConsumptionBrake
+import io.github.marioalr.tpvca.sync.engine.SyncEngine
+import io.github.marioalr.tpvca.sync.engine.SyncStore
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import java.time.Clock
+import java.time.Instant
 import java.time.LocalDateTime
 
 /** Etapa del envío en el equipo que lo manda (`HandoffPhase`). */
@@ -91,8 +96,29 @@ class HandoffPollResult(
     }
 }
 
-/** Lo que la cadencia le pasa a la pantalla después de cada revisión: lo que trajo, o [problem] si no llegó a la nube. */
-class HandoffCheck(val result: HandoffPollResult?, val problem: String?)
+/**
+ * Lo que la cadencia le pasa a la pantalla después de cada revisión: lo que trajo, o [problem] si no llegó a la nube (o no se preguntó: lo automático está en pausa). [epoch]: el de la pantalla
+ * cuando empezó la revisión; si cambió mientras tanto (se envió, recuperó, liberó o recibió), lo que trajo ya no se aplica.
+ */
+class HandoffCheck(val result: HandoffPollResult?, val problem: String?, val epoch: Long = 0L)
+
+/**
+ * Por qué la revisión no pregunta a la nube (`ThrowIfAutomaticSyncPaused` y `Describe` de la PC): la cuota agotada, el freno de consumo o el token rechazado. Es lo automático: el médico sí puede
+ * sincronizar a mano. `null` si no hay pausa.
+ */
+object HandoffPause {
+    const val QUOTA = "Se agotó la cuota mensual de Turso (se reintenta cada hora)"
+    const val TOKEN = "La nube rechazó el token (revise la vinculación en Sincronización)"
+    const val BRAKE = "Sincronización pausada: consumo anormal (revise Sincronización)"
+
+    fun reason(store: SyncStore, clock: Clock): String? {
+        if (ConsumptionBrake(store, clock).isTripped) return BRAKE
+        val retryAt = store.meta(SyncEngine.QUOTA_RETRY_AT)?.let { runCatching { Instant.parse(it) }.getOrNull() }
+        if (retryAt != null && clock.instant().isBefore(retryAt)) return QUOTA
+        if (store.meta(SyncEngine.AUTH_FIRST_401) != null || store.meta(SyncEngine.AUTH_MALFORMED) != null) return TOKEN
+        return null
+    }
+}
 
 /** Una revisión con el latido que llevó: [heartbeatBefore] es el `InstanceNonce` que había, para saber si otra instalación usa el `DeviceId`. */
 class HandoffPoll(val result: HandoffPollResult, val heartbeatBefore: ResultSet?)
@@ -272,8 +298,8 @@ object HandoffErrors {
     /** Texto breve para el médico. */
     fun describe(e: Exception): String = when {
         isConnectivityFailure(e) -> "Sin conexión con la nube"
-        e is HranaException && (e.code == HranaException.UNAUTHORIZED || e.code == "HTTP_403") -> "La nube rechazó el token (revise la vinculación en Sincronización)"
-        e is HranaException && e.code == HranaException.BLOCKED -> "Se agotó la cuota mensual de Turso (se reintenta cada hora)"
+        e is HranaException && (e.code == HranaException.UNAUTHORIZED || e.code == HranaException.TOKEN_MALFORMED || e.code == "HTTP_403") -> HandoffPause.TOKEN
+        e is HranaException && e.code == HranaException.BLOCKED -> HandoffPause.QUOTA
         e is HranaException && e.code == HranaException.ARCHIVED -> "La base de Turso está archivada"
         else -> e.message.orEmpty().ifBlank { "No se pudo hablar con la nube" }
     }

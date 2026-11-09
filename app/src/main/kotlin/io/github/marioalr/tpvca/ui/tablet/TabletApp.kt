@@ -66,10 +66,12 @@ fun TabletApp(workspace: TabletWorkspace, chrome: TabletChrome) {
     // El paciente, el catálogo y las hojas de ahora; con el expediente borrado, la consulta pasa a solo lectura
     val consultationFolio = workspace.consultation.draft?.folio
     LaunchedEffect(chrome.dataVersion, workspace.localVersion, consultationFolio) { workspace.consultation.refresh() }
-    // La cadencia de la consulta entre equipos (K8): cada 4 s en Pacientes con un compañero o un envío pendiente; el estado del envío propio en cada revisión
-    val inPatients = workspace.page != TabletPage.Hub && workspace.page != TabletPage.Sync
-    val outgoingId = workspace.handoff.outgoing?.takeIf { it.phase == io.github.marioalr.tpvca.sync.link.HandoffPhase.Sent }?.id
-    LaunchedEffect(inPatients, outgoingId) { workspace.env.handoff?.setContext(inPatients, outgoingId) }
+    // La cadencia de la consulta entre equipos (K8): cada 4 s en Pacientes con un compañero o un envío pendiente en cualquier fase (`HasPendingSend`); el estado del envío confirmado en cada revisión
+    val inPatients = workspace.isPatientsSection()
+    val outgoing = workspace.handoff.outgoing
+    val outgoingId = outgoing?.takeIf { it.phase == io.github.marioalr.tpvca.sync.link.HandoffPhase.Sent }?.id
+    val pendingSend = outgoing != null
+    LaunchedEffect(inPatients, outgoingId, pendingSend) { workspace.env.handoff?.setContext(inPatients, outgoingId, pendingSend) }
     // Al irse: lo que se estaba escribiendo ya no espera la pausa
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->

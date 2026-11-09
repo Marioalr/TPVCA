@@ -14,7 +14,7 @@ interface HandoffLink {
     /** La tabla `ConsultationHandoffs` con la nube de ahora; `null` sin vinculación. Sus llamadas bloquean: fuera del hilo principal. */
     fun service(): HandoffService?
 
-    /** El latido de este equipo, para leer la lista de equipos con el suyo al día; `null` sin vinculación. */
+    /** El latido de este equipo, para leer la lista de equipos con el suyo al día; `null` sin vinculación. Lee la base: fuera del hilo principal. */
     fun heartbeat(): List<Statement>?
 
     /** Después de escribir el latido con la lista: lo que había en la fila (otra instalación con este `DeviceId`) y cuántos compañeros hay. */
@@ -29,6 +29,9 @@ interface HandoffLink {
     /** Cada revisión de la cadencia: lo que trajo o por qué no llegó a la nube. */
     val checks: StateFlow<HandoffCheck?>
 
-    /** Lo que la cadencia necesita de la pantalla: si el médico está en Pacientes y el envío propio pendiente. */
-    fun setContext(inPatients: Boolean, outgoingId: String?)
+    /** Lo que la cadencia necesita de la pantalla: si el médico está en Pacientes, el envío confirmado cuyo estado se pregunta y si hay un envío pendiente en cualquier fase (`HasPendingSend`). */
+    fun setContext(inPatients: Boolean, outgoingId: String?, pendingSend: Boolean)
+
+    /** Cambió el envío, la recuperación, la liberación o la recepción: una revisión que empezó antes ya no se aplica (`_handoffEpoch`). */
+    fun setEpoch(epoch: Long)
 }

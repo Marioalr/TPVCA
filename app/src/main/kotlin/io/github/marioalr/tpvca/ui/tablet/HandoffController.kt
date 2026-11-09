@@ -86,7 +86,22 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
     var incomingAccepted by mutableStateOf(false)
         private set
 
-    private val gate = Mutex()
+    /** Ya se tocó «Enviar a X» y el envío sigue (guardar la indicación, esperar la compuerta, subir, publicar): otro toque no hace nada (`AsyncRelayCommand` de la PC no es reentrante). */
+    var sendStarted by mutableStateOf(false)
+        private set
+
+    /**
+     * El expediente que se está actualizando con lo del otro equipo después de que se cerró aquí su consulta (`_handoffLockedPatientId` tras `ReleaseHandedOffConsultation`): no se edita hasta que
+     * termine la sincronización y se vuelva a leer. Mientras la consulta está enviada, el candado sale del borrador ([blockIfPatientHandedOff]).
+     */
+    var refreshingPatient by mutableStateOf<String?>(null)
+        private set
+
+    /** Cambia con cada envío, recuperación, liberación o recepción (`_handoffEpoch`): una revisión que empezó antes ya no se aplica. */
+    private var epoch = 0L
+
+    // Las pruebas la ocupan para ver qué pasa con un toque que espera
+    internal val gate = Mutex()
     private val dismissed = HashSet<String>()
     private val announced = HashSet<String>()
     private val applied = HashSet<String>()
@@ -96,16 +111,21 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
 
     val outgoing: HandoffMarker? get() = consultation.outgoingMarker
 
-    val showsSendButton: Boolean get() = isAvailable && consultation.hasConsultation && !consultation.isHandedOff()
+    /**
+     * «Enviar a…» se ve con una consulta que se puede escribir aquí. Con el expediente borrado o todavía bajando no se ve: la PC descarta la consulta de un expediente borrado, y aquí esa consulta queda
+     * en solo lectura con su aviso.
+     */
+    val showsSendButton: Boolean
+        get() = isAvailable && consultation.hasConsultation && !consultation.isHandedOff() && consultation.patientStatus == ConsultationPatientStatus.Active
 
-    val canSend: Boolean get() = showsSendButton && !sending && online
+    val canSend: Boolean get() = showsSendButton && !sending && !sendStarted && online
 
     /** Por qué no se puede enviar (visible junto al botón). */
     val sendHint: String get() = if (showsSendButton && !online) offlineReason else ""
 
     val sendButtonText: String get() = selected?.let { "Enviar a ${it.deviceName}" } ?: "Enviar"
 
-    val canConfirmSend: Boolean get() = selected?.isAvailable == true && !sending && !loadingDevices
+    val canConfirmSend: Boolean get() = selected?.isAvailable == true && !sending && !sendStarted && !loadingDevices
 
     val hasNoDevices: Boolean get() = !loadingDevices && devices.isEmpty() && sheetError == null
 
@@ -134,6 +154,32 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
 
     private fun inPatients(): Boolean = workspace.page != TabletPage.Hub && workspace.page != TabletPage.Sync
 
+    private fun bumpEpoch() {
+        epoch++
+        link?.setEpoch(epoch)
+    }
+
+    // ------------------------------------------------------------------ guardas (`BlockIf…` de la PC)
+
+    /** El expediente no se edita ni se elimina aquí mientras su consulta está en otro equipo, ni mientras se actualiza con lo de allá (`BlockIfPatientHandedOff`). */
+    fun blockIfPatientHandedOff(patientSyncId: String, fullName: String? = null): Boolean {
+        val d = consultation.draft
+        val handedOff = d != null && d.isHandedOff && d.patientSyncId == patientSyncId
+        if (!handedOff && refreshingPatient != patientSyncId) return false
+        workspace.show(
+            if (handedOff) "La consulta de ${fullName ?: d!!.patientName} está en ${d!!.handoffTargetName}: el expediente se edita allá (o aquí al recuperarla)." else "Se está actualizando el expediente con lo del otro equipo. Intente en unos segundos.",
+            warning = true,
+        )
+        return true
+    }
+
+    /** Mientras se recibe una consulta no se empieza otra ni se le carga nada (`BlockIfReceivingHandoff`). */
+    fun blockIfReceiving(): Boolean {
+        if (!receiving) return false
+        workspace.show("Se está recibiendo una consulta de otro equipo. Espere un momento.", warning = true)
+        return true
+    }
+
     // ------------------------------------------------------------------ la revisión
 
     /** Una revisión de la cadencia: el estado del envío propio, los avisos de consultas recibidas y la conexión. Si hay un envío o una recepción en curso, esta vuelta se salta. */
@@ -145,10 +191,14 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
         }
         setConnectivity(true, "")
         val result = check.result ?: return
+        // Se envió, recuperó, liberó o recibió después de que empezó esta revisión: lo que trajo ya no vale
+        if (check.epoch != epoch) return
         if (!gate.tryLock()) return
         scope.launch {
             try {
+                if (check.epoch != epoch) return@launch
                 handleOutgoing(result)
+                if (check.epoch != epoch) return@launch
                 handleIncoming(result)
             } catch (e: CancellationException) {
                 throw e
@@ -183,7 +233,7 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
         }
         when (result.outgoingState) {
             HandoffRules.STATE_ACCEPTED -> {
-                if (release(marker, "La consulta de ${marker.patientName} continúa en ${marker.toDeviceName}")) acknowledge(marker.id)
+                if (release(marker, "La consulta de ${marker.patientName} continúa en ${marker.toDeviceName}") && markerGoneFromDisk(marker.id)) acknowledge(marker.id)
             }
             // Solo este equipo cancela (p. ej. se cerró la app justo después de recuperarla)
             HandoffRules.STATE_CANCELLED -> resolveOutgoingCore(marker, userInitiated = false)
@@ -247,8 +297,10 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
     /** «Enviar a…»: la lista de equipos que pueden llevar la consulta, con el latido de este al día. */
     fun openSendSheet() {
         val link = link ?: return
-        if (!showsSendButton) return
-        if (consultation.readOnly) {
+        // Un segundo toque mientras se lee la lista no la vuelve a pedir
+        if (!showsSendButton || (sheetOpen && loadingDevices)) return
+        // `BlockIfConsultationReadOnly`: solo el envío mira (lo del expediente borrado ya escondió el botón)
+        if (consultation.isHandedOff() || sending) {
             workspace.show(if (sending) "Se está enviando la consulta a otro equipo." else "La consulta se envió a ${consultation.draft?.handoffTargetName}: aquí está en solo lectura. Use «Recuperar» para seguirla en este equipo.", warning = true)
             return
         }
@@ -260,8 +312,8 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
         scope.launch {
             try {
                 val service = link.service() ?: throw IllegalStateException("Sin vinculación")
-                val heartbeat = link.heartbeat()
-                val (list, before) = withContext(io) { service.linkedDevices(heartbeat) }
+                // El latido lee la base: también fuera del hilo principal
+                val (list, before) = withContext(io) { service.linkedDevices(link.heartbeat()) }
                 if (before != null) withContext(io) { link.afterHeartbeat(before, list.count { it.isAvailable }) }
                 devices = list
                 selected = list.firstOrNull { it.isAvailable && it.isOnline } ?: list.firstOrNull { it.isAvailable }
@@ -287,12 +339,16 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
         selected = device.takeIf { it.isAvailable }
     }
 
-    /** Sube lo pendiente del expediente, deja la consulta en solo lectura (con la marca guardada) y publica la copia para el otro equipo. */
+    /**
+     * Sube lo pendiente del expediente, deja la consulta en solo lectura (con la marca guardada) y publica la copia para el otro equipo. Un segundo toque mientras sigue el primero no hace nada, y
+     * después de esperar la compuerta se revisa otra vez que la consulta siga aquí y se pueda escribir (`IsConsultationEditable`): una revisión o un toque anterior pudo enviarla mientras tanto.
+     */
     fun send() {
         val device = selected ?: return
         val link = link ?: return
-        if (!device.isAvailable || sending || !showsSendButton) return
+        if (!device.isAvailable || sending || sendStarted || !showsSendButton) return
         val draft = consultation.draft ?: return
+        if (draft.isHandedOff) return
         // 2026-10-21: un equipo anterior a la revisión 16 no reconoce el producto de los renglones de marca con el principio activo (al quitar uno dejaría su cargo en la cuenta)
         if (device.ignoresActiveIngredient && consultation.sheets.prescriptions.any { !it.activeIngredient.isNullOrBlank() }) {
             sheetError = "No se puede enviar a ${device.deviceName}: tiene una versión anterior de TPVC que no reconoce los medicamentos de marca con el principio activo entre paréntesis de esta receta " +
@@ -305,80 +361,94 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
                 "un paquete completo). Actualícela a la versión más reciente, o envíe la consulta a otro equipo."
             return
         }
+        sendStarted = true
         scope.launch {
-            // 0. Una «Cambiar indicación» abierta se guarda antes de subir el expediente y armar la copia
-            if (!consultation.prescription.commitPending()) {
-                sheetError = "No se pudo guardar la indicación que está cambiando. Guárdela o cancélela antes de enviar."
-                return@launch
-            }
-            if (withTimeoutOrNull(GATE_WAIT_MILLIS) { gate.lock() } == null) {
-                sheetError = "Se está revisando la nube. Intente de nuevo en un momento."
-                return@launch
-            }
-            sending = true
-            sheetError = null
             try {
-                val service = link.service() ?: throw IllegalStateException("Sin vinculación")
-                // 1. Lo pendiente del expediente (receta en curso, avance de nota) sube antes
-                link.syncNow()?.let { problem ->
-                    sheetError = "No se pudo subir el expediente a la nube: $problem"
+                // 0. Una «Cambiar indicación» abierta se guarda antes de subir el expediente y armar la copia
+                if (!consultation.prescription.commitPending()) {
+                    sheetError = "No se pudo guardar la indicación que está cambiando. Guárdela o cancélela antes de enviar."
                     return@launch
                 }
-                // 2. La copia con identificadores que valen en cualquier equipo
-                val current = consultation.draft ?: return@launch
-                val payload = withContext(io) { runCatching { consultation.buildHandoffPayload() }.getOrNull() }
-                if (payload == null) {
-                    sheetError = "No se pudo preparar la copia de la consulta."
+                if (withTimeoutOrNull(GATE_WAIT_MILLIS) { gate.lock() } == null) {
+                    sheetError = "Se está revisando la nube. Intente de nuevo en un momento."
                     return@launch
                 }
-                val marker = HandoffMarker(
-                    id = SyncIds.random(),
-                    toDeviceId = device.deviceId,
-                    toDeviceName = device.deviceName,
-                    fromDeviceId = service.deviceId,
-                    fromDeviceName = service.deviceName,
-                    databaseUrl = service.databaseUrl,
-                    patientSyncId = current.patientSyncId,
-                    patientName = current.patientName,
-                    folio = current.folio,
-                    phase = HandoffPhase.Sending,
-                    createdAt = workspace.localNow().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-                )
-                // 3. Solo lectura aquí ANTES de que el otro equipo pueda verla, y que sobreviva a un cierre
-                if (!consultation.markHandoff(marker)) {
-                    sheetError = "No se pudo guardar la consulta en este equipo; no se envió."
-                    return@launch
-                }
-                bannerDetail = null
-                canReleaseLocally = false
-                // 4. Publicarla
                 try {
-                    withContext(io) { service.send(marker, payload) }
-                    consultation.markHandoff(marker.copy(phase = HandoffPhase.Sent))
-                    link.reachedCloud()
-                    sheetOpen = false
-                    workspace.show("Consulta enviada a ${device.deviceName}")
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    if (HandoffErrors.isDefinitiveRejection(e)) {
-                        consultation.markHandoff(null)
-                        sheetError = "No se envió: ${HandoffErrors.describe(e)}."
-                    } else {
-                        // Pudo llegar o no: se resuelve contra la nube antes de volver a editarla aquí
-                        val unconfirmed = marker.copy(phase = HandoffPhase.Unconfirmed)
-                        consultation.markHandoff(unconfirmed)
-                        sheetOpen = false
-                        if (!resolveOutgoingCore(unconfirmed, userInitiated = false)) bannerDetail = "No se pudo confirmar el envío. Use «Recuperar» en cuanto haya conexión."
-                    }
+                    // Mientras se esperaba, la consulta pudo enviarse, cerrarse, cambiar o quedar en solo lectura (el expediente se borró)
+                    val current = consultation.draft
+                    if (current == null || current.folio != draft.folio || current.isHandedOff || consultation.readOnly) return@launch
+                    sending = true
+                    sheetError = null
+                    bumpEpoch()
+                    sendCore(device, link)
+                } finally {
+                    sending = false
+                    gate.unlock()
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 sheetError = "No se pudo enviar: ${workspace.problem(e)}"
             } finally {
-                sending = false
-                gate.unlock()
+                sendStarted = false
+            }
+        }
+    }
+
+    private suspend fun sendCore(device: LinkedDevice, link: HandoffLink) {
+        val service = link.service() ?: throw IllegalStateException("Sin vinculación")
+        // 1. Lo pendiente del expediente (receta en curso, avance de nota) sube antes
+        link.syncNow()?.let { problem ->
+            sheetError = "No se pudo subir el expediente a la nube: $problem"
+            return
+        }
+        // 2. La copia con identificadores que valen en cualquier equipo
+        val current = consultation.draft ?: return
+        if (current.isHandedOff || consultation.readOnly) return
+        val payload = withContext(io) { runCatching { consultation.buildHandoffPayload() }.getOrNull() }
+        if (payload == null) {
+            sheetError = "No se pudo preparar la copia de la consulta."
+            return
+        }
+        val marker = HandoffMarker(
+            id = SyncIds.random(),
+            toDeviceId = device.deviceId,
+            toDeviceName = device.deviceName,
+            fromDeviceId = service.deviceId,
+            fromDeviceName = service.deviceName,
+            databaseUrl = service.databaseUrl,
+            patientSyncId = current.patientSyncId,
+            patientName = current.patientName,
+            folio = current.folio,
+            phase = HandoffPhase.Sending,
+            createdAt = workspace.localNow().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+        )
+        // 3. Solo lectura aquí ANTES de que el otro equipo pueda verla, y que sobreviva a un cierre
+        if (!consultation.markHandoff(marker)) {
+            sheetError = "No se pudo guardar la consulta en este equipo; no se envió."
+            return
+        }
+        bannerDetail = null
+        canReleaseLocally = false
+        // 4. Publicarla
+        try {
+            withContext(io) { service.send(marker, payload) }
+            consultation.markHandoff(marker.copy(phase = HandoffPhase.Sent))
+            link.reachedCloud()
+            sheetOpen = false
+            workspace.show("Consulta enviada a ${device.deviceName}")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (HandoffErrors.isDefinitiveRejection(e)) {
+                if (consultation.markHandoff(null)) bumpEpoch()
+                sheetError = "No se envió: ${HandoffErrors.describe(e)}."
+            } else {
+                // Pudo llegar o no: se resuelve contra la nube antes de volver a editarla aquí
+                val unconfirmed = marker.copy(phase = HandoffPhase.Unconfirmed)
+                consultation.markHandoff(unconfirmed)
+                sheetOpen = false
+                if (!resolveOutgoingCore(unconfirmed, userInitiated = false)) bannerDetail = "No se pudo confirmar el envío. Use «Recuperar» en cuanto haya conexión."
             }
         }
     }
@@ -429,32 +499,47 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
         // Si mientras tanto se liberó o resolvió de otra forma, no se cambia nada ni se avisa
         if (outgoing?.id != marker.id) return true
         if (resolution == HandoffResolution.Accepted) {
-            if (release(marker, "La consulta de ${marker.patientName} continúa en ${marker.toDeviceName}")) acknowledge(marker.id)
-        } else {
-            if (consultation.markHandoff(null)) {
-                bannerDetail = null
-                canReleaseLocally = false
-                workspace.show(if (userInitiated) "La consulta volvió a este equipo" else "No se confirmó el envío a ${marker.toDeviceName}: la consulta sigue en este equipo")
-            }
-            // La nube puede borrar el envío solo cuando este equipo ya no lo tiene pendiente
-            acknowledge(marker.id)
+            release(marker, "La consulta de ${marker.patientName} continúa en ${marker.toDeviceName}")
+        } else if (consultation.markHandoff(null)) {
+            bumpEpoch()
+            bannerDetail = null
+            canReleaseLocally = false
+            workspace.show(if (userInitiated) "La consulta volvió a este equipo" else "No se confirmó el envío a ${marker.toDeviceName}: la consulta sigue en este equipo")
         }
+        // La nube puede borrar el envío solo cuando este equipo ya no lo tiene pendiente en el disco (si no se pudo quitar la marca, la siguiente revisión lo vuelve a intentar)
+        if (markerGoneFromDisk(marker.id)) acknowledge(marker.id)
         return true
     }
 
     /** El otro equipo la aceptó: se cierra aquí SIN descartar y sin tocar el expediente; después se baja lo del otro equipo. */
     private suspend fun release(marker: HandoffMarker, message: String, archive: Boolean = false): Boolean {
-        if (!consultation.releaseHandedOff(marker.folio, archive)) return false
+        // El expediente sigue sin editarse aquí hasta que llegue lo del otro equipo y se vuelva a leer: el candado pasa del borrador a [refreshingPatient] sin hueco
+        val previous = refreshingPatient
+        refreshingPatient = marker.patientSyncId
+        if (!consultation.releaseHandedOff(marker.folio, archive)) {
+            if (refreshingPatient == marker.patientSyncId) refreshingPatient = previous
+            return false
+        }
+        bumpEpoch()
         sheetOpen = false
         canReleaseLocally = false
         bannerDetail = null
         workspace.show(message)
         // El expediente se vuelve a leer cuando llegue lo del otro equipo (o si no hay conexión)
         scope.launch {
-            link?.syncNow()
-            workspace.changed()
+            try {
+                link?.syncNow()
+                workspace.changed()
+            } finally {
+                if (outgoing == null && refreshingPatient == marker.patientSyncId) refreshingPatient = null
+            }
         }
         return true
+    }
+
+    /** La marca de «enviada» ya no está en el borrador del disco (o no hay borrador): `MarkerGoneFromDisk`. Si no se puede leer, no se confirma (la nube conserva el envío). */
+    private suspend fun markerGoneFromDisk(markerId: String): Boolean = withContext(io) {
+        runCatching { consultation.storedHandoffId() != markerId }.getOrDefault(false)
     }
 
     private fun acknowledge(handoffId: String) {
@@ -522,6 +607,7 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
     }
 
     private suspend fun acceptCore(row: HandoffRow, link: HandoffLink) {
+        bumpEpoch()
         val service = link.service() ?: throw IllegalStateException("Sin vinculación")
         val payload = runCatching { Json.parseToJsonElement(row.payload) as? JsonObject }.getOrNull()
         if (payload == null || !HandoffPayload.canRead(row.payloadVersion, HandoffPayload.draftVersion(payload))) {
@@ -665,6 +751,7 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
         incomingAccepted = false
         bannerDetail = null
         canReleaseLocally = false
+        refreshingPatient = null
         dismissed.clear()
         announced.clear()
         applied.clear()

@@ -364,6 +364,8 @@ class LinkFlowTest {
         val flow = linked()
         val beats = cloud.heartbeats.size
         clock.advance(Duration.ofSeconds(60))
+        // Como la vuelta de `LinkController`: en la tablet el latido va dentro de la revisión, que corre aparte de la sincronización
+        flow.checkHandoffs()
         flow.refresh(Refresh.TICK)
         assertEquals(beats + 1, cloud.heartbeats.size)
         assertFalse("Sin bajar todavía", Statements.REGISTRY_OWN in cloud.requests.flatten())

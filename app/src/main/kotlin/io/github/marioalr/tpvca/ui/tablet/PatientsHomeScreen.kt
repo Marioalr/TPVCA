@@ -71,8 +71,6 @@ import java.time.format.DateTimeFormatter
 /** La barra de Pacientes (`MedicalRecordsView`): Inicio, Pacientes, el buscador, Agenda y Nuevo paciente, arriba del inicio y de la ficha. */
 @Composable
 fun PatientsScreen(workspace: TabletWorkspace, content: @Composable () -> Unit) {
-    // Al entrar a Pacientes, lo que se pospuso con «Más tarde» se vuelve a ofrecer (`OnEnterPatientsSectionForHandoff`)
-    LaunchedEffect(Unit) { workspace.handoff.onEnterPatients() }
     Column(Modifier.fillMaxSize()) {
         PatientsTopBar(workspace)
         ConsultationBanner(workspace)

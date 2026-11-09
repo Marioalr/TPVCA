@@ -66,6 +66,10 @@ class LinkController(
     private var restored = false
     private var loop: Job? = null
 
+    /** La sincronización que pidió la vuelta y sigue corriendo: mientras, la revisión sigue a su paso y no se pide otra (regla «Cadencia»). */
+    @Volatile
+    private var cadenceSync: Job? = null
+
     fun onForeground() {
         appLock.onForeground()
         mutableSecure.value = deviceLock.isSecure()
@@ -75,17 +79,30 @@ class LinkController(
                 restoreOnce()
                 // Lo que ya se sabe, sin esperar a la red
                 noteProgress()
-                flow.refresh(Refresh.OPENED)
-                noteProgress()
+            }
+            // Al volver al frente se sincroniza, sin detener la revisión
+            cadenceSync = scope.launch(io) {
+                guarded {
+                    flow.refresh(Refresh.OPENED)
+                    noteProgress()
+                }
             }
             while (isActive) {
-                delay(tickMillis)
+                // La revisión de la consulta entre equipos y su latido: no esperan a ninguna sincronización
                 guarded {
                     // Si abrir lo guardado falló, aquí se vuelve a intentar
                     restoreOnce()
-                    flow.refresh(Refresh.TICK)
-                    noteProgress()
+                    flow.checkHandoffs()
                 }
+                if (cadenceSync?.isActive != true) {
+                    cadenceSync = scope.launch(io) {
+                        guarded {
+                            flow.refresh(Refresh.TICK)
+                            noteProgress()
+                        }
+                    }
+                }
+                delay(tickMillis)
             }
         }
     }
@@ -272,7 +289,9 @@ class LinkController(
 
         override val checks: StateFlow<HandoffCheck?> get() = handoffChecks
 
-        override fun setContext(inPatients: Boolean, outgoingId: String?) = flow.setHandoffContext(inPatients, outgoingId)
+        override fun setContext(inPatients: Boolean, outgoingId: String?, pendingSend: Boolean) = flow.setHandoffContext(inPatients, outgoingId, pendingSend)
+
+        override fun setEpoch(epoch: Long) = flow.setHandoffEpoch(epoch)
     }
 
     private fun launch(action: () -> Unit) {

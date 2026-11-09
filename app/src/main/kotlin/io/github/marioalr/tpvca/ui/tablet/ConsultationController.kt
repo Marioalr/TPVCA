@@ -529,7 +529,7 @@ class ConsultationController internal constructor(private val workspace: TabletW
 
     /** «Atender» y «Atender ahora» (`AttendAppointment`). Una cita sin expediente activo se busca por su nombre para abrirlo o crearlo. */
     fun attend(appointment: Appointment, patientSyncId: String?) {
-        if (starting) return
+        if (starting || workspace.handoff.blockIfReceiving()) return
         starting = true
         scope.launch {
             try {
@@ -569,6 +569,8 @@ class ConsultationController internal constructor(private val workspace: TabletW
 
     /** El botón principal de la ficha (`ChartPrimaryAction`). */
     fun chartPrimaryAction(patientSyncId: String) {
+        // `StartActiveConsultation`: mientras se recibe una consulta no se empieza otra
+        if (workspace.handoff.blockIfReceiving()) return
         val current = draft
         when {
             current?.patientSyncId == patientSyncId -> workspace.showConsultation()
@@ -583,7 +585,7 @@ class ConsultationController internal constructor(private val workspace: TabletW
     }
 
     private fun startFor(patientSyncId: String) {
-        if (starting) return
+        if (starting || workspace.handoff.blockIfReceiving()) return
         starting = true
         scope.launch {
             try {
@@ -837,6 +839,8 @@ class ConsultationController internal constructor(private val workspace: TabletW
     private suspend fun applyLocked(change: ConsultationStep.() -> Unit): ApplyResult {
         val start = draft ?: return ApplyResult.Refused
         if (readOnly) return ApplyResult.Refused
+        // Como los cargos de la PC (`ChargeServiceLine`, `TryAddServiceToActiveConsultation`): nada se agrega mientras se recibe una consulta
+        if (workspace.handoff.blockIfReceiving()) return ApplyResult.Refused
         inFlight = true
         typedDuringStep.clear()
         try {
@@ -1057,6 +1061,12 @@ class ConsultationController internal constructor(private val workspace: TabletW
         workspace.changed()
         workspace.showConsultation()
         return true
+    }
+
+    /** El `Id` de la marca de envío en el borrador guardado (`null` si no hay borrador o no tiene marca): `MarkerGoneFromDisk`. Lee la base: fuera del hilo principal. */
+    internal fun storedHandoffId(): String? {
+        val text = local()?.draft(LocalSide.CONSULTATION) ?: return null
+        return HandoffMarker.fromJson(ConsultationDraft.decode(text)?.handoff)?.id
     }
 
     /** El catálogo de este equipo como lo ve la consulta entre equipos: cada producto (también los inactivos, con su marca) y cada servicio por su `SyncId`, código y nombre. */

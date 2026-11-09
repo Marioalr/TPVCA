@@ -96,6 +96,8 @@ class AppGraph(context: Context) {
         connectFolio = { url, token -> HranaClient(url, token, BuildConfig.VERSION_NAME, http.newBuilder().callTimeout(FOLIO_WAIT_SECONDS, TimeUnit.SECONDS).build()) },
         writeGuard = { write -> gate.write(gate.ticket()) { write() } },
         onHandoffCheck = { handoffChecks.value = it },
+        // Cada petición de la consulta entre equipos espera 20 s como máximo (`HandoffRequestTimeout` de la PC)
+        connectHandoff = { url, token -> HranaClient(url, token, BuildConfig.VERSION_NAME, http.newBuilder().callTimeout(HANDOFF_WAIT_SECONDS, TimeUnit.SECONDS).build()) },
     )
 
     private val follower = WorkFollower { state, role -> runCatching { BackgroundWork.follow(app, state, role) } }
@@ -193,6 +195,9 @@ class AppGraph(context: Context) {
 
     private companion object {
         const val FOLIO_WAIT_SECONDS = 2L
+
+        /** `HandoffRequestTimeout` de la PC. */
+        const val HANDOFF_WAIT_SECONDS = 20L
 
         /** 500 MB en una tablet, 200 en un celular (`PENDIENTES_ANDROID.md`): el ancho más corto de la pantalla lo dice. */
         fun labCacheBytes(context: Context): Long = if (context.resources.configuration.smallestScreenWidthDp >= 600) LabFileCache.TABLET_MAX_BYTES else LabFileCache.PHONE_MAX_BYTES

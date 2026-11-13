@@ -447,10 +447,17 @@ class ConsultationController internal constructor(private val workspace: TabletW
         val services: List<ServiceRow>,
         val previous: Consultation?,
         val consultations: List<Consultation>,
+        /** En qué orden empezó a leerse: una lectura que empezó antes y termina después no pisa a una más nueva. */
+        val seq: Long = 0,
     )
+
+    /** El orden de las lecturas de [readState] y la última que se mostró. */
+    private val readSeq = java.util.concurrent.atomic.AtomicLong()
+    private var publishedSeq = 0L
 
     /** Siempre fuera del hilo principal. */
     private fun readState(d: ConsultationDraft): ReadState {
+        val seq = readSeq.incrementAndGet()
         val reader = env.phone.reader
         val (row, downloaded) = engine().patientRowAndDownload(d.patientSyncId)
         val patient = reader.activePatient(d.patientSyncId)
@@ -468,10 +475,14 @@ class ConsultationController internal constructor(private val workspace: TabletW
             SheetRows.services(row?.get(PatientSheets.SERVICES) as String?, d.patientSyncId),
             consultations.firstOrNull(),
             consultations,
+            seq,
         )
     }
 
     private fun publish(state: ReadState) {
+        // Una lectura vieja que terminó tarde (por ejemplo, de antes de que se borrara el expediente) no regresa lo de antes
+        if (state.seq < publishedSeq) return
+        publishedSeq = state.seq
         patientStatus = state.status
         // Si se borró, se sigue viendo quién era
         state.patient?.let { patient = it }

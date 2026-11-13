@@ -47,7 +47,15 @@ import java.time.LocalDate
 enum class PosSheet { Catalog, Services, Tickets, CashCut }
 
 /** El ticket en pantalla: el de la venta recién cobrada ([fresh], con lo recibido y el cambio) o uno del historial («Ver / reimprimir»). */
-class PosReceipt(val receipt: SaleReceipt, val saleSyncId: String, val cashReceived: BigDecimal?, val change: BigDecimal?, val fresh: Boolean) {
+class PosReceipt(
+    val receipt: SaleReceipt,
+    val saleSyncId: String,
+    val cashReceived: BigDecimal?,
+    val change: BigDecimal?,
+    val fresh: Boolean,
+    /** Lo que la PC avisa en una esquina al cobrar (existencias que no alcanzaron, o que ya estaba cobrada): aquí va dentro del ticket, donde ningún aviso tapa sus botones. */
+    val notice: String? = null,
+) {
     val hasCashDetail: Boolean get() = cashReceived != null && change != null
 }
 
@@ -430,14 +438,16 @@ class PosController internal constructor(private val workspace: TabletWorkspace,
                     cashier = cashier,
                     items = step.items.map { SaleReceiptItem(it.name, it.quantity, it.unitPrice) },
                 )
-                receipt = PosReceipt(shown, sale.syncId, step.cash.received, step.cash.change, fresh = true)
+                val warning = StockReviewRules.warningText(sale.shortages)
+                val notice = listOfNotNull(if (sale.repeated) "Esta venta ya estaba cobrada: no se cobró otra vez." else null, warning).joinToString("\n").ifEmpty { null }
+                // La hoja del ticket ya dice «Venta cobrada» y el folio; lo que la PC avisa aparte va dentro de ella
+                receipt = PosReceipt(shown, sale.syncId, step.cash.received, step.cash.change, fresh = true, notice = notice)
+                // Un aviso de antes (lo que se agregó sin existencias) no se queda encima de los botones del ticket
+                workspace.toast = null
                 startNewCart()
                 env.noteLocalWrite()
                 workspace.changed()
                 refresh()
-                val warning = StockReviewRules.warningText(sale.shortages)
-                val text = if (sale.repeated) "Esta venta ya estaba cobrada · ${sale.folio}: no se cobró otra vez" else "Venta cobrada · ${sale.folio}"
-                workspace.show(text + if (warning != null) "\n$warning" else "", warning = warning != null || sale.repeated)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

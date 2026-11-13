@@ -528,6 +528,7 @@ object TabletTags {
     const val POS_RECEIPT = "tablet-pos-receipt"
     const val POS_RECEIPT_DONE = "tablet-pos-receipt-done"
     const val POS_RECEIPT_SHARE = "tablet-pos-receipt-share"
+    const val POS_RECEIPT_NOTICE = "tablet-pos-receipt-notice"
     const val POS_CUT_PREVIOUS = "tablet-pos-cut-previous"
     const val POS_CUT_TODAY = "tablet-pos-cut-today"
     const val POS_CUT_NEXT = "tablet-pos-cut-next"

@@ -228,9 +228,13 @@ class PointOfSaleTabletTest {
         charge()
         waitTag(TabletTags.POS_RECEIPT)
         assertEquals(-4L, stock("MED-014"))
-        assertTrue(workspace.toast!!.warning)
-        assertTrue(workspace.toast!!.text, workspace.toast!!.text.contains("Venta cobrada"))
-        assertTrue(workspace.toast!!.text, workspace.toast!!.text.contains("Revise el inventario"))
+        compose.onNodeWithText("Venta cobrada").assertIsDisplayed()
+        // El aviso va dentro del ticket: ningún aviso de abajo tapa «Nueva venta»
+        assertTrue(workspace.pos.receipt!!.notice!!.contains("Revise el inventario"))
+        compose.onNodeWithTag(TabletTags.POS_RECEIPT_NOTICE).assertIsDisplayed()
+        assertNull(workspace.toast)
+        compose.onNodeWithTag(TabletTags.POS_RECEIPT_DONE).performClick()
+        waitFor { workspace.pos.receipt == null }
     }
 
     /** Dos toques en «Cobrar», el segundo mientras el primero espera a la nube: un solo ticket. */

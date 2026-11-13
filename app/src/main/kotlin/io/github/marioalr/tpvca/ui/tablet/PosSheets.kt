@@ -491,6 +491,8 @@ internal fun ReceiptSheet(workspace: TabletWorkspace, shown: PosReceipt) {
         },
     ) {
         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 4.dp)) {
+            // Revisión 20: vender nunca se detiene; lo que faltó se avisa aquí
+            shown.notice?.let { TNotice(it, colors.warningSubtle, colors.warningText, Modifier.padding(bottom = 12.dp), tag = TabletTags.POS_RECEIPT_NOTICE) }
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.surfaceSubtle).padding(horizontal = 20.dp, vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 val p = (profile as? Loaded.Ready)?.value ?: ClinicProfile()
                 Paper(p.clinicName?.takeIf { it.isNotBlank() } ?: "Consultorio Médico TPVC", bold = true, size = TType.section)

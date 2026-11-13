@@ -167,11 +167,14 @@ class TabletDeviceTest {
         val sale = store.select("Sales", listOf("SyncId", "Folio", "LedgerVersion")).single { (it["Folio"] as String).contains("-T1-") }
         fun tempra() = store.select("Products", listOf("Code", "CurrentStock")).first { it["Code"] == "MED-014" }["CurrentStock"]
         assertEquals(-5L, tempra())
+        compose.onNodeWithTag(TabletTags.POS_RECEIPT_NOTICE).assertIsDisplayed()
         compose.onNodeWithTag(TabletTags.POS_RECEIPT_DONE).performClick()
+        waitFor { workspace.pos.receipt == null }
         compose.onNodeWithTag(TabletTags.POS_TICKETS).performClick()
         waitTag(TabletTags.posTicket(sale["SyncId"] as String))
         compose.onNodeWithTag(TabletTags.posTicket(sale["SyncId"] as String)).performClick()
         compose.onNodeWithTag(TabletTags.POS_CANCEL).performClick()
+        waitTag(TabletTags.POS_CANCEL_CONFIRM)
         compose.onNodeWithTag(TabletTags.POS_CANCEL_CONFIRM).performClick()
         waitFor { store.select("Sales", listOf("SyncId", "IsCancelled")).first { it["SyncId"] == sale["SyncId"] }["IsCancelled"] == 1L }
         assertEquals(-3L, tempra())

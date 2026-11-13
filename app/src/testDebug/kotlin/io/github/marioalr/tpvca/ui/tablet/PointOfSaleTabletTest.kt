@@ -181,6 +181,28 @@ class PointOfSaleTabletTest {
         assertEquals(TabletPage.Hub, workspace.page)
     }
 
+    /** En vertical el cobro va debajo de la cuenta, en la misma columna que se desplaza (y sus hojas caben). */
+    @Test
+    @Config(qualifiers = "w800dp-h1280dp-xlarge-port")
+    fun enVerticalTodoCabeYSeCobra() {
+        enter()
+        type("ibupro")
+        enterKey()
+        waitFor { workspace.pos.session.cart.hasItems }
+        compose.onNodeWithTag(TabletTags.CHECKOUT_CHARGE).performScrollTo().assertIsDisplayed()
+        for (sheet in listOf(TabletTags.POS_TICKETS, TabletTags.POS_CASH_CUT)) {
+            compose.onNodeWithTag(sheet).performClick()
+            waitTag(TabletTags.POS_SHEET)
+            compose.runOnIdle { workspace.back() }
+            compose.waitForIdle()
+        }
+        compose.onNodeWithTag(TabletTags.POS_SERVICES).performClick()
+        waitTag(TabletTags.POS_SERVICE_ADD)
+        compose.runOnIdle { workspace.back() }
+        charge()
+        waitTag(TabletTags.POS_RECEIPT)
+    }
+
     // ------------------------------------------------------------------ buscar, 3* y cobrar sin conexión
 
     @Test

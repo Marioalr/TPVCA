@@ -78,12 +78,13 @@ fun PosScreen(workspace: TabletWorkspace, chrome: TabletChrome) {
                 if (isWide(900.dp)) {
                     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         SaleCard(pos, Modifier.weight(1f).fillMaxSize())
-                        PaymentCard(pos, Modifier.width(360.dp).fillMaxSize())
+                        PaymentCard(pos, Modifier.width(360.dp).fillMaxSize(), scroll = true)
                     }
                 } else {
                     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         SaleCard(pos, Modifier.fillMaxWidth().heightIn(min = 420.dp, max = 560.dp))
-                        PaymentCard(pos, Modifier.fillMaxWidth())
+                        // Dentro de la columna que ya se desplaza: sin otro desplazamiento adentro
+                        PaymentCard(pos, Modifier.fillMaxWidth(), scroll = false)
                     }
                 }
             }
@@ -288,9 +289,9 @@ internal fun StockBadge(row: PosProduct) {
 }
 
 @Composable
-private fun PaymentCard(pos: PosController, modifier: Modifier) {
+private fun PaymentCard(pos: PosController, modifier: Modifier, scroll: Boolean) {
     TCard(modifier, padding = 0.dp) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column((if (scroll) Modifier.verticalScroll(rememberScrollState()) else Modifier).padding(horizontal = 20.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             PaymentPanel(pos.session, pos::charge, clientField = true)
         }
     }

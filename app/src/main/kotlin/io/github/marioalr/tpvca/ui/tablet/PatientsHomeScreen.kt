@@ -74,6 +74,7 @@ fun PatientsScreen(workspace: TabletWorkspace, content: @Composable () -> Unit) 
     Column(Modifier.fillMaxSize()) {
         PatientsTopBar(workspace)
         ConsultationBanner(workspace)
+        IncomingHandoffNotice(workspace)
         Box(Modifier.weight(1f).fillMaxWidth()) { content() }
     }
 }

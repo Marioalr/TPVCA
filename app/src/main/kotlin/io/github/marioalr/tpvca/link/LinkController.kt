@@ -14,6 +14,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import io.github.marioalr.tpvca.sync.link.LabUploadFiles
 import io.github.marioalr.tpvca.sync.link.LabUploadReport
+import io.github.marioalr.tpvca.sync.link.HandoffCheck
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
@@ -36,6 +38,8 @@ class LinkController(
     private val syncingFlow: MutableStateFlow<Boolean> = MutableStateFlow(false),
     /** Los resultados de laboratorio que este equipo agregó y faltan por subir (K7); `null` en el celular, que no sube. */
     private val labUploads: LabUploadFiles? = null,
+    /** Lo que trae cada revisión de la consulta entre equipos (K8): lo llena `LinkFlow` y lo lee la pantalla de Pacientes. */
+    private val handoffChecks: MutableStateFlow<HandoffCheck?> = MutableStateFlow(null),
 ) {
     val state: StateFlow<LinkState?> = states
     val locked: StateFlow<Boolean> = appLock.locked
@@ -62,6 +66,10 @@ class LinkController(
     private var restored = false
     private var loop: Job? = null
 
+    /** La sincronización que pidió la vuelta y sigue corriendo: mientras, la revisión sigue a su paso y no se pide otra (regla «Cadencia»). */
+    @Volatile
+    private var cadenceSync: Job? = null
+
     fun onForeground() {
         appLock.onForeground()
         mutableSecure.value = deviceLock.isSecure()
@@ -71,17 +79,30 @@ class LinkController(
                 restoreOnce()
                 // Lo que ya se sabe, sin esperar a la red
                 noteProgress()
-                flow.refresh(Refresh.OPENED)
-                noteProgress()
+            }
+            // Al volver al frente se sincroniza, sin detener la revisión
+            cadenceSync = scope.launch(io) {
+                guarded {
+                    flow.refresh(Refresh.OPENED)
+                    noteProgress()
+                }
             }
             while (isActive) {
-                delay(tickMillis)
+                // La revisión de la consulta entre equipos y su latido: no esperan a ninguna sincronización
                 guarded {
                     // Si abrir lo guardado falló, aquí se vuelve a intentar
                     restoreOnce()
-                    flow.refresh(Refresh.TICK)
-                    noteProgress()
+                    flow.checkHandoffs()
                 }
+                if (cadenceSync?.isActive != true) {
+                    cadenceSync = scope.launch(io) {
+                        guarded {
+                            flow.refresh(Refresh.TICK)
+                            noteProgress()
+                        }
+                    }
+                }
+                delay(tickMillis)
             }
         }
     }
@@ -232,6 +253,47 @@ class LinkController(
 
     fun unlocked() = appLock.unlock()
 
+    /**
+     * Sincroniza ahora y espera a que termine, como `SyncAsync` de la PC antes de enviar o de tomar una consulta: `null` si terminó bien; si no, el aviso. Es lo que pide el médico, así
+     * que intenta aunque lo automático esté en pausa.
+     */
+    suspend fun syncNow(): String? = withContext(io) {
+        try {
+            restoreOnce()
+            val state = flow.refresh(Refresh.USER)
+            noteProgress()
+            when {
+                flow.lastFailed -> (state as? LinkState.Linked)?.notice ?: "Sin conexión con la nube"
+                state is LinkState.Linked -> null
+                else -> "La vinculación no está lista"
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            flow.reportLocalError()
+            "Falló la base de este equipo"
+        }
+    }
+
+    /** La consulta entre equipos (K8), para la tablet. */
+    val handoff: HandoffLink = object : HandoffLink {
+        override fun service() = flow.handoffService()
+
+        override fun heartbeat() = flow.handoffHeartbeat()
+
+        override fun afterHeartbeat(before: io.github.marioalr.tpvca.sync.hrana.ResultSet, peerCount: Int) = flow.afterHandoffHeartbeat(before, peerCount)
+
+        override fun reachedCloud() = flow.handoffReachedCloud()
+
+        override suspend fun syncNow(): String? = this@LinkController.syncNow()
+
+        override val checks: StateFlow<HandoffCheck?> get() = handoffChecks
+
+        override fun setContext(inPatients: Boolean, outgoingId: String?, pendingSend: Boolean) = flow.setHandoffContext(inPatients, outgoingId, pendingSend)
+
+        override fun setEpoch(epoch: Long) = flow.setHandoffEpoch(epoch)
+    }
+
     private fun launch(action: () -> Unit) {
         scope.launch(io) { guarded(action) }
     }
@@ -253,6 +315,7 @@ class LinkController(
     companion object {
         const val AFTER_SAVE_MILLIS = 4_000L
         const val QUICK_SYNC_MILLIS = 3_000L
-        const val TICK_MILLIS = 5_000L
+        /** La vuelta de la cadencia: la revisión de la consulta entre equipos va cada 4 s en Pacientes (regla «Cadencia»), así que el paso es menor. */
+        const val TICK_MILLIS = 2_000L
     }
 }

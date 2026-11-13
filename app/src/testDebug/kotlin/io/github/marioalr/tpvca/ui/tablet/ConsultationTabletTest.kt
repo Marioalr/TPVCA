@@ -49,6 +49,19 @@ import io.github.marioalr.tpvca.sync.hrana.ResultSet
 import io.github.marioalr.tpvca.sync.hrana.Snapshot
 import io.github.marioalr.tpvca.sync.hrana.Statement
 import io.github.marioalr.tpvca.sync.link.MemoryFolioNumbers
+import io.github.marioalr.tpvca.sync.link.HandoffCheck
+import io.github.marioalr.tpvca.sync.link.HandoffMarker
+import io.github.marioalr.tpvca.sync.link.HandoffPause
+import io.github.marioalr.tpvca.sync.link.HandoffPhase
+import io.github.marioalr.tpvca.sync.link.HandoffService
+import io.github.marioalr.tpvca.sync.link.Heartbeat
+import io.github.marioalr.tpvca.sync.link.HeartbeatInfo
+import io.github.marioalr.tpvca.sync.SqlCloud
+import io.github.marioalr.tpvca.sync.hrana.text
+import io.github.marioalr.tpvca.link.HandoffLink
+import io.github.marioalr.tpvca.domain.devices.DeviceRole
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import io.github.marioalr.tpvca.sync.rules.PatientSheets
 import io.github.marioalr.tpvca.sync.rules.consultation.ConsultationDraft
 import io.github.marioalr.tpvca.sync.rules.consultation.PrescriptionRow
@@ -64,6 +77,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.After
@@ -126,7 +140,7 @@ class ConsultationTabletTest {
             PhoneEnv(ClinicReader({ database.clinic() }, { assets }), SharedDocuments(context), labFiles = null),
             writes = {
                 checkThread()
-                WriteEngine(store, { "tablet" }, folios, { cloud })
+                if (refuseWrites) null else WriteEngine(store, { "tablet" }, folios, { cloud })
             },
             local = {
                 checkThread()
@@ -142,7 +156,116 @@ class ConsultationTabletTest {
             isOnline = { online },
             labStore = LabFileStore(labCache),
             uploadLabFiles = { uploadsRequested++ },
+            handoff = handoffLink,
         )
+    }
+
+    // ------------------------------------------------------------------ la consulta entre equipos (K8): una nube que ejecuta el SQL de verdad
+
+    private val handoffCloud by lazy {
+        SqlCloud().apply {
+            createSchema()
+            admin("INSERT INTO _tpvc_meta (Key, Value) VALUES ('primaryDeviceId', 'device-pc')")
+            admin(
+                "INSERT INTO RegisteredDevices (DeviceId, DeviceName, DeviceRole, AppVersion, LastSeenUtc, Platform, SyncProtocol, HandoffProtocol, ContractRevision) " +
+                    "VALUES ('device-pc', 'Consultorio', 'WindowsDesktop', '1.47.0', strftime('%Y-%m-%d %H:%M:%f','now'), 'Windows', 3, 1, 23)",
+            )
+            admin("INSERT INTO DeviceRegistry (DeviceId, DeviceCode, Role, DisplayName, PairedAtUtc) VALUES ('device-pc', 'P1', 'WindowsDesktop', 'PC del consultorio', 'x')")
+            admin("INSERT INTO DeviceRegistry (DeviceId, DeviceCode, Role, DisplayName, PairedAtUtc) VALUES ('tablet', 'T1', 'AndroidTablet', 'Tablet del consultorio', 'x')")
+        }
+    }
+    private val handoffChecks = MutableStateFlow<HandoffCheck?>(null)
+    private var syncProblem: String? = null
+    private var syncs = 0
+    private var reached = 0
+    private var handoffContext: Pair<Boolean, String?>? = null
+    private var handoffPending = false
+    private var handoffEpoch = 0L
+
+    /** Mientras no se complete, la sincronización que pide la consulta entre equipos se queda esperando. */
+    private var syncGate: CompletableDeferred<Unit>? = null
+
+    /** Sin motor de escritura: lo que escriba en la base falla (el disco, la base cerrada). */
+    private var refuseWrites = false
+    private val handoffService by lazy { HandoffService(handoffCloud.connection, "tablet", "Tablet del consultorio", "https://consultorio-ejemplo.turso.io") }
+
+    private val handoffLink = object : HandoffLink {
+        override fun service() = handoffService
+
+        // Como en la app, el latido lee la base: nunca en el hilo principal
+        override fun heartbeat(): List<Statement> {
+            checkThread()
+            return Heartbeat.statements(HeartbeatInfo("tablet", "Tablet del consultorio", DeviceRole.AndroidTablet, "0.4.0", 0, null, "nonce-1"))
+        }
+
+        override fun afterHeartbeat(before: io.github.marioalr.tpvca.sync.hrana.ResultSet, peerCount: Int) {}
+
+        override fun reachedCloud() {
+            reached++
+        }
+
+        override suspend fun syncNow(): String? {
+            syncs++
+            syncGate?.await()
+            return syncProblem
+        }
+
+        override val checks: StateFlow<HandoffCheck?> get() = handoffChecks
+
+        override fun setContext(inPatients: Boolean, outgoingId: String?, pendingSend: Boolean) {
+            handoffContext = inPatients to outgoingId
+            handoffPending = pendingSend
+        }
+
+        override fun setEpoch(epoch: Long) {
+            handoffEpoch = epoch
+        }
+    }
+
+    /** Una revisión de la cadencia, como la entrega `LinkFlow`: con la época de cuando empezó. */
+    private fun check(outgoingId: String? = null) = deliver(poll(outgoingId))
+
+    private fun poll(outgoingId: String? = null) = HandoffCheck(handoffService.poll(outgoingId).result, null, handoffEpoch)
+
+    private fun deliver(check: HandoffCheck) {
+        handoffChecks.value = check
+        compose.waitForIdle()
+    }
+
+    private fun handoffCount() = handoffCloud.admin("SELECT Id FROM ConsultationHandoffs").size
+
+    private fun handoffRow(id: String) = handoffCloud.admin("SELECT State, Payload, AcceptToken, SenderAckAtUtc, ToDeviceId FROM ConsultationHandoffs WHERE Id = ?", id).single()
+
+    private fun tempraId() = store.select("Products", listOf("SyncId", "Code")).first { it["Code"] == "MED-014" }["SyncId"] as String
+
+    /** La copia que manda la PC (la forma de `handoff-payload.json`), para Ana, con un producto de este catálogo y uno que no está. */
+    private fun pcPayload(): String = """{"Version":1,"SavedAt":"2026-01-15T10:52:41","PatientId":0,"PatientName":"Ana Pérez Núñez","Folio":"CNS-20260115-103000","StartedAt":"2026-01-15T10:30:00",""" +
+        """"ChiefComplaintLabel":"Consulta Médica General","ChiefComplaint":"Control mensual de glucosa","SystemsReview":"","PhysicalExam":"","Diagnosis":"E11.9 Diabetes mellitus tipo 2 sin complicaciones",""" +
+        """"TreatmentPlan":"Continuar metformina","Notes":"","GeneralIndications":"","TA":"135/85","FC":"","FR":"","Temp":"","Weight":"","Height":"","SpO2":"","Glucose":"142","Section":4,"SavedToRecord":false,""" +
+        """"Items":[{"ProductId":0,"Code":"MED-014","Name":"Tempra 500 mg tabletas","GenericName":null,"Presentation":null,"Unit":"Piezas","UnitPrice":48,"Subtotal":48,"ProductName":"Tempra 500 mg tabletas",""" +
+        """"AddedAt":"2026-01-15T10:42:00","CatalogSyncId":"${tempraId()}","LineKind":"producto","Quantity":1},{"ProductId":0,"Code":"VEN-009","Name":"Venda elástica 10 cm","GenericName":null,"Presentation":null,""" +
+        """"Unit":"Piezas","UnitPrice":25,"Subtotal":25,"ProductName":"Venda elástica 10 cm","AddedAt":"2026-01-15T10:42:00","CatalogSyncId":"10000000-0000-4000-8000-000000000999","LineKind":"producto","Quantity":1}],""" +
+        """"Prescriptions":[],"PreviousPrescriptions":null,"PatientBefore":null,"AttendingAppointmentId":null,"PatientSyncId":"$ana","PatientUpdatedAtUtc":"2020-01-01T00:00:00","PatientFieldStamps":{},""" +
+        """"ProgressNoteSyncId":null,"AttendingAppointmentSyncId":null,"FeeServiceSyncId":null,"ReceivedHandoffId":null,"ReceivedHandoffToken":null,"Handoff":null}"""
+
+    private fun pcSends(id: String = "10000000-0000-4000-8000-000000000950", payload: String = pcPayload()) {
+        handoffCloud.admin(
+            "INSERT INTO ConsultationHandoffs (Id, FromDeviceId, FromDeviceName, ToDeviceId, ToDeviceName, PatientSyncId, PatientName, Folio, Payload, PayloadVersion, State, CreatedAtUtc, UpdatedAtUtc) " +
+                "VALUES (?, 'device-pc', 'pc', 'tablet', 'Tablet del consultorio', ?, 'Ana Pérez Núñez', 'CNS-20260115-103000', ?, 1, 'enviada', strftime('%Y-%m-%d %H:%M:%f','now'), strftime('%Y-%m-%d %H:%M:%f','now'))",
+            id, ana, payload,
+        )
+    }
+
+    /** Empieza la de Ana y la manda a la PC desde la hoja «Enviar a…». */
+    private fun sendToPc(): HandoffMarker {
+        startAna()
+        compose.onNodeWithTag(TabletTags.HANDOFF_SEND).assertIsEnabled().performClick()
+        waitTag(TabletTags.HANDOFF_SHEET)
+        waitTag(TabletTags.handoffDevice("device-pc"))
+        waitText("PC del consultorio")
+        compose.onNodeWithTag(TabletTags.HANDOFF_SHEET_SEND).assertIsEnabled().performClick()
+        waitFor { workspace.consultation.outgoingMarker?.phase == HandoffPhase.Sent }
+        return workspace.consultation.outgoingMarker!!
     }
 
     @Before
@@ -331,6 +454,7 @@ class ConsultationTabletTest {
         val folio = workspace.consultation.draft!!.folio
         workspace.goPatients()
         waitTag(TabletTags.CONSULTATION_BANNER)
+        // La lista del inicio se vuelve a leer aparte del aviso
         waitTag(TabletTags.attend("10:30"))
         compose.onNodeWithTag(TabletTags.attend("10:30")).performClick()
         waitTag(TabletTags.CONSULTATION)
@@ -914,7 +1038,7 @@ class ConsultationTabletTest {
         folio = "CNS-ENVIADA",
         startedAt = "2026-11-06T10:30:00",
         chiefComplaint = "Lo escrito allá",
-        handoff = JsonObject(mapOf("ToDeviceName" to JsonPrimitive("Tablet del consultorio"))),
+        handoff = HandoffMarker("10000000-0000-4000-8000-0000000000aa", "device-otra", "Tablet del consultorio", "tablet", "Tablet del consultorio", "https://consultorio-ejemplo.turso.io", ana, "Paciente Ana Ejemplo Ruiz", "CNS-ENVIADA", HandoffPhase.Sent, "2026-11-06T10:31:00").toJson(),
         chargeSaleSyncId = "10000000-0000-4000-8000-0000000000bb",
     )
 
@@ -926,8 +1050,8 @@ class ConsultationTabletTest {
         waitTag(TabletTags.CONSULTATION)
         val consultation = workspace.consultation
         assertTrue(consultation.readOnly)
-        waitText("La consulta se envió a Tablet del consultorio: aquí está en solo lectura.")
-        compose.onNodeWithContentDescription("Recuperar, en la siguiente versión").assertExists()
+        waitText("Enviada a Tablet del consultorio: aquí queda en solo lectura hasta que la acepte")
+        compose.onNodeWithTag(TabletTags.HANDOFF_RECOVER).assertIsEnabled()
         assertTrue(compose.onAllNodesWithTag(TabletTags.CONSULTATION_FINISH).fetchSemanticsNodes().isEmpty())
         assertTrue(compose.onAllNodesWithTag(TabletTags.CONSULTATION_DISCARD).fetchSemanticsNodes().isEmpty())
         compose.onNodeWithText("Fiebre").assertIsNotEnabled()
@@ -2081,5 +2205,597 @@ class ConsultationTabletTest {
         waitTag(TabletTags.slot("11:00"))
         compose.onNodeWithTag(TabletTags.slot("11:00")).performScrollTo().performClick()
         waitFor { workspace.appointment.patient?.syncId == ana }
+    }
+
+    // ------------------------------------------------------------------ la consulta entre equipos (K8)
+
+    @Test
+    fun enviarALaPcDejaLaConsultaEnSoloLecturaYCuandoLaAceptaSeCierraAqui() {
+        val marker = sendToPc()
+        assertEquals("device-pc", marker.toDeviceId)
+        assertEquals("PC del consultorio", marker.toDeviceName)
+        assertEquals("Primero sube lo pendiente", 1, syncs)
+        val row = handoffRow(marker.id)
+        assertEquals("enviada", row["State"]?.text)
+        assertEquals("device-pc", row["ToDeviceId"]?.text)
+        val payload = row["Payload"]?.text.orEmpty()
+        assertTrue(payload.contains("\"PatientSyncId\":\"$ana\""))
+        assertTrue(payload.contains("\"PatientId\":0"))
+        assertFalse("La marca del envío nunca viaja", payload.contains("\"Handoff\":{"))
+        assertFalse(payload.contains("ChargeSaleSyncId"))
+        // En solo lectura, con la marca guardada: sobrevive a cerrar la app
+        assertEquals(marker.id, HandoffMarker.fromJson(storedDraft()?.handoff)?.id)
+        waitTag(TabletTags.CONSULTATION_READ_ONLY)
+        waitText("Enviada a PC del consultorio: aquí queda en solo lectura hasta que la acepte")
+        assertEquals(0, compose.onAllNodesWithTag(TabletTags.CONSULTATION_DISCARD).fetchSemanticsNodes().size)
+        assertEquals(0, compose.onAllNodesWithTag(TabletTags.HANDOFF_SEND).fetchSemanticsNodes().size)
+        compose.onNodeWithTag(TabletTags.HANDOFF_RECOVER).assertIsEnabled()
+        waitFor { reached > 0 }
+
+        // La PC la toma; la siguiente revisión lo ve y la consulta se cierra aquí sin descartar nada
+        handoffCloud.admin("UPDATE ConsultationHandoffs SET State = 'aceptada', AcceptToken = 'ficha-pc' WHERE Id = ?", marker.id)
+        check(outgoingId = marker.id)
+        waitFor { !workspace.consultation.hasConsultation }
+        assertNull(storedDraft())
+        waitText("La consulta de Paciente Ana Ejemplo Ruiz continúa en PC del consultorio")
+        assertEquals("No se borra nada del expediente", 1, store.select("Patients", listOf("SyncId", "IsActive"), "SyncId", listOf(ana)).count { it["IsActive"] == 1L })
+        waitFor { handoffRow(marker.id)["SenderAckAtUtc"]?.text != null }
+        assertEquals(TabletPage.Chart(ana), workspace.page)
+    }
+
+    @Test
+    fun recuperarLaDevuelveAEsteEquipo() {
+        val marker = sendToPc()
+        compose.onNodeWithTag(TabletTags.HANDOFF_RECOVER).performClick()
+        waitFor { workspace.consultation.draft?.isHandedOff == false }
+        assertEquals("cancelada", handoffRow(marker.id)["State"]?.text)
+        assertEquals("", handoffRow(marker.id)["Payload"]?.text)
+        assertNull(storedDraft()?.handoff)
+        waitText("La consulta volvió a este equipo")
+        compose.onNodeWithTag(TabletTags.CONSULTATION_FINISH).assertIsEnabled()
+        assertEquals(0, compose.onAllNodesWithTag(TabletTags.CONSULTATION_READ_ONLY).fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun laConsultaRecibidaSeOfreceEnPacientesYContinuarAquiLaAbre() {
+        val id = "10000000-0000-4000-8000-000000000950"
+        pcSends(id)
+        workspace.goPatients()
+        show()
+        waitTag(TabletTags.HOME)
+        check()
+        waitTag(TabletTags.HANDOFF_INCOMING)
+        waitText("pc te envió una consulta")
+        waitText("Ana Pérez Núñez · iniciada 10:30 · E11.9 Diabetes mellitus tipo 2 sin complicaciones · cargos \$73.00")
+        compose.onNodeWithTag(TabletTags.HANDOFF_ACCEPT).assertIsEnabled().performClick()
+        waitTag(TabletTags.CONSULTATION)
+        val draft = workspace.consultation.draft!!
+        assertEquals("Primero baja lo último", 1, syncs)
+        assertEquals(id, draft.receivedHandoffId)
+        assertEquals("CNS-20260115-103000", draft.folio)
+        assertEquals(ana, draft.patientSyncId)
+        assertEquals(4, draft.section)
+        assertEquals(listOf("producto", "libre"), draft.items.map { it.lineKind })
+        assertEquals(tempraId(), draft.items[0].catalogSyncId)
+        assertNull(draft.items[1].catalogSyncId)
+        assertEquals(BigDecimal("48"), draft.items[0].unitPrice)
+        assertEquals(id, storedDraft()?.receivedHandoffId)
+        // Tomada con la ficha de este equipo, y la copia se borra de la nube al quedar guardada aquí
+        val row = handoffRow(id)
+        assertEquals("aceptada", row["State"]?.text)
+        assertEquals(store.meta(WriteEngine.HANDOFF_TOKEN_PREFIX + id), row["AcceptToken"]?.text)
+        waitFor { handoffRow(id)["Payload"]?.text == "" }
+        assertNotNull(store.meta(WriteEngine.HANDOFF_APPLIED_PREFIX + id))
+        waitText("No están en el catálogo de este equipo y se cobrarán sin descontar existencias: Venda elástica 10 cm.")
+        waitFor { workspace.consultation.account?.lines?.sumOf { it.subtotal }?.compareTo(BigDecimal("73")) == 0 }
+        // La siguiente revisión ya no la ofrece
+        check()
+        assertNull(workspace.handoff.incoming)
+    }
+
+    @Test
+    fun conUnaConsultaEnCursoElAvisoDiceQueTerminePrimero() {
+        startAna()
+        pcSends()
+        check()
+        waitText("pc te envió la consulta de Ana Pérez Núñez. Ábrela en Pacientes.")
+        workspace.goPatients()
+        waitTag(TabletTags.HANDOFF_INCOMING)
+        waitText("Termine o descarte la consulta en curso para continuar esta aquí")
+        compose.onNodeWithTag(TabletTags.HANDOFF_ACCEPT).assertIsNotEnabled()
+    }
+
+    @Test
+    fun masTardeOcultaElAvisoHastaVolverAPacientes() {
+        pcSends()
+        workspace.goPatients()
+        show()
+        check()
+        waitTag(TabletTags.HANDOFF_INCOMING)
+        compose.onNodeWithTag(TabletTags.HANDOFF_LATER).performClick()
+        waitFor { workspace.handoff.incoming == null }
+        check()
+        assertNull(workspace.handoff.incoming)
+        workspace.goHub()
+        waitTag(TabletTags.HUB)
+        workspace.goPatients()
+        waitTag(TabletTags.HOME)
+        check()
+        waitTag(TabletTags.HANDOFF_INCOMING)
+    }
+
+    @Test
+    fun sinConexionEnviarSeDeshabilitaYLoDice() {
+        startAna()
+        handoffChecks.value = HandoffCheck(null, "Sin conexión con la nube")
+        waitText("Sin conexión con la nube: no se puede enviar ahora")
+        compose.onNodeWithTag(TabletTags.HANDOFF_SEND).assertIsNotEnabled()
+        check()
+        waitFor { workspace.handoff.online }
+        compose.onNodeWithTag(TabletTags.HANDOFF_SEND).assertIsEnabled()
+        // La cadencia sabe que estamos en Pacientes, sin envío pendiente
+        waitFor { handoffContext == (true to null) }
+    }
+
+    // ------------------------------------------------------------------ K8: lo que dejó ver la revisión
+
+    /** Abre «Enviar a…» con la de Ana en curso y espera a que la PC quede elegida. */
+    private fun openSendSheetForAna() {
+        startAna()
+        compose.onNodeWithTag(TabletTags.HANDOFF_SEND).assertIsEnabled().performClick()
+        waitTag(TabletTags.handoffDevice("device-pc"))
+        waitFor { workspace.handoff.canConfirmSend }
+    }
+
+    @Test
+    fun dosToquesEnEnviarMandanUnaSolaVez() {
+        openSendSheetForAna()
+        val handoff = workspace.handoff
+        handoff.send()
+        // Deshabilitado, salvo que el envío ya haya terminado (en la CI a veces termina antes de esta línea)
+        assertTrue("El primer toque deshabilita el botón", !handoff.canConfirmSend || workspace.consultation.outgoingMarker != null)
+        handoff.send()
+        waitFor { workspace.consultation.outgoingMarker?.phase == HandoffPhase.Sent }
+        compose.waitForIdle()
+        assertEquals(1, handoffCount())
+        assertEquals("Sube lo pendiente una sola vez", 1, syncs)
+    }
+
+    @Test
+    fun conLaCompuertaOcupadaDosToquesQueEsperanMandanUnaSolaVez() {
+        openSendSheetForAna()
+        val handoff = workspace.handoff
+        runBlocking { handoff.gate.lock() }
+        handoff.send()
+        handoff.send()
+        compose.waitForIdle()
+        assertEquals("Esperan la compuerta", 0, handoffCount())
+        handoff.gate.unlock()
+        waitFor { workspace.consultation.outgoingMarker?.phase == HandoffPhase.Sent }
+        compose.waitForIdle()
+        assertEquals(1, handoffCount())
+        assertEquals(1, syncs)
+    }
+
+    @Test
+    fun unToqueQueEsperaLaCompuertaNoEnviaUnaConsultaQueYaSeEnvio() {
+        openSendSheetForAna()
+        val handoff = workspace.handoff
+        runBlocking { handoff.gate.lock() }
+        handoff.send()
+        compose.waitForIdle()
+        // Mientras esperaba, la consulta quedó enviada por otro camino
+        val other = HandoffMarker("10000000-0000-4000-8000-0000000000dd", "device-pc", "PC del consultorio", "tablet", "Tablet del consultorio", "https://consultorio-ejemplo.turso.io", ana, "Paciente Ana Ejemplo Ruiz", workspace.consultation.draft!!.folio, HandoffPhase.Sent)
+        var marked = false
+        scope.launch { marked = workspace.consultation.markHandoff(other) }
+        waitFor { marked }
+        handoff.gate.unlock()
+        waitFor { !handoff.sendStarted }
+        assertEquals(0, handoffCount())
+        assertEquals(0, syncs)
+        assertEquals(other.id, workspace.consultation.outgoingMarker?.id)
+    }
+
+    @Test
+    fun elExpedienteNoSeEditaMientrasSuConsultaEstaEnOtroEquipoNiMientrasSeActualiza() {
+        val marker = sendToPc()
+        workspace.editPatient(ana)
+        compose.waitForIdle()
+        assertNull(workspace.form)
+        assertEquals("La consulta de Paciente Ana Ejemplo Ruiz está en PC del consultorio: el expediente se edita allá (o aquí al recuperarla).", workspace.toast?.text)
+        workspace.toast = null
+        workspace.deletePatient(ana, "Paciente Ana Ejemplo Ruiz")
+        compose.waitForIdle()
+        assertNull(workspace.confirm)
+        assertEquals("La consulta de Paciente Ana Ejemplo Ruiz está en PC del consultorio: el expediente se edita allá (o aquí al recuperarla).", workspace.toast?.text)
+
+        // La PC la toma; lo del otro equipo todavía no baja
+        syncGate = CompletableDeferred()
+        handoffCloud.admin("UPDATE ConsultationHandoffs SET State = 'aceptada', AcceptToken = 'ficha-pc' WHERE Id = ?", marker.id)
+        check(outgoingId = marker.id)
+        waitFor { !workspace.consultation.hasConsultation }
+        workspace.editPatient(ana, "Antecedentes")
+        compose.waitForIdle()
+        assertNull(workspace.form)
+        assertEquals("Se está actualizando el expediente con lo del otro equipo. Intente en unos segundos.", workspace.toast?.text)
+        workspace.toast = null
+        workspace.deletePatient(ana, "Paciente Ana Ejemplo Ruiz")
+        compose.waitForIdle()
+        assertNull(workspace.confirm)
+        assertEquals("Se está actualizando el expediente con lo del otro equipo. Intente en unos segundos.", workspace.toast?.text)
+
+        // Ya bajó y se volvió a leer: se edita aquí otra vez
+        syncGate!!.complete(Unit)
+        waitFor { workspace.handoff.refreshingPatient == null }
+        workspace.editPatient(ana)
+        waitFor { workspace.form?.patientSyncId == ana }
+    }
+
+    @Test
+    fun mientrasSeRecibeUnaConsultaNoSeEmpiezaOtra() {
+        pcSends()
+        workspace.goPatients()
+        show()
+        waitTag(TabletTags.HOME)
+        check()
+        waitTag(TabletTags.HANDOFF_INCOMING)
+        syncGate = CompletableDeferred()
+        compose.onNodeWithTag(TabletTags.HANDOFF_ACCEPT).performClick()
+        waitFor { workspace.handoff.receiving }
+        workspace.consultation.chartPrimaryAction(juan)
+        compose.waitForIdle()
+        assertEquals("Se está recibiendo una consulta de otro equipo. Espere un momento.", workspace.toast?.text)
+        assertFalse(workspace.consultation.hasConsultation)
+        assertNull(storedDraft())
+        syncGate!!.complete(Unit)
+        waitTag(TabletTags.CONSULTATION)
+        assertEquals(ana, workspace.consultation.draft?.patientSyncId)
+    }
+
+    @Test
+    fun masTardeSigueOcultoAlIrDelInicioALaFicha() {
+        pcSends()
+        workspace.goPatients()
+        show()
+        waitTag(TabletTags.HOME)
+        check()
+        waitTag(TabletTags.HANDOFF_INCOMING)
+        compose.onNodeWithTag(TabletTags.HANDOFF_LATER).performClick()
+        waitFor { workspace.handoff.incoming == null }
+        // Entre el inicio y la ficha sigue en Pacientes: no se vuelve a ofrecer
+        workspace.openChart(ana)
+        waitTag(TabletTags.CHART_PRIMARY)
+        check()
+        assertNull(workspace.handoff.incoming)
+        workspace.goPatients()
+        waitTag(TabletTags.HOME)
+        check()
+        assertNull(workspace.handoff.incoming)
+        // Al volver a entrar, sí
+        workspace.goHub()
+        waitTag(TabletTags.HUB)
+        workspace.goPatients()
+        waitTag(TabletTags.HOME)
+        check()
+        waitTag(TabletTags.HANDOFF_INCOMING)
+    }
+
+    /** Se tomó con la ficha de este equipo y se perdió la respuesta: la ficha guardada se usa tal cual y se pregunta a la nube (`GetAcceptStateAsync`). */
+    @Test
+    fun laConsultaTomadaConLaRespuestaPerdidaSeAbreConLaFichaGuardada() {
+        val id = "10000000-0000-4000-8000-000000000951"
+        pcSends(id)
+        store.apply(StoreChanges(meta = mapOf(WriteEngine.HANDOFF_TOKEN_PREFIX + id to "fichaperdida")))
+        handoffCloud.admin("UPDATE ConsultationHandoffs SET State = 'aceptada', AcceptToken = 'fichaperdida' WHERE Id = ?", id)
+        workspace.goPatients()
+        show()
+        waitTag(TabletTags.HOME)
+        check()
+        waitText("Consulta recibida de pc, pendiente de abrir")
+        compose.onNodeWithTag(TabletTags.HANDOFF_ACCEPT).assertIsEnabled().performClick()
+        waitTag(TabletTags.CONSULTATION)
+        val draft = workspace.consultation.draft!!
+        assertEquals(id, draft.receivedHandoffId)
+        assertEquals("fichaperdida", store.meta(WriteEngine.HANDOFF_TOKEN_PREFIX + id))
+        assertEquals("fichaperdida", handoffRow(id)["AcceptToken"]?.text)
+        waitFor { handoffRow(id)["Payload"]?.text == "" }
+    }
+
+    /** El intento anterior no llegó (sigue «enviada»): se toma otra vez con la misma ficha, nunca con una nueva. */
+    @Test
+    fun unIntentoQueNoLlegoSeTomaConLaMismaFicha() {
+        val id = "10000000-0000-4000-8000-000000000952"
+        pcSends(id)
+        store.apply(StoreChanges(meta = mapOf(WriteEngine.HANDOFF_TOKEN_PREFIX + id to "fichaanterior")))
+        workspace.goPatients()
+        show()
+        waitTag(TabletTags.HOME)
+        check()
+        waitTag(TabletTags.HANDOFF_INCOMING)
+        compose.onNodeWithTag(TabletTags.HANDOFF_ACCEPT).performClick()
+        waitTag(TabletTags.CONSULTATION)
+        assertEquals("aceptada", handoffRow(id)["State"]?.text)
+        assertEquals("fichaanterior", handoffRow(id)["AcceptToken"]?.text)
+    }
+
+    @Test
+    fun unEnvioSinConfirmarEnOtraNubeSeLiberaYSuCopiaSeAparta() {
+        val marker = HandoffMarker(
+            "10000000-0000-4000-8000-0000000000ee", "device-pc", "PC del consultorio", "tablet", "Tablet del consultorio", "https://otra-nube.example.com", ana, "Paciente Ana Ejemplo Ruiz", "CNS-ENVIADA",
+            HandoffPhase.Unconfirmed, "2026-11-06T10:31:00",
+        )
+        val text = handedOff().copy(handoff = marker.toJson()).encode()
+        store.apply(StoreChanges(meta = mapOf(WriteEngine.CONSULTATION_DRAFT to text)))
+        show()
+        waitTag(TabletTags.CONSULTATION)
+        waitText("No se pudo confirmar el envío a PC del consultorio: en solo lectura hasta resolverlo")
+        // La cadencia sabe que hay un envío pendiente aunque no esté confirmado
+        waitFor { handoffPending }
+        check()
+        waitTag(TabletTags.HANDOFF_RELEASE)
+        waitText("Cambió la nube o el equipo configurado: este equipo no puede confirmar el envío.")
+        compose.onNodeWithTag(TabletTags.HANDOFF_RELEASE).performClick()
+        waitFor { workspace.confirm != null }
+        assertTrue(workspace.confirm!!.message.startsWith("No se sabe si la consulta de Paciente Ana Ejemplo Ruiz llegó a PC del consultorio."))
+        syncGate = CompletableDeferred()
+        workspace.answer(true)
+        waitFor { !workspace.consultation.hasConsultation }
+        assertNull(storedDraft())
+        assertEquals("La copia se aparta, no se pierde", text, store.meta(WriteEngine.ARCHIVED_CONSULTATION))
+        assertEquals("Nada va a la nube", 0, handoffCount())
+        waitText("Este equipo quedó libre")
+        // Hasta que baje lo del otro equipo, el expediente no se edita aquí
+        workspace.editPatient(ana)
+        compose.waitForIdle()
+        assertNull(workspace.form)
+        syncGate!!.complete(Unit)
+        waitFor { workspace.handoff.refreshingPatient == null }
+    }
+
+    @Test
+    fun conLoAutomaticoEnPausaEnviarSeDeshabilitaYDicePorQue() {
+        startAna()
+        deliver(HandoffCheck(null, HandoffPause.QUOTA, handoffEpoch))
+        waitText("Se agotó la cuota mensual de Turso (se reintenta cada hora): no se puede enviar ahora")
+        compose.onNodeWithTag(TabletTags.HANDOFF_SEND).assertIsNotEnabled()
+        deliver(HandoffCheck(null, HandoffPause.TOKEN, handoffEpoch))
+        waitText("La nube rechazó el token (revise la vinculación en Sincronización): no se puede enviar ahora")
+        compose.onNodeWithTag(TabletTags.HANDOFF_SEND).assertIsNotEnabled()
+    }
+
+    @Test
+    fun conElExpedienteBorradoNoSeOfreceEnviarla() {
+        startAna()
+        compose.onNodeWithTag(TabletTags.HANDOFF_SEND).assertIsEnabled()
+        deactivate(ana)
+        workspace.changed()
+        waitTag(TabletTags.CONSULTATION_READ_ONLY)
+        waitText("ya no existe")
+        assertEquals(0, compose.onAllNodesWithTag(TabletTags.HANDOFF_SEND).fetchSemanticsNodes().size)
+        workspace.handoff.openSendSheet()
+        compose.waitForIdle()
+        assertFalse(workspace.handoff.sheetOpen)
+        assertNull(workspace.toast)
+        assertEquals(0, compose.onAllNodesWithText("null", substring = true).fetchSemanticsNodes().size)
+    }
+
+    /** Una revisión que empezó antes de recuperar y volver a enviar trae el estado del envío anterior: no se aplica al nuevo. */
+    @Test
+    fun unaRevisionViejaNoSeAplicaDespuesDeVolverAEnviar() {
+        val first = sendToPc()
+        compose.onNodeWithTag(TabletTags.HANDOFF_RECOVER).performClick()
+        waitFor { workspace.consultation.draft?.isHandedOff == false }
+        val stale = poll(first.id)
+        assertEquals("cancelada", stale.result!!.outgoingState)
+        compose.onNodeWithTag(TabletTags.HANDOFF_SEND).assertIsEnabled().performClick()
+        waitTag(TabletTags.handoffDevice("device-pc"))
+        waitFor { workspace.handoff.canConfirmSend }
+        compose.onNodeWithTag(TabletTags.HANDOFF_SHEET_SEND).performClick()
+        waitFor { workspace.consultation.outgoingMarker?.let { it.phase == HandoffPhase.Sent && it.id != first.id } == true }
+        val second = workspace.consultation.outgoingMarker!!
+        deliver(stale)
+        waitFor { !workspace.handoff.recovering }
+        compose.waitForIdle()
+        assertEquals("enviada", handoffRow(second.id)["State"]?.text)
+        assertTrue(workspace.consultation.draft!!.isHandedOff)
+        assertEquals(second.id, HandoffMarker.fromJson(storedDraft()?.handoff)?.id)
+    }
+
+    /** `MarkerGoneFromDisk`: la nube puede borrar el envío solo cuando la marca ya no está en el disco. */
+    @Test
+    fun soloSeConfirmaElFinDelEnvioCuandoLaMarcaSeQuitoDelDisco() {
+        val marker = sendToPc()
+        refuseWrites = true
+        compose.onNodeWithTag(TabletTags.HANDOFF_RECOVER).performClick()
+        waitFor { handoffRow(marker.id)["State"]?.text == "cancelada" }
+        waitFor { !workspace.handoff.recovering }
+        compose.waitForIdle()
+        assertTrue("No se pudo quitar la marca: sigue en solo lectura", workspace.consultation.draft!!.isHandedOff)
+        assertEquals(marker.id, HandoffMarker.fromJson(storedDraft()?.handoff)?.id)
+        assertNull(handoffRow(marker.id)["SenderAckAtUtc"]?.text)
+        // La siguiente revisión lo vuelve a intentar y ahora sí
+        refuseWrites = false
+        check(outgoingId = marker.id)
+        waitFor { workspace.consultation.draft?.isHandedOff == false }
+        assertNull(storedDraft()?.handoff)
+        waitFor { handoffRow(marker.id)["SenderAckAtUtc"]?.text != null }
+    }
+
+    // ------------------------------------------------------------------ K8: «Continuar aquí» revisa que se pueda abrir antes de tomarla
+
+    /** La PC manda [payload]; se toca «Continuar aquí» y se espera a que termine. */
+    private fun acceptFromPc(id: String, payload: String = pcPayload(), beforeAccept: () -> Unit = {}) {
+        pcSends(id, payload)
+        workspace.goPatients()
+        show()
+        check()
+        waitFor { workspace.handoff.incoming?.id == id }
+        beforeAccept()
+        workspace.handoff.accept()
+        waitFor { !workspace.handoff.receiving }
+        compose.waitForIdle()
+    }
+
+    /** Nada se tomó en la nube: sigue «enviada», sin ficha, para el otro equipo o para recuperarla. */
+    private fun assertNotTaken(id: String) {
+        val row = handoffRow(id)
+        assertEquals("enviada", row["State"]?.text)
+        assertNull(row["AcceptToken"]?.text)
+        assertNotEquals("", row["Payload"]?.text)
+    }
+
+    private fun refusesMalformed(id: String, payload: String) {
+        acceptFromPc(id, payload)
+        assertNotTaken(id)
+        assertFalse(workspace.consultation.hasConsultation)
+        assertNull(store.meta(WriteEngine.CONSULTATION_DRAFT))
+        assertEquals("Esta consulta viene de una versión más nueva de TPVC. Actualice este equipo para recibirla.", workspace.toast?.text)
+    }
+
+    @Test
+    fun unaCopiaConUnRenglonNuloEnLaRecetaNoSeToma() =
+        refusesMalformed("10000000-0000-4000-8000-000000000960", pcPayload().replace("\"Prescriptions\":[]", "\"Prescriptions\":[null]"))
+
+    @Test
+    fun unaCopiaConLaOrdenDeLaboratorioQueNoEsObjetoNoSeToma() =
+        refusesMalformed("10000000-0000-4000-8000-000000000961", pcPayload().replace("\"Prescriptions\":[],", "\"Prescriptions\":[],\"LabOrder\":\"BH\","))
+
+    @Test
+    fun unaCopiaSinFolioNoSeToma() =
+        refusesMalformed("10000000-0000-4000-8000-000000000962", pcPayload().replace("\"Folio\":\"CNS-20260115-103000\",", ""))
+
+    @Test
+    fun unaCopiaSinHoraDeInicioNoSeToma() =
+        refusesMalformed("10000000-0000-4000-8000-000000000963", pcPayload().replace("\"StartedAt\":\"2026-01-15T10:30:00\",", ""))
+
+    /** Una consulta guardada que esta versión no puede leer: ya tomada, la recibida no se podría guardar. */
+    @Test
+    fun conUnaConsultaGuardadaQueNoSePuedeLeerNoSeToma() {
+        val unreadable = """{"Version":1,"PatientSyncId":"$ana","ChiefComplaint":"sin folio"}"""
+        store.apply(StoreChanges(meta = mapOf(WriteEngine.CONSULTATION_DRAFT to unreadable)))
+        val id = "10000000-0000-4000-8000-000000000964"
+        acceptFromPc(id)
+        assertNotTaken(id)
+        assertFalse(workspace.consultation.hasConsultation)
+        assertEquals("Se conserva tal cual", unreadable, store.meta(WriteEngine.CONSULTATION_DRAFT))
+        assertEquals(ConsultationController.UNREADABLE, workspace.toast?.text)
+    }
+
+    /** Una consulta guardada que todavía no se abre en la pantalla (p. ej. no se pudo recuperar al abrir la app). */
+    @Test
+    fun conUnaConsultaGuardadaSinAbrirNoSeToma() {
+        val id = "10000000-0000-4000-8000-000000000965"
+        val stored = handedOff().copy(handoff = null).encode()
+        acceptFromPc(id) {
+            assertFalse(workspace.consultation.hasConsultation)
+            store.apply(StoreChanges(meta = mapOf(WriteEngine.CONSULTATION_DRAFT to stored)))
+        }
+        assertNotTaken(id)
+        assertFalse(workspace.consultation.hasConsultation)
+        assertEquals(stored, store.meta(WriteEngine.CONSULTATION_DRAFT))
+        assertEquals("Termine o descarte la consulta en curso para continuar esta aquí", workspace.toast?.text)
+    }
+
+    // ------------------------------------------------------------------ K8: la copia recibida se lee fuera del hilo principal y con tope
+
+    @Test
+    fun laCopiaRecibidaSeLeeFueraDelHiloPrincipal() {
+        val parsed = java.util.concurrent.atomic.AtomicInteger()
+        val parsedOnMain = java.util.concurrent.atomic.AtomicInteger()
+        workspace.handoff.payloadParsed = {
+            parsed.incrementAndGet()
+            if (android.os.Looper.getMainLooper().isCurrentThread) parsedOnMain.incrementAndGet()
+        }
+        val id = "10000000-0000-4000-8000-000000000966"
+        pcSends(id)
+        workspace.goPatients()
+        show()
+        check()
+        waitText("Ana Pérez Núñez · iniciada 10:30")
+        compose.onNodeWithTag(TabletTags.HANDOFF_ACCEPT).performClick()
+        waitTag(TabletTags.CONSULTATION)
+        assertTrue(parsed.get() >= 2)
+        assertEquals("Ni el aviso ni «Continuar aquí» leen la copia en el hilo principal", 0, parsedOnMain.get())
+    }
+
+    @Test
+    fun unaCopiaDemasiadoGrandeNoSeLeeNiSeToma() {
+        val id = "10000000-0000-4000-8000-000000000967"
+        val huge = pcPayload().replace("\"Notes\":\"\"", "\"Notes\":\"${"x".repeat(1_000_001)}\"")
+        var parsed = 0
+        workspace.handoff.payloadParsed = { parsed++ }
+        pcSends(id, huge)
+        workspace.goPatients()
+        show()
+        check()
+        waitFor { workspace.handoff.incoming?.id == id }
+        assertEquals("Solo el nombre: la copia no se lee", "Ana Pérez Núñez", workspace.handoff.incomingDetail)
+        assertFalse(workspace.handoff.canAcceptIncoming)
+        assertEquals("La copia de esta consulta es demasiado grande para abrirla en este equipo. Termínela en el equipo que la envió.", workspace.handoff.incomingBlockedReason)
+        workspace.handoff.accept()
+        waitFor { !workspace.handoff.receiving }
+        compose.waitForIdle()
+        assertEquals("La copia de esta consulta es demasiado grande para abrirla en este equipo. Termínela en el equipo que la envió.", workspace.toast?.text)
+        assertNotTaken(id)
+        assertEquals(0, parsed)
+        assertEquals(0, syncs)
+    }
+
+    // ------------------------------------------------------------------ K8: la consulta no se edita mientras empieza un envío
+
+    @Test
+    fun mientrasEmpiezaUnEnvioLaConsultaNoSeEditaNiSeCierraLaHoja() {
+        openSendSheetForAna()
+        val handoff = workspace.handoff
+        val consultation = workspace.consultation
+        val before = consultation.draft!!.chiefComplaint
+        // Esperando la compuerta: ya se tocó «Enviar a X»
+        runBlocking { handoff.gate.lock() }
+        handoff.send()
+        compose.waitForIdle()
+        assertTrue(handoff.sendStarted)
+        handoff.closeSendSheet()
+        assertTrue("La hoja no se cierra con el envío ya empezado", handoff.sheetOpen)
+        assertTrue(consultation.readOnly)
+        consultation.setChiefComplaint("Tecleado esperando la compuerta")
+        consultation.setTa("120/80")
+        assertEquals(before, consultation.draft!!.chiefComplaint)
+        // Subiendo el expediente, antes de armar la copia
+        syncGate = CompletableDeferred()
+        handoff.gate.unlock()
+        waitFor { syncs == 1 }
+        handoff.closeSendSheet()
+        assertTrue(handoff.sheetOpen)
+        consultation.setChiefComplaint("Tecleado mientras se sube")
+        consultation.appendPhysicalExam("Abdomen blando")
+        assertEquals(before, consultation.draft!!.chiefComplaint)
+        syncGate!!.complete(Unit)
+        waitFor { consultation.outgoingMarker?.phase == HandoffPhase.Sent }
+        // Lo que viajó es lo que quedó guardado aquí: nada se quedó fuera
+        val sent = kotlinx.serialization.json.Json.parseToJsonElement(handoffRow(consultation.outgoingMarker!!.id)["Payload"]!!.text!!) as JsonObject
+        assertEquals(before, (sent["ChiefComplaint"] as? JsonPrimitive)?.content.orEmpty())
+        assertEquals(before, storedDraft()!!.chiefComplaint)
+        assertEquals(storedDraft()!!.physicalExam, (sent["PhysicalExam"] as? JsonPrimitive)?.content.orEmpty())
+    }
+
+    /** Con una «Cambiar indicación» abierta, el envío la guarda antes: el bloqueo no la deja sin guardar. */
+    @Test
+    fun elEnvioGuardaLaIndicacionAbiertaAunqueBloqueeLaConsulta() {
+        openSendSheetForAna()
+        val consultation = workspace.consultation
+        var added: ApplyResult? = null
+        scope.launch {
+            added = consultation.apply {
+                setPrescriptions(prescriptions() + PrescriptionRow(medicineName = "Paracetamol 500 mg", dosage = "1 tableta cada 8 horas", rowId = "10000000-0000-4000-8000-0000000009a1"))
+            }
+        }
+        waitFor { added == ApplyResult.Applied }
+        val row = consultation.sheets.prescriptions.first { it.rowId == "10000000-0000-4000-8000-0000000009a1" }
+        consultation.prescription.planIndication.start(row)
+        consultation.prescription.planIndication.type("1 tableta cada 6 horas")
+        workspace.handoff.send()
+        waitFor { consultation.outgoingMarker?.phase == HandoffPhase.Sent }
+        assertNull(workspace.handoff.sheetError)
+        assertEquals("1 tableta cada 6 horas", storedDraft()!!.prescriptions.first { (it["RowId"] as? JsonPrimitive)?.content == row.rowId }.let { (it["Dosage"] as JsonPrimitive).content })
     }
 }

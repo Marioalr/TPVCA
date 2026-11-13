@@ -23,6 +23,8 @@ import io.github.marioalr.tpvca.sync.rules.SyncIds
 import io.github.marioalr.tpvca.sync.rules.consultation.ConsultationDraft
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import java.math.BigDecimal
 import java.time.Clock
 import java.time.LocalDateTime
@@ -470,7 +472,10 @@ class WriteEngine(
         if (draft.isHandedOff) throw WriteRefused(WriteRefused.Reason.CONFLICT, "La consulta se envió a otro equipo: aquí está en solo lectura.")
         requireWritable()
         store.transaction {
-            if (storedDraft().second?.folio != draft.folio) return@transaction false
+            val stored = storedDraft().second
+            if (stored?.folio != draft.folio) return@transaction false
+            // La guardada manda, como al cobrar: la de la pantalla pudo leerse antes de que se enviara
+            if (stored.isHandedOff) throw WriteRefused(WriteRefused.Reason.CONFLICT, "La consulta se envió a otro equipo: aquí está en solo lectura.")
             val progress = noteOf(draft.patientSyncId, draft.folio)?.get("SyncId") as String?
             if (progress != null && WritePolicy.canWrite(requireWritable(), "PatientConsultations", creating = false)) {
                 writer.delete("PatientConsultations", progress)
@@ -486,6 +491,94 @@ class WriteEngine(
             true
         }
     }
+
+    // ---------------------------------------------------------------------------------------------------------------------------
+    // La consulta entre equipos (K8, §4.5): la marca del envío, soltarla, tomar la recibida y lo que recuerda de cada envío
+    // ---------------------------------------------------------------------------------------------------------------------------
+
+    /**
+     * La marca del envío en el borrador (`Handoff`): ponerla deja la consulta en solo lectura **antes** de que el otro equipo pueda verla; cambiar su fase o quitarla ([marker] `null`) la
+     * resuelve. `false` si la consulta de ese folio ya no es la de este equipo. Es la única escritura que acepta un borrador enviado.
+     */
+    fun setConsultationHandoff(folio: String, marker: JsonObject?): Boolean = guarded {
+        requireWritable()
+        store.transaction {
+            val (_, stored) = storedDraft()
+            if (stored?.folio != folio) return@transaction false
+            store.apply(StoreChanges(meta = mapOf(CONSULTATION_DRAFT to stored.copy(handoff = marker).encode())))
+            true
+        }
+    }
+
+    /**
+     * El otro equipo la aceptó (o «Liberar este equipo»): la consulta se suelta **sin descartar** nada ni tocar el expediente; la nota, la receta y la cuenta siguen allá. Con [archive], la copia
+     * se aparta en `Draft:ConsultationArchived` antes de soltarla (`ArchiveDraft`). `false` si ya no estaba.
+     */
+    fun releaseConsultation(folio: String, archive: Boolean = false): Boolean = guarded {
+        store.transaction {
+            val (text, stored) = storedDraft()
+            if (stored?.folio != folio) return@transaction false
+            val archived = if (archive && text != null) mapOf(ARCHIVED_CONSULTATION to text) else emptyMap()
+            store.apply(StoreChanges(meta = archived, metaRemoved = setOf(CONSULTATION_DRAFT)))
+            true
+        }
+    }
+
+    /**
+     * «Continuar aquí»: la copia recibida se vuelve el borrador de este equipo, como [startConsultation] (nunca pisa otra; regresa la que hay) y en la misma transacción se anota que este envío
+     * ya se guardó aquí (así no se vuelve a ofrecer aunque la copia siga en la nube) y los renglones de las hojas que cargó esta consulta siguen a los `SyncId` que cambiaron al traducirla
+     * ([renamedSyncIds]: el mismo producto dado de alta aparte en cada equipo).
+     */
+    fun adoptReceivedConsultation(draft: ConsultationDraft, handoffId: String, renamedSyncIds: Map<String, String> = emptyMap()): ConsultationDraft? = guarded {
+        if (!WritePolicy.canWrite(requireWritable(), "PatientConsultations", creating = true)) refuse("anotar consultas")
+        store.transaction {
+            val (text, stored) = storedDraft()
+            if (text != null) return@transaction stored ?: draft.copy(folio = "")
+            if (renamedSyncIds.isNotEmpty()) renameChargedLines(draft, renamedSyncIds)
+            store.apply(StoreChanges(meta = mapOf(CONSULTATION_DRAFT to draft.encode(), HANDOFF_APPLIED_PREFIX + handoffId to utcNow())))
+            null
+        }
+    }
+
+    private fun renameChargedLines(draft: ConsultationDraft, renamed: Map<String, String>) {
+        val table = writer.table("Patients")
+        val current = writer.find(table, draft.patientSyncId) ?: return
+        val lookup = renamed.mapKeys { it.key.lowercase(Locale.ROOT) }
+        for (column in listOf(PatientSheets.SUPPLIES, PatientSheets.SERVICES)) {
+            val rows = PatientSheets.readRows(column, current[column] as String?, draft.patientSyncId)
+            var changed = false
+            val edited = rows.map { row ->
+                val folio = (row.raw["ChargedConsultationFolio"] as? JsonPrimitive)?.contentOrNull
+                val syncId = (row.raw["ChargedLineSyncId"] as? JsonPrimitive)?.contentOrNull
+                val next = syncId?.let { lookup[it.lowercase(Locale.ROOT)] }
+                if (folio != draft.folio || next == null) {
+                    row.raw
+                } else {
+                    changed = true
+                    JsonObject(row.raw + ("ChargedLineSyncId" to JsonPrimitive(next)))
+                }
+            }
+            if (changed) writer.edit("Patients", draft.patientSyncId, mapOf(column to JsonArray(edited).toString()))
+        }
+    }
+
+    /** Se guarda **antes** de intentar tomarla: si el intento llega pero la respuesta no, se reconoce después (`RememberAcceptToken`). */
+    fun rememberAcceptToken(handoffId: String, token: String) = guarded { store.apply(StoreChanges(meta = mapOf(HANDOFF_TOKEN_PREFIX + handoffId to token))) }
+
+    fun acceptToken(handoffId: String): String? = guarded { store.meta(HANDOFF_TOKEN_PREFIX + handoffId) }
+
+    /** La consulta recibida ya está guardada en este equipo: no se vuelve a ofrecer (`IsHandoffApplied`). */
+    fun isHandoffApplied(handoffId: String): Boolean = guarded { store.meta(HANDOFF_APPLIED_PREFIX + handoffId) != null }
+
+    /** El avance de la nota de esa consulta en este equipo (`FindConsultationNoteVersionAsync`): su `SyncId` y su `UpdatedAtUtc`, o `null`. */
+    fun progressNote(patientSyncId: String, folio: String): Pair<String, String>? = guarded {
+        val note = noteOf(patientSyncId, folio) ?: return@guarded null
+        val row = writer.find(writer.table("PatientConsultations"), note["SyncId"] as String) ?: return@guarded null
+        (row["SyncId"] as String) to (row["UpdatedAtUtc"] as String)
+    }
+
+    /** El `UpdatedAtUtc` de una nota por su `SyncId`; `null` si todavía no llega. */
+    fun noteUpdatedAt(noteSyncId: String): String? = guarded { writer.find(writer.table("PatientConsultations"), noteSyncId)?.get("UpdatedAtUtc") as String? }
 
     // ---------------------------------------------------------------------------------------------------------------------------
     // Existencias (regla «Existencias», `CurrentStock` como valor hasta el 8.20)
@@ -979,5 +1072,12 @@ class WriteEngine(
 
         /** El borrador de la consulta en curso, con el prefijo de `LocalSide.DRAFT_PREFIX`. */
         const val CONSULTATION_DRAFT = "Draft:Consultation"
+
+        /** «Liberar este equipo»: la copia de la consulta enviada que se soltó sin confirmar, apartada para revisión. */
+        const val ARCHIVED_CONSULTATION = "Draft:ConsultationArchived"
+
+        /** La ficha con que este equipo intentó tomar un envío, y los envíos ya guardados aquí (`consultas-recibidas.json` de la PC). */
+        const val HANDOFF_TOKEN_PREFIX = "Handoff:Token:"
+        const val HANDOFF_APPLIED_PREFIX = "Handoff:Applied:"
     }
 }

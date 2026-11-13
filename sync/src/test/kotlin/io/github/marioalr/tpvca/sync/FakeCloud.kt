@@ -115,6 +115,9 @@ class FakeCloud {
                 rowNonce = statement.args[10].text
                 ResultSet(emptyList(), 1)
             }
+            // K8: la revisión de la consulta entre equipos, sin nada que ofrecer ni compañeros
+            sql == Statements.CHECK_INCOMING || sql == Statements.CHECK_PEER_PUSH || sql == Statements.CHECK_OUTGOING || sql == Statements.CHECK_PEERS_SERVER_NOW ||
+                sql == Statements.CHECK_PEERS_DEVICES || sql == Statements.CHECK_PEERS_REGISTRY || sql == Statements.REGISTRY_PRIMARY -> ResultSet(emptyList())
             sql == Statements.ASSET_META -> {
                 val parts = assets[statement.args[0].text]
                 ResultSet(listOfNotNull(parts?.let { p -> rowOf("ByteCount" to p.sumOf { it.size }, "ChunkCount" to p.size) }))

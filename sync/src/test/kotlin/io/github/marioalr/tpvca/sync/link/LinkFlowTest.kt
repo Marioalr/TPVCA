@@ -197,7 +197,7 @@ class LinkFlowTest {
             args.take(5).map { it.text },
         )
         assertEquals(SyncContract.CLIENT_PROTOCOL.toString(), args[5].text)
-        assertEquals("No recibe consultas hasta K8", "0", args[6].text)
+        assertEquals("Recibe consultas (K8)", "1", args[6].text)
         assertEquals(SyncContract.REVISION.toString(), args[7].text)
         assertEquals("0", args[8].text)
         assertEquals(HranaValue.Null, args[9])
@@ -364,6 +364,8 @@ class LinkFlowTest {
         val flow = linked()
         val beats = cloud.heartbeats.size
         clock.advance(Duration.ofSeconds(60))
+        // Como la vuelta de `LinkController`: en la tablet el latido va dentro de la revisión, que corre aparte de la sincronización
+        flow.checkHandoffs()
         flow.refresh(Refresh.TICK)
         assertEquals(beats + 1, cloud.heartbeats.size)
         assertFalse("Sin bajar todavía", Statements.REGISTRY_OWN in cloud.requests.flatten())

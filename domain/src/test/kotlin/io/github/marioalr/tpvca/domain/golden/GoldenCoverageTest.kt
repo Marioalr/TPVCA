@@ -46,6 +46,7 @@ class GoldenCoverageTest {
         "cie10-search.json" to "consultation.ConsultationGoldenTest",
         "pediatric-dose.json" to "consultation.ConsultationGoldenTest",
         "checkout.json" to "consultation.ConsultationGoldenTest",
+        "linked-device.json" to "devices.LinkedDeviceGoldenTest",
     )
 
     /** Los que corren en `:sync`, que es quien los usa: archivo → su prueba, junto a `Contracts` en `sync/src/test`. */
@@ -60,6 +61,8 @@ class GoldenCoverageTest {
         "field-stamps.json" to "WriteRulesGoldenTest",
         "patient-merge.json" to "WriteRulesGoldenTest",
         "folios.json" to "WriteRulesGoldenTest",
+        "handoff-payload.json" to "HandoffGoldenTest",
+        "handoff-accept.json" to "HandoffGoldenTest",
         "consultation-account.json" to "ConsultationRulesGoldenTest",
         "sheet-charges.json" to "ConsultationRulesGoldenTest",
         "synced-json-columns.json" to "ConsultationRulesGoldenTest",
@@ -72,9 +75,6 @@ class GoldenCoverageTest {
 
     /** Los vectores pendientes: archivo → el paso que los porta. */
     private val pending = mapOf(
-        "handoff-payload.json" to "K8",
-        "handoff-accept.json" to "K8",
-        "linked-device.json" to "K8",
         "duplicate-catalog.json" to "K9b",
     )
 

@@ -28,6 +28,7 @@ import io.github.marioalr.tpvca.ui.agenda.AgendaPatient
 import io.github.marioalr.tpvca.ui.agenda.AppointmentFormState
 import io.github.marioalr.tpvca.ui.phone.PhoneEnv
 import io.github.marioalr.tpvca.documents.LabFileStore
+import io.github.marioalr.tpvca.link.HandoffLink
 import io.github.marioalr.tpvca.ui.phone.PreviewDoc
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -57,6 +58,8 @@ class TabletEnv(
     val labStore: LabFileStore? = null,
     /** Se agregó un resultado: se intenta subir ya. */
     val uploadLabFiles: () -> Unit = {},
+    /** La consulta entre equipos (K8): la nube, la sincronización que espera y lo que trae cada revisión. `null` sin vinculación (pruebas): «Enviar a…» no aparece. */
+    val handoff: HandoffLink? = null,
 )
 
 sealed interface TabletPage {
@@ -106,19 +109,24 @@ class FormSession(
  * va además a un borrador cifrado (`LocalSide`) que sobrevive a que Android cierre el proceso y que el borrado de todo se lleva. Nada de esto va al estado que Android restaura.
  */
 class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, private val io: CoroutineDispatcher = Dispatchers.IO) {
-    private var shownPage by mutableStateOf<TabletPage>(TabletPage.Hub)
+    private var currentPage by mutableStateOf<TabletPage>(TabletPage.Hub)
 
     /**
-     * La página. Lo que se abrió encima de una ficha es de esa ficha: al irse de ella se cierran la hoja de la consulta (con su «Corregir receta») y el formulario de un resultado,
-     * para que nunca queden encima de otro paciente.
+     * La página. Al entrar a Pacientes (desde el inicio o Sincronización), lo pospuesto con «Más tarde» se vuelve a ofrecer (`OnEnterPatientsSectionForHandoff`); ir entre el inicio y la ficha no cuenta.
+     * Lo que se abrió encima de una ficha es de esa ficha: al irse de ella se cierran la hoja de la consulta (con su «Corregir receta») y el formulario de un resultado, para que nunca queden encima de otro paciente.
      */
     var page: TabletPage
-        get() = shownPage
+        get() = currentPage
         private set(value) {
-            if (value != shownPage) detail = null
-            shownPage = value
+            val entering = !isPatientsSection(currentPage) && isPatientsSection(value)
+            if (value != currentPage) detail = null
+            currentPage = value
             labResults.leftChart(value)
+            if (entering) handoff.onEnterPatients()
         }
+
+    /** Pacientes, como la cadencia lo cuenta: todo menos el inicio y Sincronización. */
+    internal fun isPatientsSection(page: TabletPage = this.page): Boolean = page != TabletPage.Hub && page != TabletPage.Sync
     var homeQuery by mutableStateOf("")
         private set
     var agendaOpen by mutableStateOf(false)
@@ -152,6 +160,13 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
 
     /** Los resultados de laboratorio de la ficha: agregar y quitar (K7). */
     val labResults = LabResultsEditor(this, scope, io)
+
+    /** La consulta entre equipos (K8): «Enviar a…», «Recuperar», «Liberar este equipo» y «Continuar aquí». */
+    val handoff = HandoffController(this, scope, io)
+
+    init {
+        env.handoff?.let { link -> scope.launch { link.checks.collect { check -> if (check != null) handoff.onCheck(check) } } }
+    }
 
     /** «Corregir receta» de la hoja de una consulta (K7): aquí y no en la pantalla, para que lo corregido sobreviva a girar la tablet. Como `labResults.form`, no a que Android cierre el proceso. */
     val correction = PrescriptionCorrection(this, scope, io)
@@ -300,6 +315,7 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         val onConsultation = page == TabletPage.Consultation
         when {
             detail != null -> detail = null
+            handoff.sheetOpen -> handoff.closeSendSheet()
             // La alerta de alergia se contesta primero, y Atrás la contesta «No recetarlo»: nunca se cierra la hoja dejándola sin respuesta. Las hojas de la consulta solo se ven en ella
             onConsultation && consultation.prescription.allergyAlert != null -> consultation.prescription.cancelAllergy()
             agendaOpen -> closeAgenda()
@@ -467,20 +483,28 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
     )
 
     /** Editar: el formulario se abre con la fila de ahora, y esa es su foto. [section]: «Editar esta sección». */
-    fun editPatient(syncId: String, section: String? = null) = startForm(
-        build = {
-            val day = today()
-            val row = withContext(io) { engine().patientRow(syncId) }
-            if (row == null) {
-                info = "El expediente ya no existe en la base de datos."
-                null
-            } else {
-                val form = PatientFormFields.formOf(row, day, section ?: "Identificacion")
-                val baseline = PatientFormFields.columnsOf(form, day, form.age(day)).mapValues { (column, value) -> PatientFormFields.comparable(column, value) }
-                FormSession(syncId, null, null, form, form, baseline, PatientFormFields.snapshotOf(row, day))
-            }
-        },
-    )
+    fun editPatient(syncId: String, section: String? = null) {
+        if (handoff.blockIfPatientHandedOff(syncId)) return
+        startForm(
+            build = {
+                val day = today()
+                val row = withContext(io) { engine().patientRow(syncId) }
+                // Se envió su consulta mientras se leía
+                if (handoff.blockIfPatientHandedOff(syncId, row?.get("FullName") as String?)) return@startForm null
+                editSession(syncId, section, row, day)
+            },
+        )
+    }
+
+    private fun editSession(syncId: String, section: String?, row: io.github.marioalr.tpvca.sync.engine.LocalRow?, day: LocalDate): FormSession? {
+        if (row == null) {
+            info = "El expediente ya no existe en la base de datos."
+            return null
+        }
+        val form = PatientFormFields.formOf(row, day, section ?: "Identificacion")
+        val baseline = PatientFormFields.columnsOf(form, day, form.age(day)).mapValues { (column, value) -> PatientFormFields.comparable(column, value) }
+        return FormSession(syncId, null, null, form, form, baseline, PatientFormFields.snapshotOf(row, day))
+    }
 
     private fun openForm(session: FormSession) {
         if (form != null) return
@@ -742,12 +766,19 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
 
     /** Baja lógica (`DeletePatientAsync`): deja de aparecer en las búsquedas; sus consultas y recetas se conservan. */
     fun deletePatient(syncId: String, fullName: String) {
+        if (handoff.blockIfPatientHandedOff(syncId, fullName)) return
         if (consultation.isConsultationFor(syncId)) {
             info = "Termine o descarte la consulta en curso antes de eliminar el expediente."
             return
         }
         scope.launch {
             if (!ask("Eliminar expediente", "¿Eliminar el expediente de $fullName?\n\nDejará de aparecer en la búsqueda. Sus consultas y recetas se conservan.")) return@launch
+            // Mientras se preguntaba pudo llegar una consulta suya, o enviarse
+            if (handoff.blockIfPatientHandedOff(syncId, fullName)) return@launch
+            if (consultation.isConsultationFor(syncId)) {
+                info = "Termine o descarte la consulta en curso antes de eliminar el expediente."
+                return@launch
+            }
             try {
                 withContext(io) { engine().edit("Patients", syncId, mapOf("IsActive" to false)) }
             } catch (e: Exception) {
@@ -820,6 +851,7 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         toast = null
         labResults.clearMemory()
         consultation.clearMemory()
+        handoff.clearMemory()
         page = TabletPage.Hub
         restored = false
     }

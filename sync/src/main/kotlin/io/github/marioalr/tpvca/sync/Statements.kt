@@ -118,6 +118,54 @@ object Statements {
     /** `registry.own`. */
     const val REGISTRY_OWN: String = "SELECT DeviceCode, Role, RevokedAtUtc, RevokedReason FROM DeviceRegistry WHERE DeviceId = ?;"
 
+    /** `registry.primary`: la PC principal, con su nombre y su último latido («Enviar a…», K8). */
+    const val REGISTRY_PRIMARY: String = "SELECT p.\"Value\" AS PrimaryDeviceId, g.DisplayName AS PrimaryName, d.DeviceName AS PrimaryHeartbeatName, d.LastSeenUtc AS PrimaryLastSeenUtc " +
+        "FROM \"_tpvc_meta\" AS p LEFT JOIN DeviceRegistry AS g ON g.DeviceId = p.\"Value\" LEFT JOIN RegisteredDevices AS d ON d.DeviceId = p.\"Value\" WHERE p.\"Key\" = 'primaryDeviceId';"
+
+    // ---------------------------------------------------------------------------------------------------------------------------
+    // La revisión de la consulta entre equipos (paso 8.24, regla «Cadencia»), literales: con otro WHERE, SQLite no usa el índice parcial
+    // ---------------------------------------------------------------------------------------------------------------------------
+
+    /** `check.incoming`: las consultas dirigidas a este equipo, enviadas o aceptadas aquí con su copia. */
+    const val CHECK_INCOMING: String = "SELECT Id, FromDeviceId, FromDeviceName, ToDeviceId, ToDeviceName, PatientSyncId, PatientName, Folio, Payload, PayloadVersion, State, AcceptToken, CreatedAtUtc " +
+        "FROM ConsultationHandoffs WHERE ToDeviceId = ? AND (State = 'enviada' OR (State = 'aceptada' AND Payload <> '')) ORDER BY CreatedAtUtc DESC LIMIT 10"
+
+    /** `check.outgoing`: el estado del envío propio, solo con uno pendiente. */
+    const val CHECK_OUTGOING: String = "SELECT State FROM ConsultationHandoffs WHERE Id = ?"
+
+    /** `check.peerPush`: la marca de cambios, la última subida de cada uno de los otros equipos. */
+    const val CHECK_PEER_PUSH: String = "SELECT DeviceId, LastPushUtc FROM RegisteredDevices WHERE DeviceId <> ? AND LastPushUtc IS NOT NULL;"
+
+    /** `check.peers.serverNow`, `check.peers.devices` y `check.peers.registry`: la lista de compañeros, cada 10 min. */
+    const val CHECK_PEERS_SERVER_NOW: String = "SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS ServerNow;"
+    const val CHECK_PEERS_DEVICES: String = "SELECT DeviceId, DeviceName, DeviceRole, AppVersion, LastSeenUtc, Platform, HandoffProtocol, ContractRevision, PendingCount, OldestPendingUtc FROM RegisteredDevices;"
+    const val CHECK_PEERS_REGISTRY: String = "SELECT DeviceId, DeviceCode, Role, DisplayName, RevokedAtUtc, RevokedReason FROM DeviceRegistry;"
+
+    // ---------------------------------------------------------------------------------------------------------------------------
+    // La consulta entre equipos (§4.5): cada transición es una sola instrucción condicionada, con el texto de `contracts/hrana/handoff-*.jsonl`
+    // ---------------------------------------------------------------------------------------------------------------------------
+
+    private const val HANDOFF_COLUMNS: String = "Id, FromDeviceId, FromDeviceName, ToDeviceId, ToDeviceName, PatientSyncId, PatientName, Folio, Payload, PayloadVersion, State, CreatedAtUtc, UpdatedAtUtc"
+
+    /** Enviar: el renglón «enviada» con la copia. Si falla con UNIQUE, un intento anterior sí llegó. */
+    const val HANDOFF_SEND: String = "INSERT INTO ConsultationHandoffs ($HANDOFF_COLUMNS) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'enviada', $SERVER_NOW, $SERVER_NOW)"
+
+    /** «Recuperar» y un envío dudoso: se inserta ya cancelado, o se cancela si sigue «enviada»; un INSERT atrasado ya no puede revivirlo. Va con [CHECK_OUTGOING] en la misma petición. */
+    const val HANDOFF_RESOLVE: String = "INSERT INTO ConsultationHandoffs ($HANDOFF_COLUMNS) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?, 'cancelada', $SERVER_NOW, $SERVER_NOW) " +
+        "ON CONFLICT(Id) DO UPDATE SET State = 'cancelada', Payload = '', UpdatedAtUtc = $SERVER_NOW WHERE ConsultationHandoffs.State = 'enviada'"
+
+    /** Quien envió ya vio el final: la PC podrá borrar el renglón después de unos días. */
+    const val HANDOFF_ACK: String = "UPDATE ConsultationHandoffs SET SenderAckAtUtc = $SERVER_NOW WHERE Id = ?"
+
+    /** Tomarla con una ficha propia: una fila afectada = es de este equipo. */
+    const val HANDOFF_ACCEPT: String = "UPDATE ConsultationHandoffs SET State = 'aceptada', AcceptToken = ?, UpdatedAtUtc = $SERVER_NOW WHERE Id = ? AND ToDeviceId = ? AND State = 'enviada'"
+
+    /** Si la respuesta de tomarla se pierde: quién se quedó con ella. */
+    const val HANDOFF_ACCEPT_STATE: String = "SELECT State, AcceptToken FROM ConsultationHandoffs WHERE Id = ?"
+
+    /** Ya guardada en este equipo: se borra la copia de la nube. */
+    const val HANDOFF_CLEAR_PAYLOAD: String = "UPDATE ConsultationHandoffs SET Payload = '', UpdatedAtUtc = $SERVER_NOW WHERE Id = ? AND AcceptToken = ? AND State = 'aceptada'"
+
     /** `asset.meta`. */
     const val ASSET_META: String = "SELECT ByteCount, ChunkCount FROM ClinicAssets WHERE Hash = ?;"
 

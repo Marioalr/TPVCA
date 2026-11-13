@@ -151,6 +151,20 @@ internal fun PosServicesSheet(workspace: TabletWorkspace) {
         height = 700.dp,
         actions = { TButton("Nuevo servicio", {}, icon = TIcons.Plus, nextVersion = true) },
     ) {
+        // Sin catálogo leído no hay nada que vender, ni los servicios de muestra (esos son solo para un catálogo sin servicios)
+        if (pos.catalog == null) {
+            val problem = pos.catalogProblem
+            Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                if (problem != null) {
+                    TNotice(problem, LocalTpvcColors.current.dangerSubtle, LocalTpvcColors.current.dangerText, tag = TabletTags.POS_SERVICES_STATE) {
+                        TButton("Volver a intentar", pos::refresh, icon = TIcons.Refresh)
+                    }
+                } else {
+                    TCaption("Leyendo los servicios…", Modifier.testTag(TabletTags.POS_SERVICES_STATE))
+                }
+            }
+            return@PosSheetFrame
+        }
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             if (isWide(760.dp)) {
                 Row(Modifier.fillMaxSize()) {

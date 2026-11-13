@@ -137,6 +137,27 @@ class ConsultationAccount(
         return add(ref, code, name, genericName, presentation, unit, unitPrice, quantity, isIndividualUnits)
     }
 
+    /**
+     * «Agregar a la consulta de…» del punto de venta (`PosViewModel.AddServiceToActiveConsultation`, que no es el de la consulta): el honorario y cada insumo por defecto con **sus piezas tal cual**, en piezas sueltas si el
+     * paquete trae varias y a su precio por pieza. Un insumo con 0 piezas no se carga (la PC lo rechaza en `AddCartItemToActiveConsultation`). `false` si no se pudo cargar el honorario.
+     */
+    fun addPointOfSaleService(service: ClinicalService): Boolean {
+        val fee = addPointOfSaleLine(
+            AccountLines.SERVICE, service.syncId.ifEmpty { null }, service.code, service.name, "Servicio Clínico • ${service.category}",
+            "Honorario • ${service.estimatedDurationMinutes} min", SERVICE_UNIT, service.price, 1,
+        )
+        if (!fee) return false
+        for (defaultProduct in service.defaultProducts) {
+            val product = defaultProduct.product ?: continue
+            val individual = product.hasMultipleUnitsPerPackage
+            addPointOfSaleLine(
+                AccountLines.PRODUCT, product.syncId.ifEmpty { null }, product.code, product.name, product.genericName, product.presentation,
+                if (individual) "Piezas ind." else product.unit, product.individualUnitPrice, defaultProduct.quantity, isIndividualUnits = individual,
+            )
+        }
+        return true
+    }
+
     /** Quita un renglón de la cuenta (la X en «Cuenta de la consulta»). */
     fun removeLine(line: AccountLine) {
         if (readOnly) return

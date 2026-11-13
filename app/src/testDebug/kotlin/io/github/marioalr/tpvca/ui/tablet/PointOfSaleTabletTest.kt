@@ -40,6 +40,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -447,5 +448,105 @@ class PointOfSaleTabletTest {
         assertEquals("Nada se cobró todavía", 35L, stock("MED-003"))
         assertNotNull(workspace.toast)
         assertTrue(workspace.toast!!.text.contains("agregados a la cuenta de la consulta de"))
+    }
+
+    // ------------------------------------------------------------------ la revisión de K9
+
+    /** «Vaciar» y enseguida otra vuelta de recuperar (una bajada con un formulario esperando): la cuenta vaciada no vuelve. Se recupera una vez por apertura. */
+    @Test
+    fun vaciarNoTraeDeVueltaLaCuentaGuardada() {
+        enter()
+        type("omeprazol")
+        enterKey()
+        waitFor { store.meta(WriteEngine.SALE_DRAFT) != null }
+
+        val again = TabletWorkspace(env(), scope)
+        compose.runOnIdle { again.restoreDrafts() }
+        waitFor { again.pos.session.cart.hasItems }
+        compose.runOnIdle {
+            again.pos.session.change { clearCart() }
+            scope.launch { again.pos.restore() }
+        }
+        waitFor { store.meta(WriteEngine.SALE_DRAFT) == null }
+        assertFalse("La cuenta vaciada no regresó", again.pos.session.cart.hasItems)
+        compose.runOnIdle { scope.launch { again.pos.restore() } }
+        compose.waitForIdle()
+        assertFalse(again.pos.session.cart.hasItems)
+    }
+
+    private fun startAnaConsultation() {
+        val ana = store.select("Patients", listOf("SyncId", "RecordNumber")).first { it["RecordNumber"] == "EXP-2026-014" }["SyncId"] as String
+        workspace.openChart(ana)
+        show()
+        waitTag(TabletTags.CHART_PRIMARY)
+        compose.onNodeWithTag(TabletTags.CHART_PRIMARY).performClick()
+        waitTag(TabletTags.CONSULTATION)
+        waitFor { workspace.consultation.account != null }
+    }
+
+    /** Con «Terminar consulta» abierta, lo del punto de venta no entra a la cuenta: se quedaría sin cobrar. La venta sigue aquí. */
+    @Test
+    fun conTerminarConsultaAbiertaNoSeAgregaNadaDelPuntoDeVenta() {
+        startAnaConsultation()
+        compose.onNodeWithTag(TabletTags.CONSULTATION_FINISH).performClick()
+        waitTag(TabletTags.CHECKOUT)
+        val before = workspace.consultation.draft!!.items
+        compose.runOnIdle { workspace.enterPointOfSale() }
+        waitFor { workspace.pos.catalog != null }
+        type("ibupro")
+        enterKey()
+        waitFor { workspace.pos.session.cart.hasItems }
+        compose.runOnIdle { workspace.pos.addToConsultation() }
+        waitText("Terminar consulta")
+        assertTrue(workspace.toast!!.text.contains("Terminar consulta"))
+        assertTrue("La venta sigue aquí", workspace.pos.session.cart.hasItems)
+        val service = workspace.pos.services.first { it.code == "SERV-021" }
+        compose.runOnIdle { workspace.pos.addServiceToConsultation(service) }
+        compose.waitForIdle()
+        assertEquals("Nada entró a la cuenta que se está cobrando", before, workspace.consultation.draft!!.items)
+        assertNotNull(workspace.consultation.checkout)
+    }
+
+    /** Sin catálogo leído no hay servicios que vender, tampoco los de muestra; si no se pudo leer, se dice. */
+    @Test
+    fun sinCatalogoNoHayServiciosDeMuestra() {
+        assertTrue(workspace.pos.services.isEmpty())
+        workspace.pos.addServiceToCart(PosController.FALLBACK_SERVICES.first(), includeDefaultSupplies = true)
+        assertFalse(workspace.pos.session.cart.hasItems)
+
+        val base = env()
+        val broken = TabletWorkspace(
+            TabletEnv(
+                io.github.marioalr.tpvca.ui.phone.PhoneEnv(ClinicReader({ throw IllegalStateException("sin base") }, { File(context.cacheDir, "membrete-venta") }), SharedDocuments(context), labFiles = null),
+                base.writes, base.local, base.reapplySaved, base.quickSync, base.noteLocalWrite, base.refreshNow, base.isOnline,
+            ),
+            scope,
+        )
+        broken.enterPointOfSale()
+        show(broken)
+        waitFor { broken.pos.catalogProblem != null }
+        compose.onNodeWithTag(TabletTags.POS_SERVICES).performClick()
+        waitTag(TabletTags.POS_SERVICES_STATE)
+        assertTrue(compose.onAllNodesWithTag(TabletTags.POS_SERVICE_ADD).fetchSemanticsNodes().isEmpty())
+        assertTrue(broken.pos.services.isEmpty())
+    }
+
+    /** «Agregar a la consulta de…» con un insumo de 0 piezas: como la PC, no se carga (antes cargaba 1). */
+    @Test
+    fun unInsumoConCeroPiezasNoSeCargaALaConsulta() {
+        val nebulizacion = store.select("ClinicalServices", listOf("SyncId", "Code")).first { it["Code"] == "SERV-021" }["SyncId"] as String
+        LocalWriter(store, { "pc" }).create("ServiceDefaultProducts", io.github.marioalr.tpvca.sync.rules.SyncIds.random(), mapOf("ClinicalServiceSyncId" to nebulizacion, "ProductSyncId" to productId("INS-001"), "Quantity" to "0"))
+        startAnaConsultation()
+        compose.runOnIdle { workspace.goHub() }
+        compose.onNodeWithTag(TabletTags.HUB_POS).performClick()
+        waitFor { workspace.pos.catalog != null }
+        val service = workspace.pos.services.first { it.code == "SERV-021" }
+        assertEquals(0, service.defaultProducts.single().quantity)
+        compose.runOnIdle { workspace.pos.addServiceToConsultation(service) }
+        waitFor { workspace.consultation.draft!!.items.any { it.code == "SERV-021" } }
+        val items = workspace.consultation.draft!!.items
+        assertTrue("Sin renglón de la gasa: $items", items.none { it.catalogSyncId == productId("INS-001") })
+        assertEquals("Honorario • 20 min", items.single { it.code == "SERV-021" }.presentation)
+        assertTrue(workspace.toast!!.text, workspace.toast!!.text.contains("(1 insumo(s))"))
     }
 }

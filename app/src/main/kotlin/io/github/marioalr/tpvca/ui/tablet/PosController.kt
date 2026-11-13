@@ -101,6 +101,10 @@ class PosController internal constructor(private val workspace: TabletWorkspace,
     private var saveJob: Job? = null
     private val draftLock = Mutex()
 
+    /** La cuenta guardada se recupera una vez por apertura, y nunca después de que el médico tocó la cuenta: si no, «Vaciar» seguido de una bajada la traería de vuelta. */
+    private var restoreDone = false
+    private var touched = false
+
     /** «Pasar a la cuenta de la consulta» en curso: la cuenta no cambia mientras tanto. */
     var transferring by mutableStateOf(false)
         private set
@@ -188,9 +192,12 @@ class PosController internal constructor(private val workspace: TabletWorkspace,
 
     val products: List<PosProduct> get() = catalog?.products.orEmpty()
 
-    /** Los servicios del catálogo; sin ninguno, los de muestra de la PC (`LoadFallbackServices`). */
+    /**
+     * Los servicios del catálogo; los de muestra de la PC (`LoadFallbackServices`) **solo si el catálogo ya se leyó y no tiene ninguno**. Mientras se lee, o si no se pudo leer, ninguno: nunca se vende
+     * uno de muestra porque el catálogo todavía no llega.
+     */
     val services: List<ClinicalService>
-        get() = catalog?.services?.takeIf { it.isNotEmpty() } ?: FALLBACK_SERVICES
+        get() = catalog?.services?.let { it.ifEmpty { FALLBACK_SERVICES } }.orEmpty()
 
     // ------------------------------------------------------------------ buscador y cuenta
 
@@ -289,7 +296,7 @@ class PosController internal constructor(private val workspace: TabletWorkspace,
 
     /** «Agregar a la venta» y «Solo el honorario (sin insumos)»: el aviso de la PC; la hoja se cierra. */
     fun addServiceToCart(service: ClinicalService, includeDefaultSupplies: Boolean) {
-        if (!canEditCart) return
+        if (!canEditCart || catalog == null) return
         var added: io.github.marioalr.tpvca.domain.consultation.ServiceAdded? = null
         session.change { added = addService(service, products.map { it.product }, includeDefaultSupplies) }
         added?.let { workspace.show(it.message, warning = it.warning) }
@@ -322,6 +329,10 @@ class PosController internal constructor(private val workspace: TabletWorkspace,
             workspace.show("La consulta en curso se envió a otro equipo: se cobra allá.", warning = true)
             return
         }
+        if (consultation.checkingOut) {
+            workspace.show(checkingOutText(), warning = true)
+            return
+        }
         transferring = true
         val patientName = consultation.draft?.patientName.orEmpty()
         scope.launch {
@@ -329,7 +340,7 @@ class PosController internal constructor(private val workspace: TabletWorkspace,
                 // Lo que estaba por guardarse de esta cuenta no debe escribirse después de que el paso la borre
                 saveJob?.cancel()
                 val result = draftLock.withLock {
-                    consultation.apply(tapKey = TRANSFER_TAP) {
+                    consultation.apply(TRANSFER_TAP, refuseWhileCheckingOut = true) {
                         for (item in items) {
                             account.addPointOfSaleLine(
                                 kind = if (item.isService) AccountLines.SERVICE else if (item.catalogSyncId != null) AccountLines.PRODUCT else AccountLines.FREE,
@@ -353,7 +364,7 @@ class PosController internal constructor(private val workspace: TabletWorkspace,
                     workspace.show("$count artículo(s) agregados a la cuenta de la consulta de $patientName")
                 } else if (result != ApplyResult.Failed && result != ApplyResult.Ignored) {
                     // No se vacía la venta si la consulta dejó de aceptar cargos
-                    workspace.show(if (canChargeToConsultation) "No se pudo agregar a la consulta en curso. La venta sigue aquí." else "La consulta en curso se envió a otro equipo: se cobra allá.", warning = true)
+                    workspace.show(refusedText("No se pudo agregar a la consulta en curso. La venta sigue aquí."), warning = true)
                 }
             } finally {
                 transferring = false
@@ -368,27 +379,40 @@ class PosController internal constructor(private val workspace: TabletWorkspace,
             workspace.show("No hay una consulta en curso. Las consultas se inician en Pacientes.", warning = true)
             return
         }
+        if (consultation.checkingOut) {
+            workspace.show(checkingOutText(), warning = true)
+            return
+        }
         val patientName = consultation.draft?.patientName.orEmpty()
         val key = serviceKey(service)
         scope.launch {
             var supplies = 0
-            val result = consultation.apply(tapKey = SERVICE_TAP to key) {
-                // El servicio de ahora, con sus insumos de ahora; uno de muestra va tal cual
+            val result = consultation.apply(SERVICE_TAP to key, refuseWhileCheckingOut = true) {
+                // El servicio de ahora, con sus insumos de ahora; uno de muestra va tal cual. Como la PC: cada insumo con sus piezas (0 no se carga) y se cuentan los que tiene
                 val fresh = if (service.syncId.isEmpty()) service else account.catalog.services.firstOrNull { it.syncId.equals(service.syncId, ignoreCase = true) }
-                if (fresh != null && account.addService(fresh)) supplies = fresh.defaultProducts.count { it.product != null }
+                if (fresh != null && account.addPointOfSaleService(fresh)) supplies = fresh.defaultProducts.count { it.product != null }
             }
             when (result) {
                 ApplyResult.Applied -> {
                     workspace.show("${service.name} ($supplies insumo(s)) agregado a la consulta de $patientName")
                     if (sheet == PosSheet.Services) closeSheet()
                 }
-                ApplyResult.NoChange, ApplyResult.Refused -> workspace.show(
-                    if (canChargeToConsultation) "No se pudo agregar a la consulta en curso." else "La consulta en curso se envió a otro equipo: se cobra allá.",
-                    warning = true,
-                )
+                ApplyResult.NoChange, ApplyResult.Refused -> workspace.show(refusedText("No se pudo agregar a la consulta en curso."), warning = true)
                 else -> Unit
             }
         }
+    }
+
+    private fun checkingOutText(): String {
+        val name = workspace.consultation.draft?.patientName.orEmpty()
+        return "La consulta de $name está en «Terminar consulta»: vuelva a la consulta si quiere agregarle algo antes de cobrar. La venta sigue aquí."
+    }
+
+    /** Por qué la consulta no lo aceptó: enviada a otro equipo, cobrándose o lo demás. */
+    private fun refusedText(otherwise: String): String = when {
+        !canChargeToConsultation -> "La consulta en curso se envió a otro equipo: se cobra allá."
+        workspace.consultation.checkingOut -> checkingOutText()
+        else -> otherwise
     }
 
     // ------------------------------------------------------------------ cobrar
@@ -471,6 +495,7 @@ class PosController internal constructor(private val workspace: TabletWorkspace,
     // ------------------------------------------------------------------ la cuenta guardada
 
     private fun cartChanged() {
+        touched = true
         saveJob?.cancel()
         saveJob = scope.launch {
             delay(DRAFT_PAUSE_MILLIS)
@@ -516,17 +541,24 @@ class PosController internal constructor(private val workspace: TabletWorkspace,
 
     /** Al abrir la app: la cuenta que quedó sin cobrar. Si su ticket ya existe (se cobró y el proceso murió antes de enterarse), sobra. */
     internal suspend fun restore() {
-        if (session.cart.hasItems) return
-        val generation = cartGeneration
-        val local = withContext(io) { env.local() } ?: throw IllegalStateException()
-        val text = withContext(io) { local.draft(LocalSide.SALE) } ?: return
-        val draft = PointOfSaleDraft.decode(text)
-        val charged = draft != null && withContext(io) { (env.writes() ?: throw IllegalStateException()).saleExists(draft.saleSyncId) }
-        if (draft == null || charged || draft.items.isEmpty()) {
-            draftLock.withLock { withContext(io) { local.deleteDraft(LocalSide.SALE) } }
+        if (restoreDone) return
+        if (untouchable()) {
+            restoreDone = true
             return
         }
-        if (generation != cartGeneration || session.cart.hasItems) return
+        val generation = cartGeneration
+        val local = withContext(io) { env.local() } ?: throw IllegalStateException()
+        val text = withContext(io) { local.draft(LocalSide.SALE) }
+        val draft = PointOfSaleDraft.decode(text)
+        val charged = draft != null && withContext(io) { (env.writes() ?: throw IllegalStateException()).saleExists(draft.saleSyncId) }
+        // Se leyó: ya no se vuelve a intentar en esta apertura, pase lo que pase después
+        restoreDone = true
+        if (text == null) return
+        if (draft == null || charged || draft.items.isEmpty()) {
+            draftLock.withLock { if (!untouchable()) withContext(io) { local.deleteDraft(LocalSide.SALE) } }
+            return
+        }
+        if (generation != cartGeneration || untouchable()) return
         val restored = Session()
         for (line in draft.items) {
             restored.cart.addLine(
@@ -544,6 +576,9 @@ class PosController internal constructor(private val workspace: TabletWorkspace,
         session = restored
         workspace.show("Se recuperó la venta que no se había cobrado")
     }
+
+    /** El médico ya tocó la cuenta, hay un guardado en camino o una cuenta en pantalla: lo guardado no la reemplaza. */
+    private fun untouchable(): Boolean = touched || saveJob?.isActive == true || session.cart.hasItems
 
     // ------------------------------------------------------------------ hojas
 
@@ -794,6 +829,8 @@ class PosController internal constructor(private val workspace: TabletWorkspace,
     /** Sin nada de pacientes ni de ventas en la memoria. */
     internal fun clearMemory() {
         saveJob?.cancel()
+        restoreDone = false
+        touched = false
         suggestJob?.cancel()
         cartGeneration++
         catalogRequest++

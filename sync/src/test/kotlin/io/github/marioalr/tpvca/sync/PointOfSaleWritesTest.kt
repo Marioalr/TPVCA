@@ -149,4 +149,27 @@ class PointOfSaleWritesTest {
         account.readOnly = true
         assertFalse("Enviada a otro equipo, no", account.addPointOfSaleLine(AccountLines.PRODUCT, product, "P1", "Paracetamol", null, null, "Caja", BigDecimal.TEN, 1))
     }
+
+    /** «Agregar a la consulta de…» del punto de venta: cada insumo con sus piezas (0 no se carga), en piezas sueltas a su precio por pieza. */
+    @Test
+    fun unServicioDelPuntoDeVentaConSusPiezasTalCual() {
+        val gasa = io.github.marioalr.tpvca.domain.model.Product(id = 1, code = "G1", name = "Gasa", unitsPerPackage = 5, price = BigDecimal("10.00"), syncId = "g")
+        val jeringa = io.github.marioalr.tpvca.domain.model.Product(id = 2, code = "J1", name = "Jeringa", price = BigDecimal("12.00"), syncId = "j")
+        val service = io.github.marioalr.tpvca.domain.model.ClinicalService(
+            id = 3, code = "S1", name = "Curación", category = "Curaciones", price = BigDecimal("250.00"), syncId = "s", estimatedDurationMinutes = 15,
+            defaultProducts = listOf(io.github.marioalr.tpvca.domain.model.ServiceDefaultProduct(gasa, 2), io.github.marioalr.tpvca.domain.model.ServiceDefaultProduct(jeringa, 0)),
+        )
+        val account = ConsultationAccount(AccountCatalog(), now = { LocalDateTime.of(2026, 11, 13, 10, 0) })
+        assertTrue(account.addPointOfSaleService(service))
+        assertEquals(listOf("Curación", "Gasa"), account.lines.map { it.name })
+        val fee = account.lines[0]
+        assertEquals("Servicio Clínico • Curaciones", fee.genericName)
+        assertEquals("Honorario • 15 min", fee.presentation)
+        val pieces = account.lines[1]
+        assertEquals(2, pieces.quantity)
+        assertTrue(pieces.isIndividualUnits)
+        assertEquals(BigDecimal("2.00"), pieces.unitPrice)
+        account.readOnly = true
+        assertFalse(account.addPointOfSaleService(service))
+    }
 }

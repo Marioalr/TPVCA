@@ -514,6 +514,7 @@ object TabletTags {
     const val POS_CATALOG_SEARCH = "tablet-pos-catalog-search"
     const val POS_SERVICE_SEARCH = "tablet-pos-service-search"
     const val POS_SERVICE_ADD = "tablet-pos-service-add"
+    const val POS_SERVICES_STATE = "tablet-pos-services-state"
     const val POS_SERVICE_FEE_ONLY = "tablet-pos-service-fee-only"
     const val POS_SERVICE_TO_CONSULTATION = "tablet-pos-service-consultation"
     const val POS_TICKET_SEARCH = "tablet-pos-ticket-search"

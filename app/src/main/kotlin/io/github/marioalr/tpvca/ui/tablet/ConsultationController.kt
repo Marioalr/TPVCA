@@ -451,7 +451,10 @@ class ConsultationController internal constructor(private val workspace: TabletW
     private val tapKeys = HashSet<Any>()
     private var starting = false
     private var discarding = false
-    private var finalizing = false
+    private var finalizing by mutableStateOf(false)
+
+    /** «Terminar consulta» abierta, o armándose: la cuenta ya no recibe nada de fuera. */
+    val checkingOut: Boolean get() = finalizing || checkout != null
     private var timerLoaded = false
 
     private fun engine(): WriteEngine = env.writes() ?: throw WriteRefused(WriteRefused.Reason.NOT_APPROVED, AgendaController.NOT_READY)
@@ -842,10 +845,18 @@ class ConsultationController internal constructor(private val workspace: TabletW
      *
      * @param tapKey identifica el botón y su renglón: el mismo otra vez mientras sigue el primero, o en los [DOUBLE_TAP_MILLIS] siguientes, no hace nada ([ApplyResult.Ignored]). `null` en lo que sí se repite, como «+».
      */
-    suspend fun apply(tapKey: Any? = null, change: ConsultationStep.() -> Unit): ApplyResult {
+    suspend fun apply(tapKey: Any? = null, change: ConsultationStep.() -> Unit): ApplyResult = apply(tapKey, refuseWhileCheckingOut = false, change)
+
+    /**
+     * [refuseWhileCheckingOut]: lo que llega del punto de venta no se agrega con «Terminar consulta» abierta (ni mientras se arma): el cobro trabaja sobre la cuenta de cuando se abrió y lo agregado
+     * se quedaría sin cobrar. Se revisa con el candado tomado: si «Terminar consulta» empieza después, espera a que este paso se escriba y ya lo ve.
+     */
+    suspend fun apply(tapKey: Any?, refuseWhileCheckingOut: Boolean, change: ConsultationStep.() -> Unit): ApplyResult {
         if (tapKey != null && !tapKeys.add(tapKey)) return ApplyResult.Ignored
         try {
-            return lock.withLock { applyLocked(change) }
+            return lock.withLock {
+                if (refuseWhileCheckingOut && checkingOut) ApplyResult.Refused else applyLocked(change)
+            }
         } finally {
             if (tapKey != null) {
                 scope.launch {

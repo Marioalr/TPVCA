@@ -269,7 +269,7 @@ private fun FormSections(workspace: TabletWorkspace, form: PatientForm, width: D
 
 /** La fecha con la máscara de la PC: el teclado de Android entrega el texto ya cambiado, y [DateMaskText.applyChange] lo vuelve la tecla que fue. */
 @Composable
-fun BirthDateField(text: String, label: String = "Fecha de nacimiento *", tag: String = TabletTags.field("BirthDate"), onChange: (String) -> Unit) {
+fun BirthDateField(text: String, label: String? = "Fecha de nacimiento *", tag: String = TabletTags.field("BirthDate"), modifier: Modifier = Modifier, onChange: (String) -> Unit) {
     var value by remember { mutableStateOf(TextFieldValue(text, TextRange(text.length))) }
     // Lo que puso el formulario (un borrador): el cursor al final
     if (value.text != text) value = TextFieldValue(text, TextRange(text.length))
@@ -289,6 +289,7 @@ fun BirthDateField(text: String, label: String = "Fecha de nacimiento *", tag: S
                 }
             }
         },
+        modifier,
         label = label,
         placeholder = "dd/mm/aaaa",
         tag = tag,

@@ -62,21 +62,33 @@ private val DAY = DateTimeFormatter.ofPattern("dd/MM/yyyy", Clinic.LOCALE)
 private val TIME = DateTimeFormatter.ofPattern("HH:mm", Clinic.LOCALE)
 
 /**
- * Configuración (`ConfigurationShellView`): el menú agrupado a la izquierda con el resumen de cada sección y el buscador de ajustes, y la sección a la derecha. Productos, Lotes y Kardex son de esta
- * versión; las demás se ven y dicen «En la siguiente versión». «Nube y dispositivos» lleva a la sincronización de la tablet.
+ * Configuración (`ConfigurationShellView`): el menú agrupado a la izquierda con el resumen de cada sección y el buscador de ajustes, y la sección a la derecha. Abre en el panel del consultorio, como
+ * la PC. Las secciones que todavía no están se ven y dicen «En la siguiente versión». «Nube y dispositivos» lleva a la sincronización de la tablet, con *Equipos vinculados*.
  */
 @Composable
 fun ConfigScreen(workspace: TabletWorkspace, chrome: TabletChrome) {
     val inventory = workspace.inventory
     val colors = LocalTpvcColors.current
     // Lo de ahora cada que baja algo, se escribe aquí o se cambia de sección (`OnInventoryChanged`)
-    LaunchedEffect(chrome.dataVersion, workspace.localVersion, inventory.section) { inventory.refresh() }
+    LaunchedEffect(chrome.dataVersion, workspace.localVersion, inventory.section) {
+        inventory.refresh()
+        // Los resúmenes del menú (`RefreshSummariesAsync`): el panel y los servicios se leen aunque no estén abiertos
+        workspace.reports.refreshDashboard()
+        workspace.services.refresh()
+    }
+    // «Negocio» lee al abrirlo (`LoadAsync`), con «Actualizar» y al cambiar el periodo; como en la PC, no cada que baja algo (las cifras no se mueven mientras se leen)
+    LaunchedEffect(inventory.section == ConfigSection.Business) {
+        if (inventory.section == ConfigSection.Business) workspace.reports.loadBusiness()
+    }
     BoxWithConstraints(Modifier.fillMaxSize().testTag(TabletTags.CONFIG)) {
         val menuWidth: Dp = if (maxWidth >= 1100.dp) 290.dp else 236.dp
         Row(Modifier.fillMaxSize()) {
             ConfigMenu(workspace, Modifier.width(menuWidth).fillMaxHeight())
             Box(Modifier.weight(1f).fillMaxHeight().background(colors.background)) {
                 when (inventory.section) {
+                    ConfigSection.Dashboard -> DashboardSection(workspace)
+                    ConfigSection.Business -> BusinessSection(workspace)
+                    ConfigSection.Services -> ServicesSection(workspace)
                     ConfigSection.Inventory -> ProductsSection(workspace)
                     ConfigSection.Batches -> BatchesSection(workspace)
                     ConfigSection.Movements -> KardexSection(workspace)
@@ -89,6 +101,7 @@ fun ConfigScreen(workspace: TabletWorkspace, chrome: TabletChrome) {
         inventory.quick?.let { QuickActionPanel(workspace, it) }
         inventory.newBatch?.let { NewBatchPanel(workspace, it) }
         inventory.order?.let { OrderEntrySheet(workspace, it) }
+        if (inventory.section == ConfigSection.Services) workspace.services.editor?.let { ServiceEditorPanel(workspace, it) }
     }
 }
 
@@ -121,6 +134,9 @@ private fun ConfigMenu(workspace: TabletWorkspace, modifier: Modifier) {
                     for (section in sections) {
                         key(section) {
                             val summary = when (section) {
+                                ConfigSection.Dashboard -> workspace.reports.dashboardSummary
+                                ConfigSection.Business -> workspace.reports.businessMenuSummary
+                                ConfigSection.Services -> workspace.services.summary
                                 ConfigSection.Inventory -> inventory.summaries?.inventory
                                 ConfigSection.Batches -> inventory.summaries?.batches
                                 ConfigSection.Movements -> inventory.summaries?.movements
@@ -184,7 +200,7 @@ private fun MenuItem(title: String, summary: String?, icon: ImageVector?, active
 /** El encabezado de una sección: título, renglón de abajo y los botones de la derecha. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SectionHeader(title: String, caption: String, actions: @Composable () -> Unit = {}) {
+internal fun SectionHeader(title: String, caption: String, actions: @Composable () -> Unit = {}) {
     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).widthIn(min = 260.dp)) {
             TText(title, size = TType.title, weight = FontWeight.Bold)

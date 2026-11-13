@@ -137,7 +137,7 @@ private fun CategoryChips(pos: PosController) {
 
 // ================================================================== servicios
 
-/** «Servicios» (`PosServicesSheetView`): la lista a la izquierda y el elegido con sus insumos a la derecha. Dar de alta y eliminar servicios es de K9b. */
+/** «Servicios» (`PosServicesSheetView`): la lista a la izquierda y el elegido con sus insumos a la derecha; «Nuevo servicio» abre su hoja encima y «Eliminar servicio» lo quita del catálogo (K9b). */
 @Composable
 internal fun PosServicesSheet(workspace: TabletWorkspace) {
     val pos = workspace.pos
@@ -149,7 +149,7 @@ internal fun PosServicesSheet(workspace: TabletWorkspace) {
         1000.dp,
         pos::closeSheet,
         height = 700.dp,
-        actions = { TButton("Nuevo servicio", {}, icon = TIcons.Plus, nextVersion = true) },
+        actions = { TButton("Nuevo servicio", workspace.services::openPosEditor, icon = TIcons.Plus, enabled = pos.catalog != null, tag = TabletTags.POS_SERVICE_NEW) },
     ) {
         // Sin catálogo leído no hay nada que vender, ni los servicios de muestra (esos son solo para un catálogo sin servicios)
         if (pos.catalog == null) {
@@ -263,7 +263,11 @@ private fun ServiceDetail(workspace: TabletWorkspace, service: ClinicalService?,
             val name = workspace.consultation.draft?.patientName.orEmpty()
             TButton("Agregar a la consulta de $name", { pos.addServiceToConsultation(service) }, Modifier.fillMaxWidth(), tag = TabletTags.POS_SERVICE_TO_CONSULTATION, description = "Agregar a la consulta de $name: se cobra al terminar la consulta")
         }
-        TButton("Eliminar servicio", {}, kind = TButtonKind.DangerGhost, icon = TIcons.Trash, nextVersion = true)
+        // Uno de muestra (sin catálogo) no está en la base: no hay nada que eliminar
+        TButton(
+            "Eliminar servicio", { workspace.services.delete(service, fromPos = true) }, kind = TButtonKind.DangerGhost, icon = TIcons.Trash,
+            enabled = service.syncId.isNotEmpty() && workspace.services.busy == null, tag = TabletTags.POS_SERVICE_DELETE, description = "Eliminar servicio ${service.name}",
+        )
     }
 }
 

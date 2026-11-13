@@ -97,6 +97,21 @@ data class ProductValues(
     val notes: String?,
 )
 
+/** Lo que guarda un servicio (`SaveClinicalServiceAsync`), ya validado: [supplies], los insumos por defecto por `SyncId` de su producto, en el orden en que se agregaron. */
+data class ServiceValues(
+    val code: String,
+    val name: String,
+    val category: String,
+    val price: BigDecimal,
+    val estimatedDurationMinutes: Int,
+    val description: String,
+    val isActive: Boolean,
+    val supplies: List<ServiceSupply> = emptyList(),
+)
+
+/** Un insumo por defecto de un servicio: [quantity] piezas por servicio (al menos 1). */
+data class ServiceSupply(val productSyncId: String, val quantity: Int, val instructions: String? = null)
+
 /** [repeated]: ese ticket ya estaba registrado (un segundo toque, o volver a intentar después de morir el proceso): no se cobró otra vez. */
 data class SaleResult(val syncId: String, val folio: String, val shortages: List<StockShortage> = emptyList(), val repeated: Boolean = false)
 
@@ -1155,6 +1170,108 @@ class WriteEngine(
             val row = writer.find(writer.table("Products"), syncId) ?: return@transaction false
             if (row["IsActive"] != 1L) return@transaction true
             writer.edit("Products", syncId, mapOf("IsActive" to false, "UpdatedAt" to protocolLocalNow()))
+        }
+    }
+
+    /**
+     * El código ya lo usa otro servicio **activo** (`ServicesCatalogViewModel.SaveServiceAsync`, regla «Catálogo con varios equipos»): sin espacios a los lados y sin importar mayúsculas. Editar uno sin
+     * cambiarle el código no se revisa: un servicio que quedó repetido con otro equipo se sigue pudiendo editar.
+     */
+    fun isServiceCodeTaken(code: String, excludeSyncId: String? = null): Boolean = guarded { serviceCodeTaken(code, excludeSyncId) }
+
+    private fun serviceCodeTaken(code: String, excludeSyncId: String?): Boolean {
+        if (code.isBlank()) return false
+        val wanted = code.trim()
+        val rows = store.select("ClinicalServices", listOf("SyncId", "Code", "IsActive"))
+        if (excludeSyncId != null) {
+            val stored = rows.firstOrNull { it["SyncId"] == excludeSyncId }?.get("Code") as String?
+            if (stored != null && stored.trim().equals(wanted, ignoreCase = true)) return false
+        }
+        return rows.any { it["IsActive"] == 1L && it["SyncId"] != excludeSyncId && (it["Code"] as String?).orEmpty().trim().equals(wanted, ignoreCase = true) }
+    }
+
+    /**
+     * Guardar un servicio con sus insumos por defecto (`SaveClinicalServiceAsync`), todo en una transacción con sus entradas en la cola. Un alta lleva [syncId] tomado al abrir el formulario: un
+     * segundo toque encuentra el servicio ya guardado y no crea otro. En una edición los insumos se guardan **por producto**: cada renglón conserva su `SyncId`, solo sube lo que cambió y lo que se
+     * quitó deja su lápida (paso 8.4). Un insumo cuyo producto ya no está en este equipo no se puede guardar.
+     *
+     * @return `true` si se escribió; `false` si ese alta ya estaba guardada.
+     */
+    fun saveService(service: ServiceValues, syncId: String, isNew: Boolean): Boolean = guarded {
+        requireInventory("editar el catálogo")
+        store.transaction {
+            val id = syncId.lowercase(Locale.ROOT)
+            val existing = writer.find(writer.table("ClinicalServices"), id)
+            if (isNew && existing != null) return@transaction false
+            if (!isNew && existing == null) throw WriteRefused(WriteRefused.Reason.CONFLICT, "El servicio clínico ya no existe.")
+            // Solo un alta o un código que cambió, contra los activos
+            if (serviceCodeTaken(service.code, if (isNew) null else id)) throw WriteRefused(WriteRefused.Reason.CONFLICT, "El código ${service.code.trim()} ya lo usa otro servicio.")
+            // El último de cada producto, en el orden en que se agregaron (`GroupBy(...).Last()`)
+            val wanted = LinkedHashMap<String, ServiceSupply>()
+            for (supply in service.supplies) wanted[supply.productSyncId.lowercase(Locale.ROOT)] = supply.copy(quantity = maxOf(1, supply.quantity))
+            if (wanted.isNotEmpty()) {
+                val present = store.select("Products", listOf("SyncId"), "SyncId", wanted.keys.toList()).map { it["SyncId"] as String }.toSet()
+                if (wanted.keys.any { it !in present }) throw WriteRefused(WriteRefused.Reason.CONFLICT, "Uno de los insumos ya no existe en este equipo.")
+            }
+            val values = mapOf<String, Any?>(
+                "Code" to service.code,
+                "Name" to service.name,
+                "Description" to service.description,
+                "Category" to service.category,
+                "Price" to service.price.toPlainString(),
+                "EstimatedDurationMinutes" to service.estimatedDurationMinutes.toLong(),
+                "IsActive" to service.isActive,
+            )
+            if (existing == null) {
+                writer.create("ClinicalServices", id, values + ("CreatedAt" to protocolLocalNow()))
+                for ((product, supply) in wanted) {
+                    writer.create("ServiceDefaultProducts", SyncIds.random(), mapOf("ClinicalServiceSyncId" to id, "ProductSyncId" to product, "Quantity" to supply.quantity.toLong(), "Instructions" to supply.instructions))
+                }
+            } else {
+                writer.edit("ClinicalServices", id, values)
+                val current = store.select("ServiceDefaultProducts", listOf("SyncId", "ProductSyncId", "Quantity", "Instructions"), "ClinicalServiceSyncId", listOf(id))
+                    .sortedBy { it["SyncId"] as String }
+                for (row in current) {
+                    val rowId = row["SyncId"] as String
+                    val desired = wanted.remove((row["ProductSyncId"] as String).lowercase(Locale.ROOT))
+                    if (desired == null) {
+                        writer.delete("ServiceDefaultProducts", rowId)
+                        continue
+                    }
+                    val change = HashMap<String, Any?>()
+                    if (row["Quantity"] != desired.quantity.toLong()) change["Quantity"] = desired.quantity.toLong()
+                    if (row["Instructions"] != desired.instructions) change["Instructions"] = desired.instructions
+                    if (change.isNotEmpty()) writer.edit("ServiceDefaultProducts", rowId, change)
+                }
+                for ((product, supply) in wanted) {
+                    writer.create("ServiceDefaultProducts", SyncIds.random(), mapOf("ClinicalServiceSyncId" to id, "ProductSyncId" to product, "Quantity" to supply.quantity.toLong(), "Instructions" to supply.instructions))
+                }
+            }
+            true
+        }
+    }
+
+    /**
+     * «Activar» / «Desactivar» (`ToggleActiveAsync`): solo `IsActive`; sus insumos y lo demás se quedan como están en la base (la PC guarda el servicio entero con lo que tenía la lista, que es lo
+     * mismo salvo lo que haya bajado mientras tanto). `false` si ya no existe.
+     */
+    fun setServiceActive(syncId: String, active: Boolean): Boolean = guarded {
+        requireInventory("editar el catálogo")
+        store.transaction {
+            val id = syncId.lowercase(Locale.ROOT)
+            if (writer.find(writer.table("ClinicalServices"), id) == null) throw WriteRefused(WriteRefused.Reason.CONFLICT, "El servicio clínico ya no existe.")
+            writer.edit("ClinicalServices", id, mapOf("IsActive" to active))
+        }
+    }
+
+    /** «Eliminar» un servicio (`DeleteClinicalServiceAsync`): el servicio y sus insumos por defecto, con sus lápidas. Los tickets lo conservan por su código y su nombre. `false` si ya no existía. */
+    fun deleteService(syncId: String): Boolean = guarded {
+        requireInventory("editar el catálogo")
+        store.transaction {
+            val id = syncId.lowercase(Locale.ROOT)
+            if (writer.find(writer.table("ClinicalServices"), id) == null) return@transaction false
+            if (!writer.delete("ClinicalServices", id)) throw WriteRefused(WriteRefused.Reason.CONFLICT, "Todavía tiene registros que dependen de él.")
+            true
         }
     }
 

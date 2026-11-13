@@ -47,12 +47,12 @@ import kotlin.random.Random
  * dicen «En la siguiente versión».
  */
 enum class ConfigSection(val group: String, val title: String, val ready: Boolean) {
-    Dashboard("Resumen", "Panel del consultorio", false),
-    Business("Resumen", "Negocio", false),
+    Dashboard("Resumen", "Panel del consultorio", true),
+    Business("Resumen", "Negocio", true),
     Inventory("Inventario", "Productos", true),
     Batches("Inventario", "Lotes y caducidades", true),
     Movements("Inventario", "Kardex", true),
-    Services("Consultorio", "Servicios", false),
+    Services("Consultorio", "Servicios", true),
     Clinic("Consultorio", "Médico y consultorio", false),
     Appearance("Sistema", "Apariencia", false),
     Data("Sistema", "Respaldos y datos", false),
@@ -249,7 +249,8 @@ class SuggestedPurchases(val items: List<SuggestedPurchaseItem>) {
 class InventoryController internal constructor(private val workspace: TabletWorkspace, private val scope: CoroutineScope, private val io: CoroutineDispatcher) {
     private val env get() = workspace.env
 
-    var section by mutableStateOf(ConfigSection.Inventory)
+    /** Como la PC, Configuración abre en el panel del consultorio. */
+    var section by mutableStateOf(ConfigSection.Dashboard)
         private set
     var settingsQuery by mutableStateOf("")
 

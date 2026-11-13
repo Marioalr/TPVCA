@@ -53,6 +53,15 @@ data class SaleLineColumns(
     @ColumnInfo(name = "IsIndividualUnits") val isIndividualUnits: Long?,
 )
 
+/** El panel del consultorio (K9b), de una sola foto: el catálogo con sus lotes abiertos, los movimientos de hoy y las ventas de hoy. */
+class DashboardColumns(
+    val categories: List<CategoryEntity>,
+    val products: List<ProductEntity>,
+    val batches: List<ProductBatchEntity>,
+    val movementsToday: List<InventoryMovementEntity>,
+    val salesToday: List<SaleEntity>,
+)
+
 /** Todo lo que la consulta lee del catálogo, en una sola foto. */
 class CatalogColumns(
     val categories: List<CategoryEntity>,
@@ -154,6 +163,10 @@ interface ClinicDao {
     /** Productos, categorías y lotes abiertos de una sola foto (K9b): una sincronización a la mitad no deja un lote sin su producto. */
     @Transaction
     fun inventoryColumns(): Triple<List<CategoryEntity>, List<ProductEntity>, List<ProductBatchEntity>> = Triple(categories(), products(), openBatches())
+
+    /** El panel del consultorio (K9b): [from] es hoy y [to] mañana; los movimientos, desde hoy (`m.Date >= today`, como la PC). */
+    @Transaction
+    fun dashboardColumns(from: String, to: String): DashboardColumns = DashboardColumns(categories(), products(), openBatches(), movementsFrom(from), sales(from, to))
 
     // ------------------------------------------------------------------ negocio
 

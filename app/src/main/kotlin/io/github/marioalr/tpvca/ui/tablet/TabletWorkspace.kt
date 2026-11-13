@@ -127,9 +127,16 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
             val entering = !isPatientsSection(currentPage) && isPatientsSection(value)
             if (value != currentPage) detail = null
             // Lo abierto en el punto de venta es de esa pantalla: nunca se queda encima de otra
-            if (currentPage == TabletPage.Pos && value != TabletPage.Pos) pos.left()
+            if (currentPage == TabletPage.Pos && value != TabletPage.Pos) {
+                pos.left()
+                services.leftPos()
+            }
             // Lo abierto en Configuración es de ella; la lista sugerida, del inicio
-            if (currentPage == TabletPage.Config && value != TabletPage.Config) inventory.left()
+            if (currentPage == TabletPage.Config && value != TabletPage.Config) {
+                inventory.left()
+                services.left()
+                reports.left()
+            }
             if (currentPage == TabletPage.Hub && value != TabletPage.Hub) inventory.closeSuggested()
             currentPage = value
             labResults.leftChart(value)
@@ -180,6 +187,15 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
 
     /** Configuración: Productos, Lotes y Kardex, y la compra sugerida del inicio (K9b). */
     val inventory = InventoryController(this, scope, io)
+
+    /** Configuración: el panel del consultorio y «Negocio» (K9b). */
+    val reports = ReportsController(this, scope, io)
+
+    /** Configuración → Servicios, y «Nuevo servicio» y «Eliminar servicio» del punto de venta (K9b). */
+    val services = ServicesController(this, scope, io)
+
+    /** *Equipos vinculados*, solo para consultar (K9b). */
+    val devices = DevicesController(this, scope, io)
 
     init {
         env.handoff?.let { link -> scope.launch { link.checks.collect { check -> if (check != null) handoff.onCheck(check) } } }
@@ -363,8 +379,9 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
             page is TabletPage.Chart -> page = if (consultation.isConsultationFor((page as TabletPage.Chart).syncId)) TabletPage.Consultation else TabletPage.PatientsHome
             page == TabletPage.Sync -> leaveSync()
             // Lo de encima primero; la cuenta se queda para cuando vuelva
+            page == TabletPage.Pos && services.posEditor != null -> services.closePosEditor()
             page == TabletPage.Pos -> if (!pos.back()) page = TabletPage.Hub
-            page == TabletPage.Config -> if (!inventory.back()) page = TabletPage.Hub
+            page == TabletPage.Config -> if (!services.back() && !inventory.back()) page = TabletPage.Hub
             page == TabletPage.Hub && inventory.suggested != null -> inventory.closeSuggested()
             homeQuery.isNotEmpty() -> homeQuery = ""
             page == TabletPage.PatientsHome -> page = TabletPage.Hub
@@ -894,6 +911,9 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         handoff.clearMemory()
         pos.clearMemory()
         inventory.clearMemory()
+        reports.clearMemory()
+        services.clearMemory()
+        devices.clearMemory()
         page = TabletPage.Hub
         restored = false
     }

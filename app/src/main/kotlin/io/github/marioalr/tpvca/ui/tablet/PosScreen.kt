@@ -96,6 +96,8 @@ fun PosScreen(workspace: TabletWorkspace, chrome: TabletChrome) {
             PosSheet.CashCut -> CashCutSheet(pos)
             null -> Unit
         }
+        // «Nuevo servicio» va encima de la hoja de servicios: es de ella
+        if (pos.sheet == PosSheet.Services) workspace.services.posEditor?.let { NewServiceSheet(workspace, it) }
         pos.receipt?.let { ReceiptSheet(workspace, it) }
     }
 }

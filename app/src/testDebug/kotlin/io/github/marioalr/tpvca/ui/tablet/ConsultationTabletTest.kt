@@ -331,6 +331,7 @@ class ConsultationTabletTest {
         val folio = workspace.consultation.draft!!.folio
         workspace.goPatients()
         waitTag(TabletTags.CONSULTATION_BANNER)
+        waitTag(TabletTags.attend("10:30"))
         compose.onNodeWithTag(TabletTags.attend("10:30")).performClick()
         waitTag(TabletTags.CONSULTATION)
         assertEquals(folio, workspace.consultation.draft!!.folio)

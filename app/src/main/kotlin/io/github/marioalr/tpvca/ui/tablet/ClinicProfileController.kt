@@ -107,6 +107,8 @@ class ClinicProfileController internal constructor(private val workspace: Tablet
             header = headerBytes
             pendingCrest = null
             pendingHeader = null
+            // Lo que bajó mientras se veía la sección: los datos de ahora, sin cambiar el aviso (por ejemplo el de «guardados»)
+            if (loaded && !force) return@launch
             loaded = true
             if (values.hasData) {
                 isEditing = false

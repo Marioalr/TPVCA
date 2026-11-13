@@ -90,7 +90,7 @@ fun catalogDuplicateDemo(store: SyncStore) {
     store.apply(StoreChanges(meta = mapOf(SyncEngine.NOTICES to SyncNotices.write(notices))))
 }
 
-/** La tablet con datos inventados y sin nube, sobre SQLCipher. Solo en depuración. Girar no la vuelve a armar; que Android cierre el proceso sí. `--es pagina hub|pacientes|ficha|alta|editar|agenda|sync|consulta|enviada|venta|productos|lotes|kardex|sugerida`. */
+/** La tablet con datos inventados y sin nube, sobre SQLCipher. Solo en depuración. Girar no la vuelve a armar; que Android cierre el proceso sí. `--es pagina hub|pacientes|ficha|alta|editar|agenda|sync|consulta|enviada|venta|productos|lotes|kardex|sugerida|panel|negocio|servicios|consultorio|datos`. */
 class TabletDemoActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -116,6 +116,12 @@ class TabletDemoActivity : FragmentActivity() {
             "lotes" -> demo.workspace.enterConfig(io.github.marioalr.tpvca.ui.tablet.ConfigSection.Batches)
             "kardex" -> demo.workspace.enterConfig(io.github.marioalr.tpvca.ui.tablet.ConfigSection.Movements)
             "sugerida" -> demo.workspace.inventory.openSuggested()
+            // La segunda mitad de K9b
+            "panel" -> demo.workspace.enterConfig(io.github.marioalr.tpvca.ui.tablet.ConfigSection.Dashboard)
+            "negocio" -> demo.workspace.enterConfig(io.github.marioalr.tpvca.ui.tablet.ConfigSection.Business)
+            "servicios" -> demo.workspace.enterConfig(io.github.marioalr.tpvca.ui.tablet.ConfigSection.Services)
+            "consultorio" -> demo.workspace.enterConfig(io.github.marioalr.tpvca.ui.tablet.ConfigSection.Clinic)
+            "datos" -> demo.workspace.enterConfig(io.github.marioalr.tpvca.ui.tablet.ConfigSection.Data)
         }
         setContent {
             TpvcTheme(TpvcThemes.claro) {

@@ -330,7 +330,7 @@ object ExcelImport {
 
     /** Un CSV o texto delimitado: el separador por su primer renglón (`;` si no hay `,`, o tabulador) y las columnas por su encabezado (de omisión la 1 y la 2) (`ImportCsvInternalAsync`). */
     fun csvPlan(text: String): ExcelImportPlan? {
-        val lines = text.removePrefix("﻿").split("\r\n", "\n", "\r").let { if (it.lastOrNull()?.isEmpty() == true) it.dropLast(1) else it }
+        val lines = text.removePrefix("\uFEFF").split("\r\n", "\n", "\r").let { if (it.lastOrNull()?.isEmpty() == true) it.dropLast(1) else it }
         if (lines.isEmpty() || (lines.size == 1 && lines[0].isEmpty())) return null
         val delimiter = when {
             lines[0].contains(';') && !lines[0].contains(',') -> ';'

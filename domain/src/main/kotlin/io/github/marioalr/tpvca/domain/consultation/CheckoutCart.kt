@@ -23,6 +23,7 @@ data class CartItem(
     val isService: Boolean = false,
     val isIndividualUnits: Boolean = false,
     val quantity: Int = 1,
+    val requiresRefrigeration: Boolean = false,
 ) {
     val subtotal: BigDecimal get() = BigDecimal(quantity).multiply(unitPrice)
 
@@ -134,6 +135,7 @@ class CheckoutCart(
             availableStock = product.currentStock,
             unitPrice = product.price,
             quantity = requested,
+            requiresRefrigeration = product.requiresRefrigeration,
         )
         append(line)
         notifyAdded(line, "${product.name} agregado (${line.quantity})")

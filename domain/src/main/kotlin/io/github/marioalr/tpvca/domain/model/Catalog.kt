@@ -30,6 +30,8 @@ data class Product(
     val location: String? = null,
     val isActive: Boolean = true,
     val syncId: String = "",
+    /** «Refrigerar» en el catálogo y la cuenta del punto de venta (`RequiresRefrigeration`). */
+    val requiresRefrigeration: Boolean = false,
 ) {
     /** Piezas por paquete; 1 si no se capturó o es menor. */
     val effectiveUnitsPerPackage: Int get() = if (unitsPerPackage > 1) unitsPerPackage else 1

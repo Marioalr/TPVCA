@@ -85,6 +85,7 @@ object ClinicMappers {
         location = e.location,
         isActive = e.isActive != 0L,
         syncId = e.syncId,
+        requiresRefrigeration = e.requiresRefrigeration != 0L,
     )
 
     fun batch(e: ProductBatchEntity, id: Int, productId: Int): ProductBatch = ProductBatch(

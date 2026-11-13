@@ -1,5 +1,7 @@
 package io.github.marioalr.tpvca.ui.tablet
 
+import kotlinx.coroutines.cancel
+import io.github.marioalr.tpvca.ui.waitForCondition
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -104,6 +106,8 @@ class InventoryTabletTest {
 
     @After
     fun close() {
+        // Lo que lanzó esta prueba no sigue corriendo contra una base cerrada, ni se cruza con la siguiente
+        scope.cancel()
         // Ni la base ni el motor en el hilo principal
         assertEquals(0, onMainThread.get())
         database.close()
@@ -116,17 +120,7 @@ class InventoryTabletTest {
         compose.waitForIdle()
     }
 
-    private fun waitFor(condition: () -> Boolean) {
-        val end = System.currentTimeMillis() + 10_000
-        while (true) {
-            compose.waitForIdle()
-            if (condition()) return
-            if (System.currentTimeMillis() > end) throw AssertionError("No se cumplió la condición a tiempo")
-            compose.mainClock.advanceTimeBy(100)
-            org.robolectric.shadows.ShadowLooper.idleMainLooper(100, java.util.concurrent.TimeUnit.MILLISECONDS)
-            Thread.sleep(10)
-        }
-    }
+    private fun waitFor(condition: () -> Boolean) = compose.waitForCondition(condition = condition)
 
     private fun waitText(text: String) = waitFor { compose.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty() }
 

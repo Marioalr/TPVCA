@@ -151,7 +151,7 @@ class ConsultationStep internal constructor(draft: ConsultationDraft, val catalo
 
     fun removeService(rowId: String) = edit(PatientSheets.SERVICES) { rows -> rows.filterNot { it.rowId == rowId }.map { it.raw } }
 
-    /** Un aviso abajo, si el paso se escribió. */
+    /** Un aviso abajo, si el paso se escribió o si no cambió nada (entonces suele decir por qué: «ya no está en el inventario»). Todos los del paso se ven ([ConsultationController.showToasts]). */
     fun toast(text: String, warning: Boolean = false) {
         toasts += text to warning
     }
@@ -860,7 +860,10 @@ class ConsultationController internal constructor(private val workspace: TabletW
             val committed = done.committed
             if (committed == null) {
                 // Un paso que no cambió nada también puede tener algo que decir («no está en el inventario»)
-                if (done.result == ApplyResult.NoChange) done.step?.infoText?.let { workspace.info = it }
+                if (done.result == ApplyResult.NoChange) {
+                    done.step?.let(::showToasts)
+                    done.step?.infoText?.let { workspace.info = it }
+                }
                 return done.result
             }
             // Lo que se tecleó mientras se escribía sigue ahí, encima de lo escrito
@@ -873,13 +876,23 @@ class ConsultationController internal constructor(private val workspace: TabletW
             if (typed.isNotEmpty()) scheduleSave()
             if (done.step!!.hasSheetEdits) env.noteLocalWrite()
             workspace.changed()
-            done.step.toasts.lastOrNull()?.let { (text, warning) -> workspace.show(text, warning) }
+            showToasts(done.step)
             done.step.infoText?.let { workspace.info = it }
             return ApplyResult.Applied
         } finally {
             inFlight = false
             typedDuringStep.clear()
         }
+    }
+
+    /**
+     * Los avisos de un paso, todos. La PC apila cada uno en su esquina (`PatientsFeedback.ShowWarning`, `NotificationService`); la tablet tiene un solo aviso abajo, así que van
+     * juntos, uno por renglón, y de advertencia si alguno lo es. Juntos y no en fila: en fila, el segundo esperaría a que se fuera el primero y el siguiente aviso de la app lo taparía.
+     */
+    private fun showToasts(step: ConsultationStep) {
+        val toasts = step.toasts.distinct()
+        if (toasts.isEmpty()) return
+        workspace.show(toasts.joinToString("\n") { it.first }, warning = toasts.any { it.second })
     }
 
     /** La ✕ de «Cuenta de la consulta» (`RemoveItemFromActiveConsultation`): cada renglón, una vez. */

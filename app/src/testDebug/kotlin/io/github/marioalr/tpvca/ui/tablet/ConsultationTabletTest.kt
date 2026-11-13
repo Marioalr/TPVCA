@@ -1784,6 +1784,34 @@ class ConsultationTabletTest {
         assertTrue(saved.contains("Hemoglobina glucosilada") && saved.contains("\"Area\":\"Otros\"") && saved.contains("En ayunas"))
     }
 
+    /** Revisión de K7: los avisos de un paso se ven todos, como en la PC, también cuando el paso no cambió nada («ya no está en el inventario»). */
+    @Test
+    fun losAvisosDeUnPasoSeVenTodosAunqueNoCambieNada() {
+        startAna()
+        var result: ApplyResult? = null
+        scope.launch { result = workspace.consultation.apply { toast("'Gasas' ya no está en el inventario: no se pueden cargar más piezas.", warning = true) } }
+        waitFor { result != null }
+        assertEquals(ApplyResult.NoChange, result)
+        assertEquals("'Gasas' ya no está en el inventario: no se pueden cargar más piezas.", workspace.toast?.text)
+        assertTrue(workspace.toast!!.warning)
+        // Dos en un paso que sí se escribió: los dos, uno por renglón
+        workspace.toast = null
+        result = null
+        scope.launch {
+            result = workspace.consultation.apply {
+                val charged = account.chargeSupply(SupplyRow(supplyName = "Tempra 500 mg tabletas", quantity = 1))
+                assertTrue(charged.charged)
+                putSupply(charged.row)
+                toast("Quedan 2 piezas de Tempra", warning = true)
+                toast("Insumo agregado")
+            }
+        }
+        waitFor { result != null }
+        assertEquals(ApplyResult.Applied, result)
+        assertEquals("Quedan 2 piezas de Tempra\nInsumo agregado", workspace.toast?.text)
+        assertTrue(workspace.toast!!.warning)
+    }
+
     // ------------------------------------------------------------------ resultados de laboratorio (K7, parte 3)
 
     private val samplePdf = ("%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n3 0 obj << /Type /Page /Parent 2 0 R >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n").toByteArray()

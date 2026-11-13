@@ -13,6 +13,7 @@ import io.github.marioalr.tpvca.sync.hrana.Row
 import io.github.marioalr.tpvca.sync.hrana.Statement
 import io.github.marioalr.tpvca.sync.hrana.text
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.util.Locale
 
@@ -30,13 +31,19 @@ interface LabUploadFiles {
 
     fun pending(ticket: Long): List<String>
 
+    /** Cuándo se guardó como pendiente (la hora del archivo), o `null` si ya no está. Uno recién guardado puede estar esperando a que se escriba su fila. */
+    fun pendingSince(ticket: Long, sha256: String): Instant?
+
     /** El archivo en memoria, o `null` si está dañado: se queda donde está y no se sube. */
     fun read(ticket: Long, sha256: String): ByteArray?
 
     /** Ya no hace falta subirlo: se queda en la caché como cualquier otro. */
     fun settle(ticket: Long, sha256: String)
 
-    /** Lo mismo, solo si [stillOrphan] sigue diciendo que ningún resultado lo nombra: una importación que venga a la mitad no pierde su subida. */
+    /**
+     * Lo mismo, solo si [stillOrphan] sigue diciendo que ningún resultado lo nombra: una importación que venga a la mitad no pierde su subida. Tampoco si está apartado: el resultado
+     * que se está agregando aparta su archivo desde antes de guardarlo hasta que su fila queda escrita.
+     */
     fun settleOrphan(ticket: Long, sha256: String, stillOrphan: () -> Boolean)
 }
 
@@ -113,13 +120,20 @@ class LabFileUploader(
         return LabUploadReport(uploaded, waiting, damaged, notice, failed)
     }
 
-    /** Lo que hay que subir, solo con lo de aquí (`LoadLabWorkAsync`): lo más reciente primero, y lo que ya ningún resultado nombra se suelta sin gastar la nube. */
+    /**
+     * Lo que hay que subir, solo con lo de aquí (`LoadLabWorkAsync`): lo más reciente primero, y lo que ya ningún resultado nombra se suelta sin gastar la nube. Solo si lleva más de
+     * [ORPHAN_MARGIN] guardado: el archivo se guarda antes que su fila, y uno recién guardado sin fila es un resultado que se está agregando, no un huérfano.
+     */
     private fun work(ticket: Long): List<File> {
         val pending = files.pending(ticket)
         if (pending.isEmpty()) return emptyList()
         val rows = guarded { rowsNaming(pending) }.groupBy { it["ContentSha256"] as String }
+        val settledBefore = clock.instant().minus(ORPHAN_MARGIN)
         for (sha in pending) {
-            if (sha !in rows) files.settleOrphan(ticket, sha) { guarded { rowsNaming(listOf(sha)) }.isEmpty() }
+            if (sha in rows) continue
+            val since = files.pendingSince(ticket, sha) ?: continue
+            if (since.isAfter(settledBefore)) continue
+            files.settleOrphan(ticket, sha) { guarded { rowsNaming(listOf(sha)) }.isEmpty() }
         }
         return rows.filterKeys { it in pending }.map { (sha, named) ->
             File(
@@ -240,6 +254,9 @@ class LabFileUploader(
     }
 
     companion object {
+        /** Lo que un pendiente sin fila espera antes de contarse como huérfano: de sobra para escribir la fila de un resultado que se está agregando. */
+        val ORPHAN_MARGIN: Duration = Duration.ofMinutes(10)
+
         /** `LabFileImporter.Megabytes`. */
         fun megabytes(bytes: Long): String = String.format(Locale.ROOT, "%.1f MB", bytes / 1_000_000.0)
 

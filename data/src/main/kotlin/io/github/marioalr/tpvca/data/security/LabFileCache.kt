@@ -47,11 +47,15 @@ class LabFileCache(private val dir: File, private val wrapper: SecretWrapper, pr
         check(temporary.renameTo(File(folder, name(sha256)))) { "No se pudo guardar el resultado." }
     }
 
-    /** Un resultado agregado en este equipo: se guarda antes que su fila y queda pendiente de subir. Ya subido, o ya en la caché, no se vuelve a pendiente. */
+    /**
+     * Un resultado agregado en este equipo: se guarda antes que su fila y queda pendiente de subir. Si ya estaba en la caché vuelve a pendiente: pudo llegar ahí sin subirse (un
+     * huérfano que se soltó), y si ya está en la nube la subida lo ve con una sola lectura y lo regresa sin volver a subirlo.
+     */
     @Synchronized
     fun writePending(sha256: String, content: ByteArray) {
-        if (File(dir, name(sha256)).isFile || File(pendingDir, name(sha256)).isFile) return
+        if (File(pendingDir, name(sha256)).isFile) return
         writeTo(pendingDir, sha256, content)
+        File(dir, name(sha256)).delete()
     }
 
     /** Los SHA-256 que faltan por subir, los más nuevos primero. */
@@ -64,6 +68,10 @@ class LabFileCache(private val dir: File, private val wrapper: SecretWrapper, pr
 
     @Synchronized
     fun isPending(sha256: String): Boolean = File(pendingDir, name(sha256)).isFile
+
+    /** Cuándo se guardó como pendiente (milisegundos de la época, la hora del archivo), o `null` si no está pendiente. */
+    @Synchronized
+    fun pendingSince(sha256: String): Long? = File(pendingDir, name(sha256)).takeIf { it.isFile }?.lastModified()
 
     /** Ya está en la nube (o ya no hace falta): pasa a la caché como cualquier otro, donde el LRU manda. */
     @Synchronized

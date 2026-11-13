@@ -207,23 +207,25 @@ class LabResultsEditor internal constructor(private val workspace: TabletWorkspa
                     engine.checkWritable()
                     // Su paciente, no el que esté abierto: y solo si sigue en la base y activo (otro equipo pudo darlo de baja o unirlo a otro)
                     env.phone.reader.activePatient(f.patientSyncId) ?: throw PatientGone()
-                    val sha = store.save(store.ticket(), prepared.content)
-                    engine.create(
-                        "LabResults",
-                        mapOf(
-                            "PatientRecordSyncId" to f.patientSyncId,
-                            "Title" to f.title.trim(),
-                            "Laboratory" to f.laboratory.trim(),
-                            "ResultDate" to ProtocolDate.format(date.atStartOfDay()),
-                            "Notes" to f.notes.trim(),
-                            "MimeType" to prepared.mimeType,
-                            "FileName" to prepared.fileName.substringAfterLast('/'),
-                            "PageCount" to prepared.pageCount.toLong(),
-                            "SizeBytes" to prepared.content.size.toLong(),
-                            "ContentSha256" to sha,
-                            "CreatedAt" to ProtocolDate.format(Clinic.localNow(env.phone.now())),
-                        ),
-                    )
+                    // El archivo y su fila, apartados juntos: la subida no lo toma por huérfano mientras la fila se escribe
+                    store.save(store.ticket(), prepared.content) { sha ->
+                        engine.create(
+                            "LabResults",
+                            mapOf(
+                                "PatientRecordSyncId" to f.patientSyncId,
+                                "Title" to f.title.trim(),
+                                "Laboratory" to f.laboratory.trim(),
+                                "ResultDate" to ProtocolDate.format(date.atStartOfDay()),
+                                "Notes" to f.notes.trim(),
+                                "MimeType" to prepared.mimeType,
+                                "FileName" to prepared.fileName.substringAfterLast('/'),
+                                "PageCount" to prepared.pageCount.toLong(),
+                                "SizeBytes" to prepared.content.size.toLong(),
+                                "ContentSha256" to sha,
+                                "CreatedAt" to ProtocolDate.format(Clinic.localNow(env.phone.now())),
+                            ),
+                        )
+                    }
                     prepared.warning
                 }
                 if (form === f) form = null

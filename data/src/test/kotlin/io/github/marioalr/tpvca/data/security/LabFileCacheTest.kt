@@ -87,9 +87,12 @@ class LabFileCacheTest {
         assertFalse(cache.isPending(sha))
         assertTrue(File(temp.root, "lab/$sha").isFile)
         assertArrayEquals(content, cache.read(sha))
-        // Volver a agregar lo que ya está no lo vuelve pendiente
+        // Volver a agregarlo lo vuelve pendiente (pudo soltarse como huérfano sin subirse): si ya está en la nube, la subida lo regresa con una lectura
         cache.writePending(sha, content)
-        assertTrue(cache.pending().isEmpty())
+        assertEquals(listOf(sha), cache.pending())
+        assertFalse(File(temp.root, "lab/$sha").exists())
+        assertArrayEquals(content, cache.read(sha))
+        cache.settle(sha)
         cache.settle("0".repeat(64))
     }
 

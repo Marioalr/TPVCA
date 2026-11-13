@@ -397,7 +397,7 @@ class ClinicReaderTest {
 
     /**
      * K9b: el panel del consultorio con las cuentas de `GetDashboardMetricsAsync`: 60 días para «por vencer» (hasta antes de hoy + 61), los lotes abiertos con piezas de productos activos, el consumo en
-     * consulta desde hoy, las ventas del día **también las canceladas** (como la PC) y las listas de 8.
+     * consulta desde hoy, las ventas del día **sin las canceladas** (como el corte y «Negocio»; la PC lo corrige en v1.57.0) y las listas de 8.
      */
     @Test
     fun elPanelCuentaComoLaPc() {
@@ -434,8 +434,8 @@ class ClinicReaderTest {
         assertEquals(1, m.expiredCount)
         assertEquals(4, m.consumedInConsultationToday)
         assertEquals(1, m.movementsToday)
-        assertEquals(2, m.salesTodayCount)
-        assertEquals(java.math.BigDecimal("150.50"), m.salesTodayTotal)
+        assertEquals("Sin el cancelado", 1, m.salesTodayCount)
+        assertEquals(java.math.BigDecimal("100.50"), m.salesTodayTotal)
         // 9 × 1 × 10 + 20 × 2.50; uno con existencias sin costo
         assertEquals(0, java.math.BigDecimal("140").compareTo(m.inventoryValue))
         assertEquals(1, m.stockedWithoutCost)

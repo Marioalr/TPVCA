@@ -233,7 +233,7 @@ object ChipLooks {
 
 /** Una opción con su estado. Se ve del alto del diseño, pero el toque mide al menos 48 dp. */
 @Composable
-fun Chip(label: String, selected: Boolean, look: ChipLook, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun Chip(label: String, selected: Boolean, look: ChipLook, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
     Box(
         modifier
             .heightIn(min = 48.dp)
@@ -242,7 +242,7 @@ fun Chip(label: String, selected: Boolean, look: ChipLook, modifier: Modifier = 
                 role = Role.Button
                 this.selected = selected
             }
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Box(

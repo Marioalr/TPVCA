@@ -50,6 +50,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -237,8 +238,10 @@ fun PhoneApp(env: PhoneEnv, workspace: PhoneWorkspace, status: PhoneStatus, data
         }
     }
 
+    // Agendar y cambiar de horario son modales: lo de atrás no recibe toques (el overlay los toma) y TalkBack no lo lee
+    val modal = workspace.agenda.form.isOpen || workspace.agenda.moving != null
     Box(Modifier.fillMaxSize()) {
-    Column(Modifier.fillMaxSize().background(PhoneColors.Page)) {
+    Column(Modifier.fillMaxSize().background(PhoneColors.Page).then(if (modal) Modifier.clearAndSetSemantics {} else Modifier)) {
         Box(Modifier.weight(1f).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
             val doc = previewDoc
             when {

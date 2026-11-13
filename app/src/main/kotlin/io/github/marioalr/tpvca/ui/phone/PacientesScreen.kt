@@ -185,7 +185,7 @@ private fun PatientListRow(item: PatientListItem, onClick: () -> Unit) {
 
 /** La caja de búsqueda del diseño (`label` + `input type=search`). Sin corrección del teclado: un nombre no debe quedar en su diccionario. */
 @Composable
-fun SearchField(value: String, onChange: (String) -> Unit, placeholder: String, description: String, tag: String, icon: ImageVector = PhoneIcons.Search) {
+fun SearchField(value: String, onChange: (String) -> Unit, placeholder: String, description: String, tag: String, icon: ImageVector = PhoneIcons.Search, enabled: Boolean = true) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).background(PhoneColors.Surface).border(1.dp, PhoneColors.ControlBorder, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -196,6 +196,7 @@ fun SearchField(value: String, onChange: (String) -> Unit, placeholder: String, 
             value,
             onChange,
             Modifier.weight(1f).semantics { contentDescription = description }.testTag(tag),
+            enabled = enabled,
             singleLine = true,
             textStyle = TextStyle(fontSize = 15.sp, color = PhoneColors.Text),
             cursorBrush = SolidColor(PhoneColors.Accent),
@@ -205,7 +206,7 @@ fun SearchField(value: String, onChange: (String) -> Unit, placeholder: String, 
                 inner()
             },
         )
-        if (value.isNotEmpty()) {
+        if (value.isNotEmpty() && enabled) {
             Box(Modifier.size(32.dp).semantics { contentDescription = "Borrar la búsqueda" }.clickable { onChange("") }, contentAlignment = Alignment.Center) {
                 Icon(PhoneIcons.Close, null, Modifier.size(16.dp), tint = PhoneColors.Muted)
             }

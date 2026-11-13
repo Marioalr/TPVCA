@@ -67,7 +67,7 @@ scripts/check-secrets.sh
 ./gradlew :data:connectedDebugAndroidTest :app:connectedDebugAndroidTest # SQLCipher, Keystore y ML Kit: con un equipo o emulador; no corren en la CI
 ```
 
-La CI (`.github/workflows/ci.yml`) corre `scripts/check-secrets.sh` y `./gradlew test lint assembleDebug` con JDK 17 en
+La CI (`.github/workflows/ci.yml`) corre `scripts/check-secrets.sh`, `./gradlew test` y luego `./gradlew lint assembleDebug` (aparte: lint ocupa todos los núcleos y frenaba las pruebas) con JDK 17 en
 cada push y PR.
 
 | Pieza | Versión |

@@ -158,19 +158,31 @@ class AgendaSession(
 
     /**
      * Si quedó una cita sin guardar, se reabre tal cual (`TryRestorePatientFormDraftAsync`), con el nombre, el folio y el teléfono de ahora, o diciendo que el paciente ya no está. `true` si se reabrió. [requireTime]: la tablet
-     * solo abre el formulario en un hueco; un borrador sin hora se descarta. Lanza si la base no está lista: el borrador sigue guardado y se intenta la siguiente vez.
+     * solo abre el formulario en un hueco; un borrador sin hora se descarta. [onReopened] va **en cuanto el formulario se abre**, antes de leer al paciente: si esa lectura falla, el formulario ya se ve (la tablet abre la
+     * agenda en su día) y nunca queda abierto detrás. Un borrador cuya cita ya se guardó (se cerró el proceso entre guardar y borrarlo) se descarta sin reabrir. Lanza si la base no está lista: el borrador sigue
+     * guardado y se intenta la siguiente vez.
      */
-    suspend fun restore(requireTime: Boolean): Boolean {
+    suspend fun restore(requireTime: Boolean, onReopened: (java.time.LocalDate) -> Unit = {}): Boolean {
         if (form.isOpen) return false
         val side = withContext(io) { local() } ?: throw IllegalStateException()
         val text = withContext(io) { side.draft(LocalSide.APPOINTMENT_FORM) } ?: return false
-        if (!form.restore(text) || (requireTime && form.slotTime == null)) {
-            form.close()
+        val probe = AppointmentFormState()
+        if (!probe.restore(text) || (requireTime && probe.slotTime == null)) {
             withContext(io) { side.deleteDraft(LocalSide.APPOINTMENT_FORM) }
             return false
         }
+        // Ya se guardó: no se reabre para guardarla otra vez
+        if (withContext(io) { (writes() ?: throw IllegalStateException()).appointmentExists(probe.newSyncId) }) {
+            withContext(io) { side.deleteDraft(LocalSide.APPOINTMENT_FORM) }
+            return false
+        }
+        if (form.isOpen || !form.restore(text)) return false
+        onReopened(form.slotDate ?: return true)
         val chosen = form.patient ?: return true
+        val request = form.request
         val (current, downloaded) = withContext(io) { (writes() ?: throw IllegalStateException()).patientRowAndDownload(chosen.syncId) }
+        // Mientras se leía se cerró o se abrió otro
+        if (form.request != request || form.patient?.syncId != chosen.syncId) return true
         if (current != null && current["MergedIntoSyncId"] == null) {
             form.patient = AgendaPatient(chosen.syncId, current["FullName"] as String? ?: "", current["RecordNumber"] as String? ?: "", current["Phone"] as String? ?: "")
         } else if (downloaded) {

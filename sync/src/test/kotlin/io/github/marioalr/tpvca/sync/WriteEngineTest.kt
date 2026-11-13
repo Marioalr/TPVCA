@@ -141,7 +141,7 @@ class WriteEngineTest {
         cloudPatient()
         linked(DeviceRole.AndroidMobileAdmin, "C1")
         activePatient()
-        val id = writes.createAppointment(patient, { row -> appointment() + mapOf("PatientName" to row["FullName"], "PatientRecordNumber" to row["RecordNumber"]) })!!
+        val id = writes.createAppointment(patient, { row -> appointment() + mapOf("PatientName" to row["FullName"], "PatientRecordNumber" to row["RecordNumber"]) })!!.syncId
         assertEquals(1, store.pendingChanges())
         assertEquals("Ana", store.rows("Appointments").getValue(id)["PatientName"])
         assertTrue(writes.edit("Appointments", id, mapOf("Status" to "Confirmada")))
@@ -173,6 +173,49 @@ class WriteEngineTest {
         store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))
         assertEquals(0, store.pendingChanges())
         assertEquals(before["Appointments"], store.rowCounts()["Appointments"])
+    }
+
+    /** El `SyncId` es el del formulario: otro intento, o el borrador recuperado después de guardar, encuentra la cita y no escribe otra. */
+    @Test
+    fun agendarDosVecesConElMismoSyncIdDejaUnaSolaCita() {
+        cloudPatient()
+        linked(DeviceRole.AndroidMobileAdmin, "C1")
+        activePatient()
+        val id = "10000000-0000-4000-8000-0000000000c1"
+        val first = writes.createAppointment(patient, { appointment() + ("Reason" to "Primera") }, id)!!
+        assertFalse(first.repeated)
+        val again = writes.createAppointment(patient, { appointment() + ("Reason" to "Segunda") }, id.uppercase())!!
+        assertTrue(again.repeated)
+        assertEquals("Primera", again.row["Reason"])
+        assertEquals(1, store.rows("Appointments").size)
+        assertEquals(1, store.outbox().size)
+        assertTrue(writes.appointmentExists(id))
+    }
+
+    /** El resumen del expediente se recalcula dentro de la transacción: si falla, no queda la cita ni su entrada en la cola, así que «no se pudo guardar» es cierto y otro intento no duplica nada. */
+    @Test
+    fun siFallaElRecalculoNoQuedaLaCitaNiSuEntradaEnLaCola() {
+        cloudPatient()
+        linked(DeviceRole.AndroidMobileAdmin, "C1")
+        activePatient()
+        val id = "10000000-0000-4000-8000-0000000000c2"
+        store.refuseWrite = { it.table == "Patients" }
+        assertThrows(Exception::class.java) { writes.createAppointment(patient, { appointment() }, id) }
+        assertTrue(store.rows("Appointments").isEmpty())
+        assertEquals(0, store.pendingChanges())
+        assertFalse(writes.appointmentExists(id))
+        // Lo mismo al cambiar una cita que ya está
+        store.refuseWrite = { false }
+        writes.createAppointment(patient, { appointment() }, id)
+        store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))
+        store.refuseWrite = { it.table == "Patients" }
+        assertThrows(Exception::class.java) { writes.edit("Appointments", id, mapOf("Status" to "Cancelada")) }
+        assertEquals("Programada", store.rows("Appointments").getValue(id)["Status"])
+        assertEquals(0, store.pendingChanges())
+        // Ya sin falla, se guarda una sola vez
+        store.refuseWrite = { false }
+        assertTrue(writes.createAppointment(patient, { appointment() }, id)!!.repeated)
+        assertEquals(1, store.rows("Appointments").size)
     }
 
     @Test

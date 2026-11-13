@@ -1,5 +1,7 @@
 package io.github.marioalr.tpvca.ui.tablet
 
+import kotlinx.coroutines.cancel
+import io.github.marioalr.tpvca.ui.waitForCondition
 import android.content.Context
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -85,6 +87,10 @@ class TabletAppTest {
     private lateinit var workspace: TabletWorkspace
     private var saves = 0
     private var failWrites = false
+
+    /** Desde esa llamada a `writes()`, falla: para hacer fallar un paso que no es el primero. */
+    private var failWritesFrom: Int? = null
+    private var writesCalls = 0
     private val folios = MemoryFolioNumbers()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var quickGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
@@ -110,7 +116,8 @@ class TabletAppTest {
             ),
             writes = {
                 checkThread()
-                if (failWrites) throw IllegalStateException("/ruta/secreta/base.db") else WriteEngine(store, { "tablet" }, folios, { null })
+                writesCalls++
+                if (failWrites || failWritesFrom?.let { writesCalls >= it } == true) throw IllegalStateException("/ruta/secreta/base.db") else WriteEngine(store, { "tablet" }, folios, { null })
             },
             local = {
                 checkThread()
@@ -139,6 +146,8 @@ class TabletAppTest {
 
     @After
     fun close() {
+        // Lo que lanzó esta prueba no sigue corriendo contra una base cerrada, ni se cruza con la siguiente
+        scope.cancel()
         // Abrir la base (SQLCipher y el Keystore) nunca en el hilo principal, en ninguna prueba
         assertEquals(0, onMainThread.get())
         database.close()
@@ -151,18 +160,7 @@ class TabletAppTest {
         compose.waitForIdle()
     }
 
-    /** Las pausas y las vueltas del hilo de fondo corren en el hilo principal de Robolectric, que aquí no avanza solo. */
-    private fun waitFor(condition: () -> Boolean) {
-        val end = System.currentTimeMillis() + 10_000
-        while (true) {
-            compose.waitForIdle()
-            if (condition()) return
-            if (System.currentTimeMillis() > end) throw AssertionError("No se cumplió la condición a tiempo")
-            compose.mainClock.advanceTimeBy(100)
-            org.robolectric.shadows.ShadowLooper.idleMainLooper(100, java.util.concurrent.TimeUnit.MILLISECONDS)
-            Thread.sleep(10)
-        }
-    }
+    private fun waitFor(condition: () -> Boolean) = compose.waitForCondition(condition = condition)
 
     private fun waitText(text: String) = waitFor { compose.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty() }
 
@@ -915,6 +913,64 @@ class TabletAppTest {
         waitFor { fresh.appointment.patient?.fullName == "Paciente Ana Ejemplo Ruiz" }
         assertEquals("EXP-2026-014", fresh.appointment.patient!!.recordNumber)
         assertEquals("5500000001", fresh.appointment.patient!!.phone)
+    }
+
+    /** Revisión de K4b: si leer al paciente falla al recuperar, el formulario ya se ve en su día; nunca abierto detrás de la agenda cerrada. */
+    @Test
+    fun unaCitaRecuperadaNoQuedaDetrasDeLaAgendaAunqueFalleLeerAlPaciente() {
+        val draft = appointmentDraft(anaId())
+        // La primera llamada revisa si ya se guardó; la segunda, la del paciente, falla
+        writesCalls = 0
+        failWritesFrom = 2
+        val fresh = TabletWorkspace(env(), scope)
+        show(fresh)
+        waitFor { fresh.appointment.isOpen }
+        waitFor { writesCalls >= 2 }
+        assertTrue(fresh.agendaOpen)
+        assertEquals(draft.slotDate, fresh.agendaDate)
+        waitTag(TabletTags.SLOT_FORM)
+    }
+
+    /** Revisión de K4b: «Agendar cita» desde la ficha de otro paciente no le pone ese paciente a una cita sin guardar escondida: la muestra en su día y dice de quién es. */
+    @Test
+    fun agendarDesdeOtraFichaMuestraLaCitaSinGuardarSinCambiarleElPaciente() {
+        val juan = store.select("Patients", listOf("SyncId", "RecordNumber")).first { it["RecordNumber"] == "EXP-2026-009" }["SyncId"] as String
+        val form = workspace.appointment
+        val day = workspace.today().plusDays(3)
+        form.open(day, "11:00", io.github.marioalr.tpvca.ui.agenda.AgendaPatient(anaId(), "Paciente Ana Ejemplo Ruiz", "EXP-2026-014", ""))
+        assertFalse(workspace.agendaOpen)
+        workspace.openChart(juan)
+        show()
+        workspace.scheduleForChart()
+        compose.waitForIdle()
+        assertTrue(workspace.agendaOpen)
+        assertEquals(day, workspace.agendaDate)
+        waitText("Hay una cita sin guardar de Paciente Ana Ejemplo Ruiz")
+        waitTag(TabletTags.SLOT_FORM)
+        assertEquals(anaId(), form.patient?.syncId)
+    }
+
+    /** Revisión de K4b: mientras se guarda no se cambia nada (ni de hueco), y lo que se escribe es la foto de cuando se tocó «Agendar». */
+    @Test
+    fun mientrasSeGuardaNadaCambiaYSeGuardaLaFoto() {
+        quickGate = kotlinx.coroutines.CompletableDeferred()
+        openAgendaTomorrow()
+        schedule("11:00")
+        waitFor { workspace.agendaSession.busy }
+        text(TabletTags.SLOT_SAVE).assertIsNotEnabled()
+        // Tocar otro hueco no mueve el formulario
+        text(TabletTags.slot("12:00")).performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals("11:00", workspace.appointment.slotTime)
+        // Algo que cambia mientras espera a la nube no entra
+        workspace.appointment.reason = "Otro motivo"
+        workspace.appointment.duration = 60
+        quickGate!!.complete(Unit)
+        waitOutbox(1)
+        val row = store.select("Appointments", listOf("Reason", "DurationMinutes", "Time")).single { it["Reason"] == "Control de prueba" }
+        assertEquals(30L, row["DurationMinutes"])
+        assertEquals("11:00", row["Time"])
+        assertEquals(0, store.select("Appointments", listOf("Reason")).count { it["Reason"] == "Otro motivo" })
     }
 
     @Test

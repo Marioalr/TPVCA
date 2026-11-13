@@ -53,6 +53,7 @@ import io.github.marioalr.tpvca.data.clinic.AppointmentRow
 import io.github.marioalr.tpvca.domain.agenda.AgendaRules
 import io.github.marioalr.tpvca.domain.agenda.AgendaTexts
 import io.github.marioalr.tpvca.sync.engine.ArrivalNotices
+import io.github.marioalr.tpvca.domain.model.ClinicProfile
 import io.github.marioalr.tpvca.domain.agenda.MarkedAppointment
 import io.github.marioalr.tpvca.domain.model.Appointment
 import io.github.marioalr.tpvca.domain.agenda.AppointmentRules
@@ -77,8 +78,11 @@ fun agendaOfDayRows(rows: List<AppointmentRow>): List<DayAppointment> {
 
 fun agendaOfDay(rows: List<AppointmentRow>): List<Pair<MarkedAppointment, String?>> = agendaOfDayRows(rows).map { it.marked to it.patient }
 
-/** Lo que la Agenda lee de un día: sus citas y el aviso de los empalmes que llegaron de otro equipo. */
-private class AgendaDay(val rows: List<DayAppointment>, val arrivals: ArrivalNotices)
+/**
+ * Lo que la Agenda lee de un día: sus citas, el aviso de los empalmes que llegaron de otro equipo y el perfil del consultorio. El perfil viene **junto con las citas**: la hoja de una cita solo existe ya leído, así que
+ * WhatsApp y Google Calendar nunca salen con el nombre del consultorio vacío por haberse tocado antes de tiempo.
+ */
+private class AgendaDay(val rows: List<DayAppointment>, val arrivals: ArrivalNotices, val profile: ClinicProfile?)
 
 /**
  * La agenda: seis días desde hoy, como el diseño, y con ‹ › se recorre de seis en seis. Las citas salen de [AgendaRules.todayAppointments] (sin canceladas, por hora y con la marca de empalme de
@@ -97,7 +101,7 @@ fun AgendaScreen(env: PhoneEnv, workspace: PhoneWorkspace, dataVersion: Long, na
     var actionsFor by remember { mutableStateOf<String?>(null) }
 
     val state by load(day, refresh = dataVersion) {
-        AgendaDay(agendaOfDayRows(env.reader.appointmentsBetween(day, day.plusDays(1))), runCatching { workspace.arrivalOverlaps(today) }.getOrNull() ?: ArrivalNotices.NONE)
+        AgendaDay(agendaOfDayRows(env.reader.appointmentsBetween(day, day.plusDays(1))), runCatching { workspace.arrivalOverlaps(today) }.getOrNull() ?: ArrivalNotices.NONE, env.reader.profile())
     }
 
     fun moveStrip(days: Long) {
@@ -172,7 +176,7 @@ fun AgendaScreen(env: PhoneEnv, workspace: PhoneWorkspace, dataVersion: Long, na
         val current = (state as? Loaded.Ready)?.value?.rows?.firstOrNull { it.marked.appointment.syncId.toString() == actionsFor }
         val gone = actionsFor != null && current == null && state is Loaded.Ready
         LaunchedEffect(gone) { if (gone) actionsFor = null }
-        current?.let { item -> AppointmentActions(item, workspace, nav) { actionsFor = null } }
+        current?.let { item -> AppointmentActions(item, (state as? Loaded.Ready)?.value?.profile, workspace, nav) { actionsFor = null } }
     }
 }
 
@@ -230,10 +234,9 @@ private fun AppointmentCard(item: DayAppointment, nav: PhoneNav, onActions: () -
  * «Atender ahora» no: el celular no lleva consultas. Cada acción lleva la cita de ahora, no la de cuando se abrió la hoja.
  */
 @Composable
-private fun AppointmentActions(item: DayAppointment, workspace: PhoneWorkspace, nav: PhoneNav, onClose: () -> Unit) {
+private fun AppointmentActions(item: DayAppointment, profile: ClinicProfile?, workspace: PhoneWorkspace, nav: PhoneNav, onClose: () -> Unit) {
     val a = item.marked.appointment
     val context = LocalContext.current
-    val clinic by load("perfil") { workspace.env.reader.profile() }
     BackHandler(onBack = onClose)
     Box(
         Modifier.fillMaxSize().background(PhoneColors.Scrim)
@@ -264,13 +267,12 @@ private fun AppointmentActions(item: DayAppointment, workspace: PhoneWorkspace, 
             Box(Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(PhoneColors.Border))
             SheetAction(PhoneIcons.Message, "Recordar por WhatsApp") {
                 run {
-                    val url = AgendaTexts.whatsAppUrl(a, (clinic as? Loaded.Ready)?.value?.clinicName.orEmpty())
+                    val url = AgendaTexts.whatsAppUrl(a, profile?.clinicName.orEmpty())
                     if (url == null) workspace.info = AgendaTexts.noPhone(a) else openUrl(context, url) { workspace.info = "No se pudo abrir el navegador." }
                 }
             }
             SheetAction(PhoneIcons.CalendarAdd, "Agregar a Google Calendar") {
                 run {
-                    val profile = (clinic as? Loaded.Ready)?.value
                     openUrl(context, AgendaTexts.googleCalendarUrl(a, profile?.clinicName.orEmpty(), profile?.address.orEmpty())) { workspace.info = "No se pudo abrir el navegador." }
                 }
             }
@@ -300,18 +302,18 @@ private fun openUrl(context: android.content.Context, url: String, onFailed: () 
 }
 
 @Composable
-internal fun StripArrow(icon: ImageVector, description: String, onClick: () -> Unit) {
+internal fun StripArrow(icon: ImageVector, description: String, enabled: Boolean = true, onClick: () -> Unit) {
     Box(
         Modifier.size(48.dp).clip(CircleShape).semantics {
             role = Role.Button
             contentDescription = description
-        }.clickable(onClick = onClick),
+        }.clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { Icon(icon, null, Modifier.size(20.dp), tint = PhoneColors.Soft) }
 }
 
 @Composable
-internal fun DayStrip(start: LocalDate, selected: LocalDate, onPick: (LocalDate) -> Unit) {
+internal fun DayStrip(start: LocalDate, selected: LocalDate, enabled: Boolean = true, onPick: (LocalDate) -> Unit) {
     val density = LocalDensity.current
     // Seis columnas en 360 dp: la letra crece hasta 130 %; TalkBack lee el día completo
     CompositionLocalProvider(LocalDensity provides Density(density.density, density.fontScale.coerceAtMost(1.3f))) {
@@ -331,7 +333,7 @@ internal fun DayStrip(start: LocalDate, selected: LocalDate, onPick: (LocalDate)
                             this.selected = on
                             contentDescription = AgendaRules.panelTitle(date)
                         }
-                        .clickable { onPick(date) },
+                        .clickable(enabled = enabled) { onPick(date) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
                 ) {

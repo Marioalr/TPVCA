@@ -14,6 +14,7 @@ import io.github.marioalr.tpvca.domain.model.Appointment
 import io.github.marioalr.tpvca.sync.ProtocolDate
 import io.github.marioalr.tpvca.sync.engine.WriteEngine
 import io.github.marioalr.tpvca.sync.engine.WriteRefused
+import io.github.marioalr.tpvca.sync.rules.SyncIds
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -50,6 +51,13 @@ class AppointmentFormState {
     /** Cambia cuando el médico abre o cierra el formulario: un guardado que esperó a la nube y lo encuentra distinto no guarda nada. */
     var request = 0
 
+    /**
+     * El `SyncId` de la cita, desde que se abre el formulario (va en el borrador): volver a intentar después de un error, o recuperar el borrador después de que Android cerró el proceso entre guardar y borrarlo,
+     * encuentra la cita que ya se guardó en lugar de crear otra (como el carrito de K9).
+     */
+    var newSyncId: String = SyncIds.random()
+        private set
+
     val isOpen: Boolean get() = slotDate != null
 
     fun open(date: LocalDate, time: String?, selected: AgendaPatient?) {
@@ -61,6 +69,7 @@ class AppointmentFormState {
         if (keepValues || hadForm) {
             keepValues = false
         } else {
+            newSyncId = SyncIds.random()
             patient = selected
             patientQuery = ""
             reason = ""
@@ -102,6 +111,7 @@ class AppointmentFormState {
             "query" to JsonPrimitive(patientQuery),
             "reason" to JsonPrimitive(reason),
             "duration" to JsonPrimitive(duration),
+            "syncId" to JsonPrimitive(newSyncId),
         ),
     ).toString()
 
@@ -115,6 +125,8 @@ class AppointmentFormState {
         patientQuery = s("query").orEmpty()
         reason = s("reason").orEmpty()
         duration = root["duration"]?.jsonPrimitive?.intOrNull ?: 30
+        // Un borrador de antes de K4b no lo trae: uno nuevo
+        newSyncId = s("syncId")?.takeIf { runCatching { java.util.UUID.fromString(it) }.isSuccess } ?: SyncIds.random()
         request++
         slotDate != null
     } catch (_: IllegalArgumentException) {
@@ -179,23 +191,24 @@ class AgendaController(
                 form.error = "Elija el paciente (escriba su nombre en la lista)."
                 return null
             }
-            if (form.reason.isBlank()) {
+            // Una sola foto del formulario: la misma para revisar el empalme y para escribir, aunque algo cambie mientras se espera a la nube
+            val reason = form.reason.trim()
+            val syncId = form.newSyncId
+            if (reason.isEmpty()) {
                 form.error = "Escriba el motivo de la cita o elija uno frecuente."
                 return null
             }
             val duration = if (form.duration > 0) form.duration else 30
-            val candidate = Appointment(patientName = patient.fullName, date = date, time = time, durationMinutes = duration, reason = form.reason.trim(), status = "Programada")
+            // Con su `SyncId`: si ya se había guardado (otro intento), no se empalma consigo misma
+            val candidate = Appointment(syncId = java.util.UUID.fromString(syncId), patientName = patient.fullName, date = date, time = time, durationMinutes = duration, reason = reason, status = "Programada")
             if (!confirmNoOverlap(candidate) { request == form.request }) return null
-            val reason = form.reason.trim()
-            val current: AgendaPatient?
+            val current: String?
             try {
                 current = withContext(io) {
-                    var fresh: AgendaPatient? = null
                     // El expediente se lee y la cita se escribe en una transacción: dado de baja o unido a otro, no se agenda. A media descarga, el motor no deja escribir (que no esté no quiere decir que se borró)
-                    engine().createAppointment(patient.syncId, { row ->
+                    val done = engine().createAppointment(patient.syncId, { row ->
                         // Lo que la cita copia, del expediente de ahora: no de cuando se eligió o se escribió el borrador
                         val copied = AgendaPatient(patient.syncId, row["FullName"] as String? ?: "", row["RecordNumber"] as String? ?: "", row["Phone"] as String? ?: "")
-                        fresh = copied
                         mapOf(
                             "PatientRecordSyncId" to copied.syncId,
                             "PatientName" to copied.fullName,
@@ -208,8 +221,9 @@ class AgendaController(
                             "Status" to "Programada",
                             "CreatedAt" to ProtocolDate.format(Clinic.localNow(now())),
                         )
-                    }) ?: return@withContext null
-                    fresh
+                    }, syncId) ?: return@withContext null
+                    // La que ya estaba (otro intento) dice lo que se guardó entonces
+                    done.row["PatientName"] as String? ?: patient.fullName
                 }
             } catch (e: Exception) {
                 form.error = "No se pudo guardar la cita: ${problem(e)}"
@@ -222,7 +236,7 @@ class AgendaController(
             }
             form.close()
             noteLocalWrite()
-            return AgendaTexts.scheduled(current.fullName, date, time)
+            return AgendaTexts.scheduled(current, date, time)
         } finally {
             saving = false
         }

@@ -1,10 +1,16 @@
 package io.github.marioalr.tpvca.ui.phone
 
+import kotlinx.coroutines.cancel
+import io.github.marioalr.tpvca.ui.waitForCondition
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -109,25 +115,23 @@ class PhoneAgendaTest {
     }
 
     @After
-    fun close() = database.close()
+    fun close() {
+        // Lo que lanzó esta prueba no sigue corriendo contra una base cerrada, ni se cruza con la siguiente
+        scope.cancel()
+        database.close()
+    }
+
+    private var activity: android.app.Activity? = null
 
     private fun show() {
-        compose.setContent { TpvcTheme(TpvcThemes.claro) { PhoneApp(env, workspace, PhoneStatus(null, false, Instant.now(), false, ""), dataVersion, {}, {}) } }
+        compose.setContent {
+            activity = androidx.activity.compose.LocalActivity.current
+            TpvcTheme(TpvcThemes.claro) { PhoneApp(env, workspace, PhoneStatus(null, false, Instant.now(), false, ""), dataVersion, {}, {}) }
+        }
         compose.waitForIdle()
     }
 
-    /** Las pausas y las vueltas del hilo de fondo corren en el hilo principal de Robolectric, que aquí no avanza solo. */
-    private fun waitFor(condition: () -> Boolean) {
-        val end = System.currentTimeMillis() + 10_000
-        while (true) {
-            compose.waitForIdle()
-            if (condition()) return
-            if (System.currentTimeMillis() > end) throw AssertionError("No se cumplió la condición a tiempo")
-            compose.mainClock.advanceTimeBy(100)
-            org.robolectric.shadows.ShadowLooper.idleMainLooper(100, java.util.concurrent.TimeUnit.MILLISECONDS)
-            Thread.sleep(10)
-        }
-    }
+    private fun waitFor(condition: () -> Boolean) = compose.waitForCondition(condition = condition)
 
     private fun waitText(text: String) = waitFor { compose.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty() }
 
@@ -450,6 +454,92 @@ class PhoneAgendaTest {
         compose.waitForIdle()
         assertEquals(0, compose.onAllNodesWithTag(PhoneTags.OVERLAP_NOTICE).fetchSemanticsNodes().size)
     }
+
+    private val disabled = SemanticsMatcher.keyIsDefined(SemanticsProperties.Disabled)
+
+    /** Revisión de K4b: mientras se guarda (hasta 3 s esperando a la nube) nada del formulario se puede cambiar, y lo que se escribe es la foto de cuando se tocó «Agendar». */
+    @Test
+    fun mientrasGuardaNadaSeCambiaYSeGuardaLaFoto() {
+        quickGate = CompletableDeferred()
+        agendaInSixDays()
+        openForm()
+        fill()
+        tag(PhoneTags.SCHEDULE_SAVE).performClick()
+        waitText(PhoneText.CHECKING)
+        compose.onNodeWithContentDescription("Cambiar de paciente").assert(disabled)
+        tag(PhoneTags.SCHEDULE_REASON).assert(disabled)
+        slot("11:30").assert(SemanticsMatcher.keyNotDefined(SemanticsActions.OnClick) or disabled)
+        compose.onNodeWithText("45").assert(SemanticsMatcher.keyNotDefined(SemanticsActions.OnClick) or disabled)
+        compose.onNodeWithContentDescription("Seis días después").assert(SemanticsMatcher.keyNotDefined(SemanticsActions.OnClick) or disabled)
+        // Algo que cambia de todos modos mientras espera no entra
+        compose.runOnUiThread {
+            workspace.agenda.form.reason = "Otro motivo"
+            workspace.agenda.form.duration = 60
+        }
+        quickGate!!.complete(Unit)
+        waitOutbox(1)
+        val row = appointmentRow("Control de prueba")
+        assertEquals(30L, row["DurationMinutes"])
+        assertEquals(0, store.select("Appointments", listOf("Reason")).count { it["Reason"] == "Otro motivo" })
+    }
+
+    /** Revisión de K4b: si la cita se guardó pero la pantalla no se enteró, otro intento con el mismo formulario la encuentra y no crea otra. */
+    @Test
+    fun otroIntentoDespuesDeGuardarNoDuplicaLaCita() {
+        agendaInSixDays()
+        openForm()
+        fill()
+        val id = workspace.agenda.form.newSyncId
+        // Se guardó (con el SyncId del formulario) y algo falló antes de que la pantalla lo supiera
+        WriteEngine(store, { "celular" }, MemoryFolioNumbers(), { null }).createAppointment(patientId("EXP-2025-152"), { appointmentValues("Control de prueba") }, id)
+        tag(PhoneTags.SCHEDULE_SAVE).performClick()
+        waitText("Cita agendada: Paciente Roberto Ejemplo")
+        waitFor { !workspace.agenda.form.isOpen }
+        assertEquals(1, store.select("Appointments", listOf("Reason")).count { it["Reason"] == "Control de prueba" })
+        assertEquals(1, store.outbox().size)
+    }
+
+    /** Revisión de K4b: Android cerró el proceso entre guardar la cita y borrar su borrador: al volver, el borrador no se reabre para guardarla otra vez. */
+    @Test
+    fun elBorradorDeUnaCitaQueYaSeGuardoNoSeReabre() {
+        agendaInSixDays()
+        openForm()
+        fill()
+        waitFor { store.meta(LocalSide.DRAFT_PREFIX + LocalSide.APPOINTMENT_FORM)?.contains("Control de prueba") == true }
+        val id = workspace.agenda.form.newSyncId
+        assertTrue(store.meta(LocalSide.DRAFT_PREFIX + LocalSide.APPOINTMENT_FORM)!!.contains(id))
+        WriteEngine(store, { "celular" }, MemoryFolioNumbers(), { null }).createAppointment(patientId("EXP-2025-152"), { appointmentValues("Control de prueba") }, id)
+        val fresh = newWorkspace()
+        compose.runOnUiThread { fresh.restoreDrafts() }
+        waitFor { store.meta(LocalSide.DRAFT_PREFIX + LocalSide.APPOINTMENT_FORM) == null }
+        assertFalse(fresh.agenda.form.isOpen)
+        assertEquals(1, store.select("Appointments", listOf("Reason")).count { it["Reason"] == "Control de prueba" })
+    }
+
+    /** Revisión de K4b: WhatsApp lleva el nombre del consultorio: la hoja solo existe con el perfil ya leído. */
+    @Test
+    fun recordarPorWhatsAppLlevaElNombreDelConsultorio() {
+        val tomorrow = today.plusDays(1)
+        val id = store.select("Appointments", listOf("SyncId", "Time")).single { it["Time"] == "16:30" }["SyncId"] as String
+        store.apply(StoreChanges(writes = listOf(RowWrite("Appointments", id, mapOf("PatientPhone" to "5500000002"), isNew = false))))
+        show()
+        tag(PhoneTags.tab(PhoneTab.Agenda)).performClick()
+        compose.onNodeWithContentDescription(AgendaRules.panelTitle(tomorrow)).performClick()
+        waitTag(PhoneTags.appointmentActions("16:30"))
+        tag(PhoneTags.appointmentActions("16:30")).performClick()
+        waitTag(PhoneTags.APPOINTMENT_SHEET)
+        compose.onNodeWithText("Recordar por WhatsApp").performClick()
+        compose.waitForIdle()
+        val opened = org.robolectric.Shadows.shadowOf(activity!!).nextStartedActivity
+        val url = opened.data.toString()
+        assertTrue(url, url.startsWith("https://wa.me/525500000002"))
+        assertTrue(url, url.contains("Consultorio%20de%20Prueba"))
+    }
+
+    private fun appointmentValues(reason: String) = mapOf(
+        "PatientRecordSyncId" to patientId("EXP-2025-152"), "PatientName" to "Paciente Roberto Ejemplo", "Date" to ProtocolDate.format(today.plusDays(6).atStartOfDay()),
+        "Time" to "11:00", "DurationMinutes" to 30, "Reason" to reason, "Status" to "Programada",
+    )
 
     @Test
     fun loNuevoSeTocaConAlMenos48() {

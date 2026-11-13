@@ -415,6 +415,13 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
 
     /** El panel siempre abre en hoy. */
     fun openAgenda(date: LocalDate = today()) {
+        // Un formulario abierto con la agenda cerrada no se queda escondido, ni se le pone el paciente de esta ficha: se muestra en su día, con lo que se escribió, y se dice de quién es
+        if (!agendaOpen && appointment.isOpen) {
+            agendaDate = appointment.slotDate ?: date
+            agendaOpen = true
+            show(pendingAppointment(appointment.patient?.fullName), warning = true)
+            return
+        }
         agendaDate = date
         agendaOpen = true
     }
@@ -637,9 +644,11 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
     }
 
     private suspend fun restoreAppointment() {
-        if (!agendaSession.restore(requireTime = true)) return
-        agendaDate = appointment.slotDate ?: today()
-        agendaOpen = true
+        // La agenda se abre en cuanto se reabre el formulario, antes de leer al paciente: si esa lectura falla, el formulario no queda abierto detrás de la agenda cerrada (como K6)
+        agendaSession.restore(requireTime = true) { date ->
+            agendaDate = date
+            agendaOpen = true
+        }
     }
 
     /** «Cancelar» y «Volver» (`CancelPatientForm`): un alta con datos pregunta. */
@@ -868,6 +877,7 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
 
     private companion object {
         const val DRAFT_PAUSE_MILLIS = 400L
+        fun pendingAppointment(name: String?) = "Hay una cita sin guardar" + (name?.takeIf { it.isNotBlank() }?.let { " de $it" } ?: "") + ": guárdela o cancélela antes de agendar otra."
         const val FORM_ALREADY_OPEN = "Hay un expediente abierto sin guardar: guárdelo o cancélelo antes de abrir otro."
     }
 }

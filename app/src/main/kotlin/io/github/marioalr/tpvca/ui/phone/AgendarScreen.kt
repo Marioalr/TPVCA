@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -76,9 +77,13 @@ private const val PICKER_RESULTS = 5
 fun AgendaOverlay(workspace: PhoneWorkspace, dataVersion: Long) {
     val agenda = workspace.agenda
     val moving = agenda.moving
-    when {
-        moving != null -> key(moving.appointment.syncId) { MoveScreen(workspace, moving, dataVersion) }
-        agenda.form.isOpen -> ScheduleScreen(workspace, dataVersion)
+    if (moving == null && !agenda.form.isOpen) return
+    // Toma todos los toques: los que caen en un hueco sin botón no pasan a la pantalla de atrás
+    Box(Modifier.fillMaxSize().pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }) {
+        when {
+            moving != null -> key(moving.appointment.syncId) { MoveScreen(workspace, moving, dataVersion) }
+            else -> ScheduleScreen(workspace, dataVersion)
+        }
     }
 }
 
@@ -127,14 +132,16 @@ private fun ScheduleScreen(workspace: PhoneWorkspace, dataVersion: Long) {
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            PatientSection(workspace, dataVersion)
-            DaySection(workspace, date) { picked ->
+            // Mientras se guarda (hasta 3 s esperando a la nube), nada se cambia: se guarda lo que se ve. «Cancelar» y Atrás sí: así no se guarda
+            val busy = agenda.busy
+            PatientSection(workspace, dataVersion, enabled = !busy)
+            DaySection(workspace, date, enabled = !busy) { picked ->
                 if (picked != date) {
                     form.pick(picked, null)
                     agenda.edited()
                 }
             }
-            TimeSection(day, form.slotTime, enabled = !agenda.busy) { time ->
+            TimeSection(day, form.slotTime, enabled = !busy) { time ->
                 form.pick(date, time)
                 agenda.edited()
             }
@@ -146,15 +153,15 @@ private fun ScheduleScreen(workspace: PhoneWorkspace, dataVersion: Long) {
                 if (overlap.isNotEmpty()) Pill(overlap, PhoneColors.AmberDark, PhoneColors.AmberSoft)
             }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                PField(form.reason, { form.reason = it; agenda.edited() }, "Motivo", PhoneTags.SCHEDULE_REASON)
+                PField(form.reason, { form.reason = it; agenda.edited() }, "Motivo", PhoneTags.SCHEDULE_REASON, enabled = !busy)
                 ChipRow {
-                    for (preset in AgendaTexts.REASON_PRESETS) Chip(preset, form.reason == preset, ChipLooks.Type) { form.reason = preset; agenda.edited() }
+                    for (preset in AgendaTexts.REASON_PRESETS) Chip(preset, form.reason == preset, ChipLooks.Type, enabled = !busy) { form.reason = preset; agenda.edited() }
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SectionTitle("Duración (minutos)")
                 ChipRow {
-                    for (minutes in AgendaTexts.DURATIONS) Chip("$minutes", form.duration == minutes, ChipLooks.List) { form.duration = minutes; agenda.edited() }
+                    for (minutes in AgendaTexts.DURATIONS) Chip("$minutes", form.duration == minutes, ChipLooks.List, enabled = !busy) { form.duration = minutes; agenda.edited() }
                 }
             }
             form.error?.let { PText(it, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, size = 13.sp, weight = FontWeight.Medium, color = PhoneColors.Danger) }
@@ -168,7 +175,7 @@ private fun ScheduleScreen(workspace: PhoneWorkspace, dataVersion: Long) {
 
 /** El paciente: elegido, o la búsqueda de la PC (sin acentos, folio y folio sin conexión). Solo los que ya existen y siguen activos: el celular no da de alta ni edita expedientes. */
 @Composable
-private fun PatientSection(workspace: PhoneWorkspace, dataVersion: Long) {
+private fun PatientSection(workspace: PhoneWorkspace, dataVersion: Long, enabled: Boolean) {
     val agenda = workspace.agenda
     val form = agenda.form
     val today = workspace.env.today()
@@ -182,7 +189,7 @@ private fun PatientSection(workspace: PhoneWorkspace, dataVersion: Long) {
                         PText(selected.fullName, size = 15.sp, weight = FontWeight.Medium)
                         if (selected.recordNumber.isNotBlank()) PText(selected.recordNumber, size = 12.sp, color = PhoneColors.Muted)
                     }
-                    PButton("Cambiar", description = "Cambiar de paciente") {
+                    PButton("Cambiar", description = "Cambiar de paciente", enabled = enabled) {
                         form.patient = null
                         form.patientQuery = ""
                         agenda.edited()
@@ -190,7 +197,7 @@ private fun PatientSection(workspace: PhoneWorkspace, dataVersion: Long) {
                 }
             }
         } else {
-            SearchField(form.patientQuery, { form.patientQuery = it; agenda.edited() }, "Nombre, teléfono o folio", "Buscar al paciente de la cita", PhoneTags.SCHEDULE_PATIENT)
+            SearchField(form.patientQuery, { form.patientQuery = it; agenda.edited() }, "Nombre, teléfono o folio", "Buscar al paciente de la cita", PhoneTags.SCHEDULE_PATIENT, enabled = enabled)
             val query = form.patientQuery
             // Leer y buscar, fuera del hilo principal
             val results by load(query, refresh = dataVersion) { if (query.isBlank()) emptyList<PatientRow>() else searchPatients(workspace.env.reader.allPatients(), query).take(PICKER_RESULTS) }
@@ -205,7 +212,7 @@ private fun PatientSection(workspace: PhoneWorkspace, dataVersion: Long) {
                                     if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(PhoneColors.Border))
                                     Column(
                                         Modifier.fillMaxWidth().heightIn(min = 56.dp)
-                                            .clickable(enabled = isOpenableSyncId(row.syncId)) {
+                                            .clickable(enabled = enabled && isOpenableSyncId(row.syncId)) {
                                                 form.patient = AgendaPatient(row.syncId, row.patient.fullName, row.patient.recordNumber, row.patient.phone)
                                                 form.patientQuery = ""
                                                 form.error = null
@@ -229,24 +236,24 @@ private fun PatientSection(workspace: PhoneWorkspace, dataVersion: Long) {
 
 /** Seis días con ‹ ›, como la Agenda. */
 @Composable
-private fun DaySection(workspace: PhoneWorkspace, date: LocalDate, onPick: (LocalDate) -> Unit) {
+private fun DaySection(workspace: PhoneWorkspace, date: LocalDate, enabled: Boolean = true, onPick: (LocalDate) -> Unit) {
     var start by remember { mutableStateOf(date) }
     // El día elegido siempre se ve: si quedó fuera (se recuperó un borrador, o se tocó «Hoy»), la tira empieza en él
     val first = if (date < start || date >= start.plusDays(STRIP)) date else start
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SectionTitle("Día", Modifier.weight(1f))
-            StripArrow(PhoneIcons.Back, "Seis días antes") {
+            StripArrow(PhoneIcons.Back, "Seis días antes", enabled) {
                 start = first.minusDays(STRIP)
                 onPick(start)
             }
             PText(PhoneFormat.monthYear(date), size = 13.sp, weight = FontWeight.Medium, color = PhoneColors.Soft)
-            StripArrow(PhoneIcons.Forward, "Seis días después") {
+            StripArrow(PhoneIcons.Forward, "Seis días después", enabled) {
                 start = first.plusDays(STRIP)
                 onPick(start)
             }
         }
-        DayStrip(first, date, onPick)
+        DayStrip(first, date, enabled, onPick)
         if (date < workspace.env.today()) PText(PhoneText.PAST_DAY, size = 12.sp, color = PhoneColors.Amber)
     }
 }
@@ -264,7 +271,7 @@ private fun TimeSection(day: DaySlots?, selected: String?, enabled: Boolean, onP
             day.free.isEmpty() -> PCard { Message(PhoneText.NO_FREE_SLOTS) }
             else -> ChipRow {
                 for (time in day.free) key(time) {
-                    Chip(time, time == selected, ChipLooks.List, Modifier.testTag(PhoneTags.slot(time))) { if (enabled) onPick(time) }
+                    Chip(time, time == selected, ChipLooks.List, Modifier.testTag(PhoneTags.slot(time)), enabled = enabled) { onPick(time) }
                 }
             }
         }
@@ -293,7 +300,7 @@ private fun MoveScreen(workspace: PhoneWorkspace, row: AppointmentRow, dataVersi
                     PText("Ahora: ${AgendaTexts.dayMonth(a.date)} a las ${AppointmentRules.timeText(a.time)} · ${AppointmentRules.minutes(a.durationMinutes)} min", size = 12.sp, color = PhoneColors.NoteText)
                 }
             }
-            DaySection(workspace, date) { date = it }
+            DaySection(workspace, date, enabled = !agenda.busy) { date = it }
             TimeSection(day, null, enabled = !agenda.busy) { time -> agenda.moveTo(date, time) }
             if (agenda.busy) PText(PhoneText.CHECKING, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, size = 13.sp, color = PhoneColors.Soft)
         }
@@ -325,7 +332,7 @@ private fun SectionTitle(text: String, modifier: Modifier = Modifier) = Heading(
 
 /** Un campo de texto del diseño, con su etiqueta arriba. Sin corrección del teclado: lo escrito no debe quedar en su diccionario. */
 @Composable
-fun PField(value: String, onChange: (String) -> Unit, label: String, tag: String) {
+fun PField(value: String, onChange: (String) -> Unit, label: String, tag: String, enabled: Boolean = true) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SectionTitle(label)
         BasicTextField(
@@ -333,7 +340,8 @@ fun PField(value: String, onChange: (String) -> Unit, label: String, tag: String
             onChange,
             Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).background(PhoneColors.Surface).border(1.dp, PhoneColors.ControlBorder, RoundedCornerShape(12.dp))
                 .semantics { contentDescription = label }.testTag(tag).padding(horizontal = 14.dp, vertical = 13.dp),
-            textStyle = TextStyle(fontSize = 15.sp, color = PhoneColors.Text),
+            enabled = enabled,
+            textStyle = TextStyle(fontSize = 15.sp, color = if (enabled) PhoneColors.Text else PhoneColors.Muted),
             cursorBrush = SolidColor(PhoneColors.Accent),
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, autoCorrectEnabled = false, imeAction = ImeAction.Done),
         )

@@ -45,7 +45,7 @@
     <string name="link_credential_lost">La credencial de este equipo ya no se puede abrir, así que se borraron sus datos. Vincúlelo otra vez.</string>
 
     <string name="scan_title">Escanear el QR</string>
-    <string name="scan_hint">En la PC: Equipos vinculados › Mostrar QR para la tablet o el celular. Se cierra solo a los 2 minutos.</string>
+    <string name="scan_hint">En la PC: Nube y dispositivos › Vincular tablet y celular › «Mostrar QR para la tablet o el celular». Se cierra solo a los 2 minutos.</string>
     <string name="scan_not_ours">Este código no es de TPVC o está dañado. Pegue la URL y el token a mano.</string>
     <string name="scan_no_permission">Sin permiso para usar la cámara no se puede leer el QR. Pegue la URL y el token a mano.</string>
 

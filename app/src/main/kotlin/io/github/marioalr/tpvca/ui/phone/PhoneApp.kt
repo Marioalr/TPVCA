@@ -66,6 +66,7 @@ import io.github.marioalr.tpvca.documents.LabFiles
 import io.github.marioalr.tpvca.documents.SharedDocuments
 import io.github.marioalr.tpvca.domain.Clinic
 import io.github.marioalr.tpvca.domain.model.EMPTY_SYNC_ID
+import io.github.marioalr.tpvca.ui.theme.LocalTpvcColors
 import kotlinx.coroutines.delay
 import java.io.File
 import java.time.Instant
@@ -109,6 +110,7 @@ object PhoneTags {
     const val PACIENTES = "phone-pacientes"
     const val CORTE = "phone-corte"
     const val PREVIEW = "phone-preview"
+    const val TICKET_PAPER = "phone-ticket-paper"
 
     // K4b: agendar
     const val SCHEDULE = "phone-schedule"
@@ -188,14 +190,15 @@ fun PhoneApp(env: PhoneEnv, workspace: PhoneWorkspace, status: PhoneStatus, data
         lifecycle.lifecycle.addObserver(observer)
         onDispose { lifecycle.lifecycle.removeObserver(observer) }
     }
-    // Tema claro también en un equipo en modo oscuro: los iconos de la barra de estado van oscuros
+    // Los iconos de la barra de estado, del lado del tema: oscuros en el claro y claros en el oscuro
     val view = LocalView.current
     val context = LocalContext.current
+    val lightBars = !LocalTpvcColors.current.isDark
     SideEffect {
         (context as? android.app.Activity)?.window?.let {
             val controller = WindowCompat.getInsetsController(it, view)
-            controller.isAppearanceLightStatusBars = true
-            controller.isAppearanceLightNavigationBars = true
+            controller.isAppearanceLightStatusBars = lightBars
+            controller.isAppearanceLightNavigationBars = lightBars
         }
     }
 

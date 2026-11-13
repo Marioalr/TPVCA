@@ -48,11 +48,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.traversalIndex
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -200,11 +203,14 @@ fun InicioScreen(env: PhoneEnv, workspace: PhoneWorkspace, status: PhoneStatus, 
     var menuOpen by remember { mutableStateOf(false) }
     val swipe = rememberEdgeSwipe(towardsTop = true, scroll) { if (!menuOpen) onOpenNegocio() }
 
-    Box(Modifier.fillMaxSize().testTag(PhoneTags.INICIO)) {
+    // TalkBack: con el menú + abierto, después del botón que lo cerró sigue el menú (no la barra de abajo)
+    Box(Modifier.fillMaxSize().semantics { isTraversalGroup = true }.testTag(PhoneTags.INICIO)) {
         Column(
             Modifier
                 .fillMaxSize()
                 .edgeSwipeArea(swipe)
+                // Con el menú + abierto, lo de atrás no se toca (el velo) ni lo lee TalkBack: el menú y el botón que lo cierra
+                .then(if (menuOpen) Modifier.clearAndSetSemantics {} else Modifier)
                 .semantics {
                     customActions = listOf(CustomAccessibilityAction(PhoneText.OPEN_NEGOCIO) {
                         onOpenNegocio()
@@ -354,7 +360,7 @@ private fun Fab(open: Boolean, modifier: Modifier, onClick: () -> Unit) {
             .size(60.dp)
             .shadow(8.dp, CircleShape)
             .clip(CircleShape)
-            .background(PhoneColors.Accent)
+            .background(PhoneColors.AccentFill)
             .semantics {
                 role = Role.Button
                 contentDescription = if (open) PhoneText.CLOSE_QUICK_ACTIONS else PhoneText.QUICK_ACTIONS
@@ -363,7 +369,7 @@ private fun Fab(open: Boolean, modifier: Modifier, onClick: () -> Unit) {
             .testTag(PhoneTags.FAB),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(if (open) PhoneIcons.Close else PhoneIcons.Plus, null, Modifier.size(if (open) 26.dp else 28.dp), tint = Color.White)
+        Icon(if (open) PhoneIcons.Close else PhoneIcons.Plus, null, Modifier.size(if (open) 26.dp else 28.dp), tint = PhoneColors.OnAccent)
     }
 }
 
@@ -373,7 +379,8 @@ private fun QuickMenu(nav: PhoneNav, onSchedule: () -> Unit, onClose: () -> Unit
         Modifier
             .fillMaxSize()
             .background(PhoneColors.Scrim)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose),
+            // Tocar el velo cierra el menú. No es un botón para TalkBack (leía «Acciones rápidas» y cerraba el menú): se cierra con el botón de abajo o con Atrás
+            .scrimDismiss(onClose),
     ) {
         Column(
             Modifier
@@ -384,7 +391,8 @@ private fun QuickMenu(nav: PhoneNav, onSchedule: () -> Unit, onClose: () -> Unit
                 .shadow(12.dp, RoundedCornerShape(16.dp))
                 .clip(RoundedCornerShape(16.dp))
                 .background(PhoneColors.Surface)
-                .semantics { contentDescription = PhoneText.QUICK_ACTIONS },
+                .sheetPane(PhoneText.QUICK_ACTIONS, onClose)
+                .semantics { traversalIndex = 1f },
         ) {
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable {

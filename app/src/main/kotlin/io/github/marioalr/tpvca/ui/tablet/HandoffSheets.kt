@@ -87,7 +87,7 @@ fun IncomingHandoffNotice(workspace: TabletWorkspace) {
         if (blocked.isNotEmpty()) append("\n").append(blocked)
     }
     TNotice(text, colors.infoSubtle, colors.infoText, Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp), tag = TabletTags.HANDOFF_INCOMING) {
-        TButton("Continuar aquí", handoff::accept, kind = TButtonKind.Primary, enabled = handoff.canAcceptIncoming, tag = TabletTags.HANDOFF_ACCEPT)
+        TButton("Continuar aquí", handoff::accept, kind = TButtonKind.Primary, enabled = handoff.canAcceptIncoming, tag = TabletTags.HANDOFF_ACCEPT, disabledReason = handoff.incomingBlockedReason)
         TButton("Más tarde", handoff::dismissIncoming, kind = TButtonKind.Ghost, color = colors.infoText, enabled = !handoff.receiving, tag = TabletTags.HANDOFF_LATER)
     }
 }

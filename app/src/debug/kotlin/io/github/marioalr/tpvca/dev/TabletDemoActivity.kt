@@ -35,7 +35,6 @@ import io.github.marioalr.tpvca.ui.tablet.TabletChrome
 import io.github.marioalr.tpvca.ui.tablet.TabletEnv
 import io.github.marioalr.tpvca.ui.tablet.TabletWorkspace
 import io.github.marioalr.tpvca.ui.theme.TpvcTheme
-import io.github.marioalr.tpvca.ui.theme.TpvcThemes
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -141,7 +140,7 @@ class TabletDemoActivity : FragmentActivity() {
             "datos" -> demo.workspace.enterConfig(io.github.marioalr.tpvca.ui.tablet.ConfigSection.Data)
         }
         setContent {
-            TpvcTheme(TpvcThemes.claro) {
+            TpvcTheme {
                 TabletApp(demo.workspace, TabletChrome(PhoneStatus(null, false, Instant.now().minusSeconds(120), false, "Consultorio de Prueba"), 0L, "0.1.0", {}, {}))
             }
         }

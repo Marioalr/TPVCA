@@ -35,12 +35,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
@@ -334,7 +334,8 @@ private fun SectionTitle(text: String, modifier: Modifier = Modifier) = Heading(
 @Composable
 fun PField(value: String, onChange: (String) -> Unit, label: String, tag: String, enabled: Boolean = true) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SectionTitle(label)
+        // TalkBack lee la etiqueta con el campo (su descripción): leída aparte, «Motivo» se oía dos veces
+        PText(label, Modifier.padding(horizontal = 4.dp).clearAndSetSemantics {}, size = 13.sp, weight = FontWeight.SemiBold, color = PhoneColors.Muted)
         BasicTextField(
             value,
             onChange,
@@ -380,6 +381,6 @@ fun PhoneDialogs(workspace: PhoneWorkspace) {
                 .then(if (toast.warning) Modifier.border(1.dp, PhoneColors.NoteBorder, RoundedCornerShape(12.dp)) else Modifier)
                 .semantics { liveRegion = LiveRegionMode.Polite }
                 .clickable { workspace.toast = null }.testTag(PhoneTags.TOAST).padding(horizontal = 16.dp, vertical = 12.dp),
-        ) { PText(toast.text, size = 14.sp, color = if (toast.warning) PhoneColors.AmberDark else Color.White, lineHeight = 19.sp) }
+        ) { PText(toast.text, size = 14.sp, color = if (toast.warning) PhoneColors.AmberDark else PhoneColors.Inverse, lineHeight = 19.sp) }
     }
 }

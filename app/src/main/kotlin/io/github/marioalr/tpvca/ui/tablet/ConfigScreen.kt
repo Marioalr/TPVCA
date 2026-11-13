@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -85,9 +86,12 @@ fun ConfigScreen(workspace: TabletWorkspace, chrome: TabletChrome) {
     LaunchedEffect(inventory.section == ConfigSection.Business) {
         if (inventory.section == ConfigSection.Business) workspace.reports.loadBusiness()
     }
+    // Con un panel o una hoja encima, lo de abajo no se toca (el velo) ni lo lee TalkBack
+    val covered = inventory.editor != null || inventory.quick != null || inventory.newBatch != null || inventory.order != null ||
+        (inventory.section == ConfigSection.Services && workspace.services.editor != null) || (inventory.section == ConfigSection.Data && workspace.data.file != null)
     BoxWithConstraints(Modifier.fillMaxSize().testTag(TabletTags.CONFIG)) {
         val menuWidth: Dp = if (maxWidth >= 1100.dp) 290.dp else 236.dp
-        Row(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxSize().then(if (covered) Modifier.clearAndSetSemantics {} else Modifier)) {
             ConfigMenu(workspace, Modifier.width(menuWidth).fillMaxHeight())
             Box(Modifier.weight(1f).fillMaxHeight().background(colors.background)) {
                 when (inventory.section) {

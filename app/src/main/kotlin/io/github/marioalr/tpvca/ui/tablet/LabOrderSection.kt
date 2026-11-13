@@ -274,7 +274,7 @@ internal fun LabOrderSection(workspace: TabletWorkspace, draft: ConsultationDraf
     }
     TField(draft.labOrder?.indications.orEmpty(), editor::typeIndications, Modifier.fillMaxWidth(), placeholder = "Ayuno, toma de muestra… (opcional)", multiline = true, readOnly = readOnly, description = "Indicaciones de laboratorio", tag = LabTags.INDICATIONS)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        // TODO(K10): imprimir en papel; la vista previa trae «Compartir», que también guarda el PDF
+        // TODO(impresión, después de K10): imprimir en papel; la vista previa trae «Compartir», que también guarda el PDF
         TButton("Vista previa", { editor.openPreview(context) }, icon = TIcons.File, tag = LabTags.PREVIEW)
     }
 }

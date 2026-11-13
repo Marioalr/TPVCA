@@ -88,10 +88,10 @@ fun SyncScreen(workspace: TabletWorkspace, chrome: TabletChrome) {
                     )
                     for (line in data.saved.lines) TCaption("• $line")
                     data.notice?.let { notice ->
-                        if (notice.waiting > 0) TNotice("${notice.waiting} esperan a que baje el registro del que dependen; se aplican solos.", colors.infoSubtle, colors.infoText)
-                        if (notice.deadPrincipal > 0) TNotice("${notice.deadPrincipal} ya no se pueden aplicar: el registro del que dependen se borró. Siguen guardados.", colors.warningSubtle, colors.warningText)
-                        if (notice.superseded > 0) TNotice("${notice.superseded} tienen aquí una versión más nueva y no se pisó. Siguen guardados.", colors.warningSubtle, colors.warningText)
-                        if (notice.blockedDeletes > 0) TNotice("${notice.blockedDeletes} borrados no se pudieron hacer: todavía hay registros que dependen de ellos. Siguen guardados.", colors.warningSubtle, colors.warningText)
+                        if (notice.waiting > 0) TNotice(if (notice.waiting == 1) "1 espera a que baje el registro del que depende; se aplica solo." else "${notice.waiting} esperan a que baje el registro del que dependen; se aplican solos.", colors.infoSubtle, colors.infoText)
+                        if (notice.deadPrincipal > 0) TNotice(if (notice.deadPrincipal == 1) "1 ya no se puede aplicar: el registro del que depende se borró. Sigue guardado." else "${notice.deadPrincipal} ya no se pueden aplicar: el registro del que dependen se borró. Siguen guardados.", colors.warningSubtle, colors.warningText)
+                        if (notice.superseded > 0) TNotice(if (notice.superseded == 1) "1 tiene aquí una versión más nueva y no se pisó. Sigue guardado." else "${notice.superseded} tienen aquí una versión más nueva y no se pisó. Siguen guardados.", colors.warningSubtle, colors.warningText)
+                        if (notice.blockedDeletes > 0) TNotice(if (notice.blockedDeletes == 1) "1 borrado no se pudo hacer: todavía hay registros que dependen de él. Sigue guardado." else "${notice.blockedDeletes} borrados no se pudieron hacer: todavía hay registros que dependen de ellos. Siguen guardados.", colors.warningSubtle, colors.warningText)
                     }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         TButton("Volver a aplicar", workspace::reapplySaved, kind = TButtonKind.Primary)

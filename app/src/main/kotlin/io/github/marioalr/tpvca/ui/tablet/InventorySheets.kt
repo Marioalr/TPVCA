@@ -391,7 +391,7 @@ private fun OrderReview(workspace: TabletWorkspace, entry: OrderEntry, today: ja
 
 // ================================================================== la compra sugerida (inicio)
 
-/** «Lista Sugerida de Compras y Resurtido» (`MainHubView`): las cifras, la tabla, «Exportar a CSV (Excel)» por la hoja de compartir. Imprimir llega con la impresión (K10). */
+/** «Lista Sugerida de Compras y Resurtido» (`MainHubView`): las cifras, la tabla, «Exportar a CSV (Excel)» por la hoja de compartir. Imprimir llega con la impresión (después de K10). */
 @Composable
 internal fun SuggestedPurchasesSheet(workspace: TabletWorkspace, sheet: SuggestedPurchases) {
     val inventory = workspace.inventory

@@ -674,7 +674,7 @@ class PrescriptionEditor internal constructor(private val consultation: Consulta
 
     /**
      * «Vista previa» de la sección 5, la hoja y el cobro (`OpenPrescriptionPdfPreviewAsync`): primero lo pendiente de la receta, luego la hoja como se imprime, con la receta de ahora y el
-     * plan e indicaciones de la consulta ([PrescriptionSheet.indicationsOf]) sobre los signos capturados. Se ve en la misma vista previa de la ficha, con «Compartir»; imprimir en papel es de K10.
+     * plan e indicaciones de la consulta ([PrescriptionSheet.indicationsOf]) sobre los signos capturados. Se ve en la misma vista previa de la ficha, con «Compartir»; imprimir en papel queda para después de K10.
      */
     fun openPreview(context: Context) {
         if (previewing) return

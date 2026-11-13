@@ -145,6 +145,8 @@ dependencies {
     androidTestImplementation(libs.androidx.work.testing)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    // K10: las revisiones de accesibilidad de Google (ATF) sobre las pantallas, con `enableAccessibilityChecks`
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4.accessibility)
     // La que trae Compose no corre en Android 16 o más nuevo (`InputManager.getInstance` ya no existe)
     androidTestImplementation(libs.androidx.test.espresso.core)
 

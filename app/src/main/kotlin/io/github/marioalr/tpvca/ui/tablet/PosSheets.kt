@@ -409,7 +409,7 @@ private fun CancelConfirm(pos: PosController, target: TicketRow) {
 
 // ================================================================== corte de caja
 
-/** «Corte de caja» (`PosCashCutSheetView`): lo vendido de un día, por forma de pago y por tipo, y lo cancelado. Imprimir llega con la impresora (K10). */
+/** «Corte de caja» (`PosCashCutSheetView`): lo vendido de un día, por forma de pago y por tipo, y lo cancelado. Imprimir llega con la impresora (después de K10). */
 @Composable
 internal fun CashCutSheet(pos: PosController) {
     val colors = LocalTpvcColors.current
@@ -490,7 +490,7 @@ private fun AmountLine(label: String, amount: BigDecimal, caption: String? = nul
 
 // ================================================================== ticket
 
-/** El ticket (`PosTicketSheetView`): la venta recién cobrada o uno del historial, como el papel térmico. Imprimir llega con la impresora (K10); mientras, se comparte en PDF como en el celular. */
+/** El ticket (`PosTicketSheetView`): la venta recién cobrada o uno del historial, como el papel térmico. Imprimir llega con la impresora (después de K10); mientras, se comparte en PDF como en el celular. */
 @Composable
 internal fun ReceiptSheet(workspace: TabletWorkspace, shown: PosReceipt) {
     val colors = LocalTpvcColors.current
@@ -516,41 +516,45 @@ internal fun ReceiptSheet(workspace: TabletWorkspace, shown: PosReceipt) {
         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 4.dp)) {
             // Revisión 20: vender nunca se detiene; lo que faltó se avisa aquí
             shown.notice?.let { TNotice(it, colors.warningSubtle, colors.warningText, Modifier.padding(bottom = 12.dp), tag = TabletTags.POS_RECEIPT_NOTICE) }
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.surfaceSubtle).padding(horizontal = 20.dp, vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                val p = (profile as? Loaded.Ready)?.value ?: ClinicProfile()
-                Paper(p.clinicName?.takeIf { it.isNotBlank() } ?: "Consultorio Médico TPVC", bold = true, size = TType.section)
-                Paper(p.doctorNameWithTitle)
-                val details = listOfNotNull(p.specialty?.takeIf { it.isNotBlank() }, p.professionalLicense?.takeIf { it.isNotBlank() }?.let { "Céd. Prof. $it" })
-                Paper(if (details.isEmpty()) "Médico General" else details.joinToString(" • "), muted = true)
-                val contact = listOfNotNull(p.address?.takeIf { it.isNotBlank() }, p.phone?.takeIf { it.isNotBlank() }?.let { "Tel: $it" })
-                if (contact.isNotEmpty()) Paper(contact.joinToString(" • "), muted = true)
-                Dashed()
-                PaperRow("Folio", receipt.folio)
-                PaperRow("Fecha", receipt.date.format(FULL))
-                PaperRow("Cliente", receipt.patientName)
-                PaperRow("Pago", receipt.paymentMethod)
-                Dashed()
-                for ((index, item) in receipt.items.withIndex()) {
-                    key(index) {
-                        Row(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-                            Column(Modifier.weight(1f)) {
-                                TText(item.name, size = TType.detail, mono = true)
-                                TText("${item.quantity} × ${MexicanText.currency(item.unitPrice)}", size = TType.detail, mono = true, color = colors.textSecondary)
+            // El ticket es papel (como el térmico): claro también en el tema oscuro
+            io.github.marioalr.tpvca.ui.theme.LightDocument {
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(LocalTpvcColors.current.surfaceSubtle).padding(horizontal = 20.dp, vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    val p = (profile as? Loaded.Ready)?.value ?: ClinicProfile()
+                    Paper(p.clinicName?.takeIf { it.isNotBlank() } ?: "Consultorio Médico TPVC", bold = true, size = TType.section)
+                    Paper(p.doctorNameWithTitle)
+                    val details = listOfNotNull(p.specialty?.takeIf { it.isNotBlank() }, p.professionalLicense?.takeIf { it.isNotBlank() }?.let { "Céd. Prof. $it" })
+                    Paper(if (details.isEmpty()) "Médico General" else details.joinToString(" • "), muted = true)
+                    val contact = listOfNotNull(p.address?.takeIf { it.isNotBlank() }, p.phone?.takeIf { it.isNotBlank() }?.let { "Tel: $it" })
+                    if (contact.isNotEmpty()) Paper(contact.joinToString(" • "), muted = true)
+                    Dashed()
+                    PaperRow("Folio", receipt.folio)
+                    PaperRow("Fecha", receipt.date.format(FULL))
+                    PaperRow("Cliente", receipt.patientName)
+                    PaperRow("Pago", receipt.paymentMethod)
+                    Dashed()
+                    for ((index, item) in receipt.items.withIndex()) {
+                        key(index) {
+                            Row(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                                Column(Modifier.weight(1f)) {
+                                    TText(item.name, size = TType.detail, mono = true)
+                                    // Dentro del papel: los colores del tema claro, no los de la hoja (en oscuro no se leían)
+                                    TText("${item.quantity} × ${MexicanText.currency(item.unitPrice)}", size = TType.detail, mono = true, color = LocalTpvcColors.current.textSecondary)
+                                }
+                                TText(MexicanText.currency(item.subtotal), Modifier.padding(start = 12.dp), size = TType.detail, mono = true)
                             }
-                            TText(MexicanText.currency(item.subtotal), Modifier.padding(start = 12.dp), size = TType.detail, mono = true)
                         }
                     }
+                    Dashed()
+                    Row(Modifier.fillMaxWidth()) {
+                        TText("TOTAL", Modifier.weight(1f), size = TType.section, weight = FontWeight.Bold, mono = true)
+                        TText(MexicanText.currency(receipt.totalAmount), size = TType.section, weight = FontWeight.Bold, mono = true)
+                    }
+                    if (shown.hasCashDetail) {
+                        PaperRow("Recibido", MexicanText.currency(shown.cashReceived!!))
+                        PaperRow("Cambio", MexicanText.currency(shown.change!!), bold = true)
+                    }
+                    Paper("Gracias por su preferencia", muted = true, modifier = Modifier.padding(top = 14.dp))
                 }
-                Dashed()
-                Row(Modifier.fillMaxWidth()) {
-                    TText("TOTAL", Modifier.weight(1f), size = TType.section, weight = FontWeight.Bold, mono = true)
-                    TText(MexicanText.currency(receipt.totalAmount), size = TType.section, weight = FontWeight.Bold, mono = true)
-                }
-                if (shown.hasCashDetail) {
-                    PaperRow("Recibido", MexicanText.currency(shown.cashReceived!!))
-                    PaperRow("Cambio", MexicanText.currency(shown.change!!), bold = true)
-                }
-                Paper("Gracias por su preferencia", muted = true, modifier = Modifier.padding(top = 14.dp))
             }
         }
         TDivider()

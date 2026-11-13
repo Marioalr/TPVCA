@@ -207,7 +207,8 @@ private fun VitalGrid(vitals: List<VitalSummary>, modifier: Modifier = Modifier,
     val colors = LocalTpvcColors.current
     FieldRows(2, modifier, gap = 8.dp, content = vitals.map { v ->
         @Composable { m: Modifier ->
-            Column(m.clip(RoundedCornerShape(10.dp)).border(1.dp, colors["ThemeBorder"], RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 8.dp)) {
+            // Un signo se lee de una vez con TalkBack: nombre, valor y cambio
+            Column(m.clip(RoundedCornerShape(10.dp)).border(1.dp, colors["ThemeBorder"], RoundedCornerShape(10.dp)).semantics(mergeDescendants = true) {}.padding(horizontal = 10.dp, vertical = 8.dp)) {
                 TCaption(v.label)
                 TText(v.value, size = if (big) TType.section else TType.body, weight = FontWeight.Bold, mono = true)
                 if (v.trend.isNotBlank()) TCaption(v.trend, color = if (v.isUp) colors.warningText else colors.textSecondary)

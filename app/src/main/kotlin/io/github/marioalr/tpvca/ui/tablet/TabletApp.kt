@@ -29,6 +29,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -84,8 +87,10 @@ fun TabletApp(workspace: TabletWorkspace, chrome: TabletChrome) {
     // La vista del PDF tapa todo: Atrás la cierra a ella, nunca la app
     BackHandler(enabled = workspace.preview != null) { workspace.preview = null }
 
+    // Lo que tapa la pantalla (la vista del PDF, la lista sugerida): lo de abajo no se toca ni lo lee TalkBack. La agenda es un panel al lado: lo de abajo sigue a la mano
+    val covered = workspace.preview != null || (workspace.page == TabletPage.Hub && workspace.inventory.suggested != null)
     Box(Modifier.fillMaxSize().background(colors.background)) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+        Column(Modifier.fillMaxSize().safeDrawingPadding().then(if (covered) Modifier.clearAndSetSemantics {} else Modifier)) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (val page = workspace.page) {
                     TabletPage.Hub -> HubScreen(workspace, chrome)
@@ -190,7 +195,9 @@ private fun Toast(workspace: TabletWorkspace) {
     Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(bottom = 56.dp), contentAlignment = Alignment.BottomCenter) {
         Row(
             Modifier.widthIn(max = 720.dp).clip(RoundedCornerShape(10.dp)).background(if (toast.warning) colors.warningSubtle else colors["ThemeToastBackground"])
-                .clickable { workspace.toast = null }.testTag(TabletTags.TOAST).padding(horizontal = 16.dp, vertical = 12.dp),
+                // TalkBack lo lee al salir, sin tener que ir a buscarlo
+                .semantics { liveRegion = LiveRegionMode.Polite }
+                .clickable(onClickLabel = "Cerrar el aviso") { workspace.toast = null }.testTag(TabletTags.TOAST).padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {

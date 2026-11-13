@@ -2,7 +2,6 @@ package io.github.marioalr.tpvca.ui.phone
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,11 +35,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -117,8 +116,10 @@ fun AgendaScreen(env: PhoneEnv, workspace: PhoneWorkspace, dataVersion: Long, na
         actionsFor = null
     }
 
+    // Con la hoja de una cita abierta, lo de atrás no se toca (el velo) ni lo lee TalkBack
+    val sheetOpen = actionsFor != null
     Box(Modifier.fillMaxSize().testTag(PhoneTags.AGENDA)) {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().then(if (sheetOpen) Modifier.clearAndSetSemantics {} else Modifier)) {
             Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 TitleRow("Agenda") {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -154,13 +155,13 @@ fun AgendaScreen(env: PhoneEnv, workspace: PhoneWorkspace, dataVersion: Long, na
                 }
             }
         }
-        Column(Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 16.dp), horizontalAlignment = Alignment.End) {
+        Column(Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 16.dp).then(if (sheetOpen) Modifier.clearAndSetSemantics {} else Modifier), horizontalAlignment = Alignment.End) {
             Row(
                 Modifier
                     .heightIn(min = 52.dp)
                     .shadow(8.dp, RoundedCornerShape(26.dp))
                     .clip(RoundedCornerShape(26.dp))
-                    .background(PhoneColors.Accent)
+                    .background(PhoneColors.AccentFill)
                     .semantics(mergeDescendants = true) { role = Role.Button }
                     .clickable { workspace.openSchedule(day) }
                     .testTag(PhoneTags.SCHEDULE)
@@ -168,8 +169,8 @@ fun AgendaScreen(env: PhoneEnv, workspace: PhoneWorkspace, dataVersion: Long, na
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Icon(PhoneIcons.Plus, null, Modifier.size(18.dp), tint = Color.White)
-                PText(PhoneText.SCHEDULE, size = 15.sp, weight = FontWeight.SemiBold, color = Color.White)
+                Icon(PhoneIcons.Plus, null, Modifier.size(18.dp), tint = PhoneColors.OnAccent)
+                PText(PhoneText.SCHEDULE, size = 15.sp, weight = FontWeight.SemiBold, color = PhoneColors.OnAccent)
             }
         }
         // Solo las de una cita que sigue en este día: si se fue (se canceló en otro equipo, cambió de día), se cierran
@@ -239,15 +240,15 @@ private fun AppointmentActions(item: DayAppointment, profile: ClinicProfile?, wo
     val context = LocalContext.current
     BackHandler(onBack = onClose)
     Box(
-        Modifier.fillMaxSize().background(PhoneColors.Scrim)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose),
+        // Tocar el velo cierra la hoja. No es un botón para TalkBack (leía toda la hoja como un botón que la cerraba): ahí se cierra con Atrás o con «Cerrar»
+        Modifier.fillMaxSize().background(PhoneColors.Scrim).scrimDismiss(onClose),
     ) {
         Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                 .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
                 .background(PhoneColors.Surface)
-                // Lo que se toca en la hoja no pasa a lo de atrás
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                // Lo que se toca en la hoja no pasa a lo de atrás; TalkBack la anuncia como un panel que se puede cerrar
+                .sheetPane("Acciones de la cita", onClose)
                 .testTag(PhoneTags.APPOINTMENT_SHEET)
                 // Con la letra grande, en un celular chico, no cabe: se desplaza
                 .verticalScroll(rememberScrollState())
@@ -326,8 +327,8 @@ internal fun DayStrip(start: LocalDate, selected: LocalDate, enabled: Boolean = 
                         .weight(1f)
                         .heightIn(min = 58.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(if (on) PhoneColors.Accent else PhoneColors.Surface)
-                        .border(1.dp, if (on) PhoneColors.Accent else PhoneColors.Border, RoundedCornerShape(12.dp))
+                        .background(if (on) PhoneColors.AccentFill else PhoneColors.Surface)
+                        .border(1.dp, if (on) PhoneColors.AccentFill else PhoneColors.Border, RoundedCornerShape(12.dp))
                         .semantics(mergeDescendants = true) {
                             role = Role.Button
                             this.selected = on
@@ -337,7 +338,7 @@ internal fun DayStrip(start: LocalDate, selected: LocalDate, enabled: Boolean = 
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
                 ) {
-                    val color = if (on) Color.White else PhoneColors.Text
+                    val color = if (on) PhoneColors.OnAccent else PhoneColors.Text
                     PText(PhoneFormat.weekDay(date), size = 11.sp, weight = FontWeight.Medium, color = color, maxLines = 1)
                     PText(date.dayOfMonth.toString(), size = 17.sp, weight = FontWeight.Bold, color = color, maxLines = 1)
                 }

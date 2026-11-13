@@ -85,7 +85,7 @@ private fun NoteAndLines(workspace: TabletWorkspace, session: ConsultationChecko
             if (count == 0) {
                 TCaption("Sin medicamentos recetados.")
             } else {
-                // TODO(K10): imprimir en papel; la vista previa trae «Compartir», que también guarda el PDF
+                // TODO(impresión, después de K10): imprimir en papel; la vista previa trae «Compartir», que también guarda el PDF
                 PrescriptionPreviewButton(workspace, Modifier.padding(top = 6.dp))
             }
         }

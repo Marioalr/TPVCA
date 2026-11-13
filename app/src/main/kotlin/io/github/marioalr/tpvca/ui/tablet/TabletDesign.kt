@@ -59,6 +59,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
@@ -134,11 +135,13 @@ fun TText(
     color: Color = LocalTpvcColors.current.text,
     maxLines: Int = Int.MAX_VALUE,
     mono: Boolean = false,
+    align: TextAlign? = null,
 ) {
     Text(
         text,
         modifier,
         color = color,
+        textAlign = align,
         fontSize = size,
         fontWeight = weight,
         maxLines = maxLines,

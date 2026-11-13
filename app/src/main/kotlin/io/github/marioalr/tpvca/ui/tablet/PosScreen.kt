@@ -165,8 +165,10 @@ private fun SaleCard(pos: PosController, modifier: Modifier) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (cart.hasItems) {
                 val open = pos.canEditCart
+                // La lista de ahora, no la cuenta: la cuenta es el mismo objeto y la lista perezosa no se enteraría del cambio
+                val items = cart.items
                 LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    itemsIndexed(cart.items, key = { _, item -> listOf(item.productId, item.catalogSyncId, item.code, item.isService, item.isIndividualUnits).joinToString("|") }) { index, item ->
+                    itemsIndexed(items, key = { _, item -> listOf(item.productId, item.catalogSyncId, item.code, item.isService, item.isIndividualUnits).joinToString("|") }) { index, item ->
                         CartLine(pos.session, item, index, open)
                     }
                 }
@@ -201,6 +203,7 @@ private fun EmptyCart() {
         TText(
             "Enter o tocar una sugerencia la agrega. Con el lector de código de barras basta escanear.",
             Modifier.padding(top = 6.dp, bottom = 14.dp).widthIn(max = 460.dp),
+            align = androidx.compose.ui.text.style.TextAlign.Center,
             size = TType.detail,
             color = colors.textSecondary,
         )

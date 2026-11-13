@@ -193,6 +193,13 @@ class PointOfSaleTabletTest {
         waitFor { workspace.pos.session.cart.items.size == 1 }
         assertEquals(3, workspace.pos.session.cart.items.single().quantity)
         assertEquals("El buscador queda listo para el siguiente", "", workspace.pos.search)
+        // Cada renglón se ve, también el segundo (la cuenta es el mismo objeto: la lista debe enterarse)
+        type("omeprazol")
+        enterKey()
+        waitText("Omeprazol 20 mg cápsulas")
+        compose.onNodeWithText("Ibuprofeno 400 mg tabletas").assertIsDisplayed()
+        compose.onNodeWithTag(TabletTags.cartRemove("Omeprazol 20 mg cápsulas")).performClick()
+        waitFor { compose.onAllNodesWithText("Omeprazol 20 mg cápsulas").fetchSemanticsNodes().isEmpty() }
         val saleId = workspace.pos.saleSyncId
         charge()
         waitTag(TabletTags.POS_RECEIPT)

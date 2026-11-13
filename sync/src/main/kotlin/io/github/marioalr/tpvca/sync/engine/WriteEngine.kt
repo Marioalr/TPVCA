@@ -221,6 +221,22 @@ class WriteEngine(
         recalculate(patients)
     }
 
+    /**
+     * Agendar (`SaveAppointmentAsync`): el expediente se lee y la cita se escribe **en la misma transacción**, con su entrada en la cola. Una bajada que da de baja al paciente, o lo une a otro, no se cruza entre
+     * leerlo y escribir la cita. [values] arma la cita con la fila de ahora (nombre, folio y teléfono). `null` si el expediente ya no existe, se dio de baja o se unió a otro: no se escribe nada.
+     */
+    fun createAppointment(patientSyncId: String, values: (LocalRow) -> Map<String, Any?>, syncId: String = SyncIds.random()): String? = guarded {
+        if (!WritePolicy.canWrite(requireWritable(), "Appointments", creating = true)) refuse("escribir en Appointments")
+        val created = store.transaction {
+            val row = writer.find(writer.table("Patients"), patientSyncId)?.takeIf { it["IsActive"] == 1L && it["MergedIntoSyncId"] == null } ?: return@transaction null
+            val set = values(row)
+            writer.create("Appointments", syncId.lowercase(Locale.ROOT), set)
+            set
+        } ?: return@guarded null
+        afterWrite("Appointments", syncId.lowercase(Locale.ROOT), created)
+        syncId
+    }
+
     /** Lanza [WriteRefused] si ahora no se puede escribir: para no confundir «todavía no baja» con «ya no existe». */
     fun checkWritable() {
         guarded { requireWritable() }

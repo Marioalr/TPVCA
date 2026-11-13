@@ -128,6 +128,44 @@ class WriteEngineTest {
         assertEquals(0, store.pendingChanges())
     }
 
+    /** K4b: el celular agenda, confirma, cambia de horario y cancela; cada cita con su entrada en la cola, y sube. */
+    @Test
+    fun elCelularAgendaConfirmaCambiaYCancelaYSube() {
+        cloudPatient()
+        linked(DeviceRole.AndroidMobileAdmin, "C1")
+        val id = writes.createAppointment(patient, { row -> appointment() + mapOf("PatientName" to row["FullName"], "PatientRecordNumber" to row["RecordNumber"]) })!!
+        assertEquals(1, store.pendingChanges())
+        assertEquals("Ana", store.rows("Appointments").getValue(id)["PatientName"])
+        assertTrue(writes.edit("Appointments", id, mapOf("Status" to "Confirmada")))
+        assertTrue(writes.edit("Appointments", id, mapOf("Date" to "2030-01-11 00:00:00.0000000", "Time" to "11:00", "Status" to "Programada")))
+        assertTrue(writes.edit("Appointments", id, mapOf("Status" to "Cancelada")))
+        assertTrue(engine().sync(SyncTrigger.USER) is SyncOutcome.Completed)
+        assertEquals(0, store.pendingChanges())
+        val up = cloud.admin("SELECT Status, Time, PatientName FROM Appointments WHERE SyncId = ?", id).single()
+        assertEquals("Cancelada", up["Status"]?.text)
+        assertEquals("11:00", up["Time"]?.text)
+        assertEquals("Ana", up["PatientName"]?.text)
+    }
+
+    /** Agendar lee el expediente y escribe la cita juntos: a uno dado de baja, unido a otro o que no existe no se le agenda, y no queda nada en la cola. */
+    @Test
+    fun agendarAUnExpedienteDadoDeBajaOUnidoNoEscribeNada() {
+        cloudPatient()
+        linked(DeviceRole.AndroidMobileAdmin, "C1")
+        val before = store.rowCounts()
+        localWriter.edit("Patients", patient, mapOf("IsActive" to false))
+        store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))
+        assertNull(writes.createAppointment(patient, { appointment() }))
+        localWriter.edit("Patients", patient, mapOf("IsActive" to true, "MergedIntoSyncId" to "10000000-0000-4000-8000-0000000000ff"))
+        store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))
+        assertNull(writes.createAppointment(patient, { appointment() }))
+        assertNull(writes.createAppointment("10000000-0000-4000-8000-0000000000aa", { appointment() }))
+        localWriter.edit("Patients", patient, mapOf("MergedIntoSyncId" to null))
+        store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))
+        assertEquals(0, store.pendingChanges())
+        assertEquals(before["Appointments"], store.rowCounts()["Appointments"])
+    }
+
     @Test
     fun laTabletRegistraLaEntradaConSuLoteYSusExistencias() {
         cloudPatient()

@@ -7,7 +7,6 @@ import androidx.compose.runtime.setValue
 import io.github.marioalr.tpvca.data.clinic.AppointmentRow
 import io.github.marioalr.tpvca.data.clinic.ConsultationRow
 import io.github.marioalr.tpvca.domain.Clinic
-import io.github.marioalr.tpvca.domain.agenda.AgendaTexts
 import io.github.marioalr.tpvca.domain.model.Appointment
 import io.github.marioalr.tpvca.domain.patients.DuplicateCandidate
 import io.github.marioalr.tpvca.domain.patients.DuplicateMatch
@@ -24,7 +23,8 @@ import io.github.marioalr.tpvca.sync.rules.PatientFormDraft
 import io.github.marioalr.tpvca.sync.rules.PatientFormFields
 import io.github.marioalr.tpvca.sync.rules.SyncIds
 import io.github.marioalr.tpvca.ui.agenda.AgendaController
-import io.github.marioalr.tpvca.ui.agenda.AgendaPatient
+import io.github.marioalr.tpvca.ui.agenda.AgendaFeedback
+import io.github.marioalr.tpvca.ui.agenda.AgendaSession
 import io.github.marioalr.tpvca.ui.agenda.AppointmentFormState
 import io.github.marioalr.tpvca.ui.phone.PhoneEnv
 import io.github.marioalr.tpvca.documents.LabFileStore
@@ -153,7 +153,12 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         private set
     var agendaOpen by mutableStateOf(false)
     var agendaDate by mutableStateOf(env.phone.today())
-    var moving by mutableStateOf<AppointmentRow?>(null)
+    /** «Cambiar fecha u hora»: es de [agendaSession], la misma del celular. */
+    var moving: AppointmentRow?
+        get() = agendaSession.moving
+        set(value) {
+            agendaSession.moving = value
+        }
     var form by mutableStateOf<FormSession?>(null)
         private set
     var confirm by mutableStateOf<ConfirmRequest?>(null)
@@ -174,8 +179,13 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         }
     var preview by mutableStateOf<PreviewDoc?>(null)
 
-    val appointment = AppointmentFormState()
-    val agenda = AgendaController(env.phone.reader, env.writes, env.quickSync, env.noteLocalWrite, ::ask, env.phone.now, io)
+    /** La agenda que escribe: la misma que usa el celular (K4b). */
+    val agendaSession = AgendaSession(
+        env.phone.reader, env.writes, env.local, env.quickSync, env.noteLocalWrite, ::ask, scope, io, env.phone.now,
+        AgendaFeedback(show = { text, warning -> show(text, warning) }, info = { info = it }, changed = { changed() }),
+    )
+    val appointment: AppointmentFormState get() = agendaSession.form
+    val agenda: AgendaController get() = agendaSession.controller
 
     /** La consulta en curso (K7). */
     val consultation = ConsultationController(this, scope, io)
@@ -226,7 +236,6 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
     private var openingForm = false
     private var formSessionId = 0
     private var draftJob: Job? = null
-    private var appointmentDraftJob: Job? = null
     private var restored = false
     private val draftLock = Mutex()
 
@@ -419,81 +428,21 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
     /** «Agendar cita» de la ficha: el panel abre en mañana y al elegir un hueco el paciente ya viene puesto. */
     fun scheduleForChart() = openAgenda(today().plusDays(1))
 
-    fun closeAppointmentForm() {
-        appointment.close()
-        deleteAppointmentDraft()
-    }
+    fun closeAppointmentForm() = agendaSession.closeForm()
 
     /** «Agendar» desde la ficha: el paciente ya viene puesto. */
-    fun preselectPatient(syncId: String) {
-        // Solo el formulario que se abrió para él: si mientras se leía se cerró o se abrió otro hueco (quizá desde otra ficha), no se le pone este paciente
-        val request = appointment.request
-        scope.launch {
-            val patient = withContext(io) { runCatching { env.phone.reader.activePatient(syncId) }.getOrNull() } ?: return@launch
-            if (appointment.request == request && appointment.isOpen && appointment.patient == null) {
-                appointment.patient = AgendaPatient(syncId, patient.fullName, patient.recordNumber, patient.phone)
-                appointmentChanged()
-            }
-        }
-    }
+    fun preselectPatient(syncId: String) = agendaSession.preselect(syncId)
 
     /** Lo que se escribe en el formulario de una cita: al borrador, tras una pausa. */
-    fun appointmentChanged() {
-        appointmentDraftJob?.cancel()
-        appointmentDraftJob = scope.launch {
-            delay(DRAFT_PAUSE_MILLIS)
-            saveAppointmentDraft()
-        }
-    }
+    fun appointmentChanged() = agendaSession.edited()
 
-    private suspend fun saveAppointmentDraft() {
-        if (!appointment.isOpen) return
-        val text = appointment.encode()
-        draftLock.withLock {
-            if (!appointment.isOpen) return
-            withContext(io) { runCatching { env.local()?.saveDraft(LocalSide.APPOINTMENT_FORM, text) } }
-        }
-    }
+    fun scheduleAppointment() = agendaSession.schedule()
 
-    private fun deleteAppointmentDraft() {
-        appointmentDraftJob?.cancel()
-        scope.launch { draftLock.withLock { withContext(io) { runCatching { env.local()?.deleteDraft(LocalSide.APPOINTMENT_FORM) } } } }
-    }
+    fun moveTo(date: LocalDate, time: String) = agendaSession.moveTo(date, time)
 
-    fun scheduleAppointment() {
-        scope.launch {
-            val message = agenda.schedule(appointment) ?: return@launch
-            deleteAppointmentDraft()
-            changed()
-            show(message)
-        }
-    }
+    fun confirmAppointment(a: Appointment) = agendaSession.confirm(a)
 
-    fun moveTo(date: LocalDate, time: String) {
-        val row = moving ?: return
-        scope.launch {
-            val message = agenda.move(row, date, time, { moving === row }) { info = it } ?: return@launch
-            moving = null
-            changed()
-            show(message)
-        }
-    }
-
-    fun confirmAppointment(a: Appointment) {
-        scope.launch {
-            agenda.setStatus(a, "Confirmada")?.let { info = it }
-            changed()
-        }
-    }
-
-    fun cancelAppointment(a: Appointment) {
-        scope.launch {
-            if (!ask("Cancelar cita", AgendaTexts.cancelQuestion(a))) return@launch
-            val problem = agenda.setStatus(a, "Cancelada")
-            if (problem != null) info = problem else show("Cita de ${a.patientName} cancelada")
-            changed()
-        }
-    }
+    fun cancelAppointment(a: Appointment) = agendaSession.cancel(a)
 
     // ------------------------------------------------------------------ avisos
 
@@ -620,10 +569,9 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
     fun flushDrafts() {
         scope.launch {
             draftJob?.cancel()
-            appointmentDraftJob?.cancel()
             saveFormDraft()
-            saveAppointmentDraft()
         }
+        agendaSession.flush()
         consultation.flush()
         pos.flush()
     }
@@ -689,25 +637,9 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
     }
 
     private suspend fun restoreAppointment() {
-        if (appointment.isOpen) return
-        val local = withContext(io) { env.local() } ?: throw IllegalStateException()
-        val text = withContext(io) { local.draft(LocalSide.APPOINTMENT_FORM) } ?: return
-        if (!appointment.restore(text)) {
-            withContext(io) { local.deleteDraft(LocalSide.APPOINTMENT_FORM) }
-            return
-        }
+        if (!agendaSession.restore(requireTime = true)) return
         agendaDate = appointment.slotDate ?: today()
         agendaOpen = true
-        val chosen = appointment.patient ?: return
-        // Lo que se copió al escribir el borrador puede ser viejo: el nombre, el folio y el teléfono de ahora, o decir que ya no está
-        val (current, downloaded) = withContext(io) { (env.writes() ?: throw IllegalStateException()).patientRowAndDownload(chosen.syncId) }
-        if (current != null) {
-            appointment.patient = AgendaPatient(chosen.syncId, current["FullName"] as String? ?: "", current["RecordNumber"] as String? ?: "", current["Phone"] as String? ?: "")
-        } else if (downloaded) {
-            appointment.patient = null
-            appointment.error = AgendaController.PATIENT_GONE
-            saveAppointmentDraft()
-        }
     }
 
     /** «Cancelar» y «Volver» (`CancelPatientForm`): un alta con datos pregunta. */
@@ -906,14 +838,12 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
     /** Sin nada de pacientes en la memoria: la vinculación ya no está y sus datos se borraron. */
     fun clearMemory() {
         draftJob?.cancel()
-        appointmentDraftJob?.cancel()
         confirm?.answer?.complete(false)
         confirm = null
         form = null
         homeQuery = ""
         agendaOpen = false
-        moving = null
-        appointment.close()
+        agendaSession.clearMemory()
         detail = null
         preview = null
         info = null

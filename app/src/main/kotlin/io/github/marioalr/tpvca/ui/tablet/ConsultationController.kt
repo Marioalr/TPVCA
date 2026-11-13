@@ -385,7 +385,11 @@ class ConsultationController internal constructor(private val workspace: TabletW
         if (d == null || c == null) null else ConsultationAccount(c.account, d.items, d.feeServiceSyncId, readOnly, workspace::localNow)
     }
 
-    val readOnly: Boolean get() = draft?.isHandedOff == true || patientStatus != ConsultationPatientStatus.Active
+    /** También mientras empieza un envío ([HandoffController.locksConsultation]): lo que se editara después de armar la copia se perdería. */
+    val readOnly: Boolean get() = readOnlyHere || workspace.handoff.locksConsultation
+
+    /** Solo lectura por la consulta misma (enviada, o el expediente borrado o bajando), sin contar un envío que empieza: lo que revisa el propio envío. */
+    internal val readOnlyHere: Boolean get() = draft?.isHandedOff == true || patientStatus != ConsultationPatientStatus.Active
 
     val hasConsultation: Boolean get() = draft != null
 
@@ -401,6 +405,7 @@ class ConsultationController internal constructor(private val workspace: TabletW
                     HandoffPhase.Unconfirmed -> "No se pudo confirmar el envío a ${d.handoffTargetName}: en solo lectura hasta resolverlo"
                     else -> "Enviando a ${d.handoffTargetName}…"
                 }
+                workspace.handoff.locksConsultation -> "Enviando la consulta a ${workspace.handoff.selected?.deviceName ?: "otro equipo"}…"
                 patientStatus == ConsultationPatientStatus.Gone -> "El expediente de ${d.patientName} ya no existe: esta consulta está en solo lectura y no se puede cobrar. Descártela para poder atender a otro paciente."
                 patientStatus == ConsultationPatientStatus.Downloading -> "El expediente de ${d.patientName} todavía está bajando: la consulta queda en solo lectura hasta que termine."
                 else -> null

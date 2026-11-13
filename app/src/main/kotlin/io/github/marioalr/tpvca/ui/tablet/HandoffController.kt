@@ -7,6 +7,7 @@ import io.github.marioalr.tpvca.domain.devices.LinkedDevice
 import io.github.marioalr.tpvca.domain.text.MexicanText
 import io.github.marioalr.tpvca.link.HandoffLink
 import io.github.marioalr.tpvca.sync.ProtocolDate
+import io.github.marioalr.tpvca.sync.engine.LocalSide
 import io.github.marioalr.tpvca.sync.link.HandoffCheck
 import io.github.marioalr.tpvca.sync.link.HandoffErrors
 import io.github.marioalr.tpvca.sync.link.HandoffMarker
@@ -17,6 +18,7 @@ import io.github.marioalr.tpvca.sync.link.HandoffRow
 import io.github.marioalr.tpvca.sync.link.HandoffRules
 import io.github.marioalr.tpvca.sync.link.HandoffService
 import io.github.marioalr.tpvca.sync.rules.SyncIds
+import io.github.marioalr.tpvca.sync.rules.consultation.ConsultationDraft
 import io.github.marioalr.tpvca.sync.rules.consultation.HandoffPayload
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -90,6 +92,15 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
     var sendStarted by mutableStateOf(false)
         private set
 
+    /** El envío guarda la «Cambiar indicación» abierta (paso 0): solo entonces la consulta todavía se escribe. */
+    private var committingPending by mutableStateOf(false)
+
+    /**
+     * Un envío empezó: la consulta no se edita aquí ([ConsultationController.readOnly]). Lo que se escribiera después de armar la copia no viajaría, y al aceptarla el otro equipo esta se cierra
+     * sin ello. Solo mientras se guarda la indicación abierta sí se escribe: ese guardado es parte del envío.
+     */
+    val locksConsultation: Boolean get() = sending || (sendStarted && !committingPending)
+
     /**
      * El expediente que se está actualizando con lo del otro equipo después de que se cerró aquí su consulta (`_handoffLockedPatientId` tras `ReleaseHandedOffConsultation`): no se edita hasta que
      * termine la sincronización y se vuelva a leer. Mientras la consulta está enviada, el candado sale del borrador ([blockIfPatientHandedOff]).
@@ -102,6 +113,9 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
 
     // Las pruebas la ocupan para ver qué pasa con un toque que espera
     internal val gate = Mutex()
+
+    // Las pruebas la ocupan para ver en qué hilo se lee la copia recibida
+    internal var payloadParsed: (() -> Unit)? = null
     private val dismissed = HashSet<String>()
     private val announced = HashSet<String>()
     private val applied = HashSet<String>()
@@ -146,6 +160,7 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
                 consultation.hasConsultation -> "Termine o descarte la consulta en curso para continuar esta aquí"
                 workspace.form != null -> "Termine el alta o edición del expediente para continuarla aquí"
                 row.payloadVersion > HandoffRules.PROTOCOL_VERSION -> "Actualice la app en este equipo para recibirla"
+                row.payload.length > MAX_PAYLOAD_CHARS -> TOO_LARGE
                 else -> ""
             }
         }
@@ -259,7 +274,11 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
             if (token != null && token == row.acceptToken && acceptedPending == null) acceptedPending = row
         }
         val offered = acceptedPending ?: result.incoming.filter { it.state == HandoffRules.STATE_SENT && it.id !in dismissed }.maxByOrNull { it.createdAtUtc }
-        showIncoming(offered, accepted = offered != null && offered === acceptedPending)
+        // La copia se lee fuera del hilo principal, y solo si es otra (`DescribeIncoming`)
+        val detail = if (offered == null || (incoming?.id == offered.id && incoming?.state == offered.state)) null else withContext(io) { describeIncoming(offered) }
+        // «Más tarde» mientras se leía
+        if (offered != null && offered !== acceptedPending && offered.id in dismissed) return
+        showIncoming(offered, accepted = offered != null && offered === acceptedPending, detail)
         for (row in result.incoming.filter { it.state == HandoffRules.STATE_SENT }) {
             if (!announced.add(row.id)) continue
             // En Pacientes ya se ve el aviso; fuera de ahí (o con otra consulta abierta), un aviso breve
@@ -267,7 +286,8 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
         }
     }
 
-    private fun showIncoming(row: HandoffRow?, accepted: Boolean) {
+    /** [detail]: lo que dice el aviso de [row], ya leído de la copia; `null` si es el mismo envío que ya se ve. */
+    private fun showIncoming(row: HandoffRow?, accepted: Boolean, detail: String? = null) {
         incomingAccepted = row != null && accepted
         if (row == null) {
             incoming = null
@@ -275,7 +295,7 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
             return
         }
         if (incoming?.id != row.id || incoming?.state != row.state) {
-            incomingDetail = describeIncoming(row)
+            incomingDetail = detail ?: row.patientName
             incoming = row
         }
     }
@@ -329,9 +349,9 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
         }
     }
 
-    /** Mientras se envía no se cierra: la consulta quedaría en solo lectura sin explicación. */
+    /** Desde que se toca «Enviar a X» no se cierra: la consulta quedaría en solo lectura sin explicación, o se editaría algo que ya no viaja. */
     fun closeSendSheet() {
-        if (sending) return
+        if (sending || sendStarted) return
         sheetOpen = false
     }
 
@@ -361,11 +381,17 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
                 "un paquete completo). Actualícela a la versión más reciente, o envíe la consulta a otro equipo."
             return
         }
+        committingPending = true
         sendStarted = true
         scope.launch {
             try {
-                // 0. Una «Cambiar indicación» abierta se guarda antes de subir el expediente y armar la copia
-                if (!consultation.prescription.commitPending()) {
+                // 0. Una «Cambiar indicación» abierta se guarda antes de subir el expediente y armar la copia; desde ahí ya no se edita
+                val committed = try {
+                    consultation.prescription.commitPending()
+                } finally {
+                    committingPending = false
+                }
+                if (!committed) {
                     sheetError = "No se pudo guardar la indicación que está cambiando. Guárdela o cancélela antes de enviar."
                     return@launch
                 }
@@ -376,7 +402,7 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
                 try {
                     // Mientras se esperaba, la consulta pudo enviarse, cerrarse, cambiar o quedar en solo lectura (el expediente se borró)
                     val current = consultation.draft
-                    if (current == null || current.folio != draft.folio || current.isHandedOff || consultation.readOnly) return@launch
+                    if (current == null || current.folio != draft.folio || current.isHandedOff || consultation.readOnlyHere) return@launch
                     sending = true
                     sheetError = null
                     bumpEpoch()
@@ -404,7 +430,7 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
         }
         // 2. La copia con identificadores que valen en cualquier equipo
         val current = consultation.draft ?: return
-        if (current.isHandedOff || consultation.readOnly) return
+        if (current.isHandedOff || consultation.readOnlyHere) return
         val payload = withContext(io) { runCatching { consultation.buildHandoffPayload() }.getOrNull() }
         if (payload == null) {
             sheetError = "No se pudo preparar la copia de la consulta."
@@ -609,9 +635,13 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
     private suspend fun acceptCore(row: HandoffRow, link: HandoffLink) {
         bumpEpoch()
         val service = link.service() ?: throw IllegalStateException("Sin vinculación")
-        val payload = runCatching { Json.parseToJsonElement(row.payload) as? JsonObject }.getOrNull()
+        if (row.payload.length > MAX_PAYLOAD_CHARS) {
+            workspace.show(TOO_LARGE, warning = true)
+            return
+        }
+        val payload = withContext(io) { parsePayload(row.payload) }
         if (payload == null || !HandoffPayload.canRead(row.payloadVersion, HandoffPayload.draftVersion(payload))) {
-            workspace.show("Esta consulta viene de una versión más nueva de TPVC. Actualice este equipo para recibirla.", warning = true)
+            workspace.show(NEWER_VERSION, warning = true)
             return
         }
         // 1. Lo último del expediente (el otro equipo lo subió antes de enviarla)
@@ -626,9 +656,27 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
             workspace.show(mapped.problem ?: "No se pudo preparar la consulta recibida.", warning = true)
             return
         }
-        // 3. Tomarla. Si este equipo ya lo intentó (se perdió la respuesta), se pregunta con la ficha de entonces: nunca se reemplaza, o su propio intento parecería de otro equipo
-        var token = withContext(io) { env.writes()?.acceptToken(row.id) }
-        if (token != null) {
+        // 3. Antes de tomarla, que se pueda abrir aquí: ya tomada, la copia del otro equipo se suelta sin apartarla. Como la PC, que lee la copia completa (`ConsultationDraft`) antes de tomarla,
+        //    y una consulta guardada aquí (aunque no se haya abierto o no se pueda leer) haría que no se guarde
+        val remembered = withContext(io) { env.writes()?.acceptToken(row.id) }
+        val token = remembered ?: SyncIds.random().replace("-", "")
+        val draft = withContext(io) { runCatching { HandoffPayload.toLocalDraft(received.payload, row.id, token, SyncIds.random()) }.getOrNull() }
+        if (draft == null) {
+            workspace.show(NEWER_VERSION, warning = true)
+            return
+        }
+        val blocked = when {
+            consultation.isHandedOff() -> "Primero recupere la consulta que envió a otro equipo"
+            consultation.hasConsultation -> BUSY
+            workspace.form != null -> "Termine el alta o edición del expediente para continuarla aquí"
+            else -> withContext(io) { storedConsultationProblem() }
+        }
+        if (blocked != null) {
+            workspace.show(blocked, warning = true)
+            return
+        }
+        // 4. Tomarla. Si este equipo ya lo intentó (se perdió la respuesta), se pregunta con la ficha de entonces: nunca se reemplaza, o su propio intento parecería de otro equipo
+        if (remembered != null) {
             val (state, owner) = try {
                 withContext(io) { service.acceptState(row.id) }
             } catch (e: CancellationException) {
@@ -644,22 +692,16 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
                 return
             }
         } else {
-            token = SyncIds.random().replace("-", "")
-            val remembered = withContext(io) { runCatching { env.writes()?.rememberAcceptToken(row.id, token) }.isSuccess }
-            if (!remembered) {
+            val saved = withContext(io) { runCatching { env.writes()?.rememberAcceptToken(row.id, token) }.isSuccess }
+            if (!saved) {
                 workspace.show("No se pudo preparar este equipo para recibir la consulta (no se pudo escribir en el disco).", warning = true)
                 return
             }
             if (!tryTake(row, token, service, link)) return
         }
-        // 4. Abrirla, sin más esperas entre tomarla y guardarla aquí
-        val draft = HandoffPayload.toLocalDraft(received.payload, row.id, token, SyncIds.random())
-        if (draft == null) {
-            workspace.show("No se pudo preparar la consulta recibida.", warning = true)
-            return
-        }
+        // 5. Abrirla, sin más esperas entre tomarla y guardarla aquí
         if (!consultation.adoptReceived(draft, row.id, received.renamedSyncIds, row.fromDeviceName)) {
-            workspace.show("Termine o descarte la consulta en curso para continuar esta aquí", warning = true)
+            workspace.show(BUSY, warning = true)
             return
         }
         applied += row.id
@@ -672,6 +714,28 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
         if (received.freeLines.isNotEmpty()) {
             workspace.show("No están en el catálogo de este equipo y se cobrarán sin descontar existencias: ${received.freeLines.joinToString(", ")}.", warning = true)
         }
+    }
+
+    /**
+     * Por qué la consulta recibida no se podría guardar aquí aunque no haya ninguna en pantalla: una guardada que todavía no se abre o que esta versión no puede leer
+     * (`adoptReceivedConsultation` la rechazaría ya tomada). Si no se puede revisar, tampoco se toma. Lee la base: fuera del hilo principal.
+     */
+    private fun storedConsultationProblem(): String? {
+        val text = try {
+            val local = consultation.local() ?: return CANNOT_CHECK
+            local.draft(LocalSide.CONSULTATION) ?: return null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return CANNOT_CHECK
+        }
+        return if (ConsultationDraft.decode(text) == null) ConsultationController.UNREADABLE else BUSY
+    }
+
+    /** La copia como JSON; `null` si no se entiende. Fuera del hilo principal: puede ser grande. */
+    private fun parsePayload(text: String): JsonObject? {
+        payloadParsed?.invoke()
+        return runCatching { Json.parseToJsonElement(text) as? JsonObject }.getOrNull()
     }
 
     private fun goneElsewhere(row: HandoffRow, state: String?) {
@@ -720,11 +784,11 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
         scope.launch(io) { runCatching { service.clearPayload(handoffId, token) } }
     }
 
-    /** "Ana Pérez · iniciada 10:30 · E11.9 Diabetes… · cargos $360.00" (`DescribeIncoming`). */
+    /** "Ana Pérez · iniciada 10:30 · E11.9 Diabetes… · cargos $360.00" (`DescribeIncoming`). Una copia más grande que [MAX_PAYLOAD_CHARS] no se lee: solo el nombre. Fuera del hilo principal. */
     private fun describeIncoming(row: HandoffRow): String {
         val parts = ArrayList<String>()
         parts += row.patientName
-        val payload = runCatching { Json.parseToJsonElement(row.payload) as? JsonObject }.getOrNull()
+        val payload = if (row.payload.length > MAX_PAYLOAD_CHARS) null else parsePayload(row.payload)
         if (payload != null) {
             ProtocolDate.parse((payload["StartedAt"] as? JsonPrimitive)?.contentOrNull)?.let { parts += "iniciada ${"%02d:%02d".format(Locale.ROOT, it.hour, it.minute)}" }
             val diagnosis = (payload["Diagnosis"] as? JsonPrimitive)?.contentOrNull.orEmpty().lineSequence().first().trim()
@@ -760,5 +824,16 @@ class HandoffController internal constructor(private val workspace: TabletWorksp
     private companion object {
         const val GATE_WAIT_MILLIS = 10_000L
         const val RECOVER_WAIT_MILLIS = 15_000L
+
+        /**
+         * La copia más grande que se lee aquí, en caracteres. La PC no pone tope; una copia real (nota, signos, receta, cuenta y marcas por campo) pesa unos pocos KB y las más largas no
+         * llegan a 100 KB, así que un millón deja más de diez veces de holgura y evita leer en la tablet una copia dañada o desmedida que la dejaría sin memoria.
+         */
+        const val MAX_PAYLOAD_CHARS = 1_000_000
+
+        const val NEWER_VERSION = "Esta consulta viene de una versión más nueva de TPVC. Actualice este equipo para recibirla."
+        const val BUSY = "Termine o descarte la consulta en curso para continuar esta aquí"
+        const val CANNOT_CHECK = "No se pudo revisar si hay otra consulta guardada en este equipo. Intente de nuevo en un momento."
+        const val TOO_LARGE = "La copia de esta consulta es demasiado grande para abrirla en este equipo. Termínela en el equipo que la envió."
     }
 }

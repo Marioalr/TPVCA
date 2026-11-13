@@ -131,6 +131,53 @@ class ClinicReaderTest {
     }
 
     @Test
+    fun losTicketsSeBuscanTambienPorElFolioSinConexionYTodosLosRepetidos() {
+        val a = row("Sales", mapOf("Date" to at(today, 9), "Folio" to "TKT-20261104-0007", "OriginalFolio" to "TKT-20261104-T1-0002", "Total" to "20.00", "PatientName" to "Ana", "CustomerName" to "Ana", "Cashier" to "Dra. X"))
+        row("SaleItems", mapOf("SaleSyncId" to a, "ProductName" to "Gasa", "Quantity" to 2L, "UnitPrice" to "10.00", "Subtotal" to "20.00"))
+        val b = row("Sales", mapOf("Date" to at(today, 10), "Folio" to "TKT-20261104-0007", "Total" to "5.00", "CustomerName" to "Público General", "IsCancelled" to 1L, "CancelledAt" to at(today, 11), "CancellationReason" to "Devolución"))
+        row("Sales", mapOf("Date" to at(today, 12), "Folio" to "TKT-20261104-0008", "Total" to "1.00"))
+        flush()
+
+        assertEquals("Por el folio sin conexión, sin importar mayúsculas", listOf(a), reader.ticketsByFolio("  tkt-20261104-t1-0002 ").map { it.syncId })
+        assertEquals("Un folio repetido trae los dos", listOf(b, a), reader.ticketsByFolio("TKT-20261104-0007").map { it.syncId })
+        assertTrue(reader.ticketsByFolio("   ").isEmpty())
+        val found = reader.ticket(a)!!
+        assertEquals("TKT-20261104-T1-0002", found.originalFolio)
+        assertEquals(listOf("Gasa"), found.items.map { it.name })
+        assertEquals(BigDecimal("20.00"), found.total)
+        val cancelled = reader.ticket(b)!!
+        assertTrue(cancelled.cancelled)
+        assertEquals("Público General", cancelled.patientName)
+        assertEquals(LocalDateTime.of(2026, 11, 4, 11, 0), cancelled.cancelledAt)
+        assertEquals("Los más nuevos primero", 3, reader.recentTickets().size)
+        assertEquals(2, reader.recentTickets(limit = 2).size)
+        val (sales, tickets) = reader.cashCutDay(today)
+        assertEquals(3, sales.size)
+        assertEquals(sales.size, tickets.size)
+    }
+
+    @Test
+    fun elCatalogoDelPuntoDeVentaTraeInsigniasCategoriasYServicios() {
+        val b = row("Categories", mapOf("Name" to "Material"))
+        val a = row("Categories", mapOf("Name" to "Analgésicos"))
+        row("Products", mapOf("Name" to "Paracetamol", "Code" to "P1", "CategorySyncId" to a, "IsActive" to 1L, "Price" to "10.00", "CurrentStock" to -2L, "RequiresRefrigeration" to 1L))
+        val gasa = row("Products", mapOf("Name" to "Gasa", "Code" to "G1", "CategorySyncId" to b, "IsActive" to 1L, "Price" to "5.00", "CurrentStock" to 30L))
+        row("Products", mapOf("Name" to "Baja", "Code" to "X", "CategorySyncId" to b, "IsActive" to 0L))
+        val cure = row("ClinicalServices", mapOf("Name" to "Curación", "Code" to "S1", "Category" to "Curaciones", "Price" to "250.00", "IsActive" to 1L))
+        row("ServiceDefaultProducts", mapOf("ClinicalServiceSyncId" to cure, "ProductSyncId" to gasa, "Quantity" to 2L))
+        flush()
+
+        val c = reader.posCatalog(today)
+        assertEquals("Activos y por nombre", listOf("Gasa", "Paracetamol"), c.products.map { it.product.name })
+        assertEquals(listOf("Analgésicos", "Material"), c.categories.map { it.name })
+        val para = c.products.last()
+        assertEquals(c.categories.first().id, para.product.categoryId)
+        assertTrue(para.product.requiresRefrigeration)
+        assertEquals(io.github.marioalr.tpvca.domain.business.StockTone.Review, para.tone)
+        assertEquals("Gasa", c.services.single().defaultProducts.single().product?.name)
+    }
+
+    @Test
     fun laRecetaRespetaLaCasillaMostrarDeCadaRenglon() {
         val rows = ClinicMappers.prescriptions(
             """[{"MedicineName":"Tempra 500 mg tabletas (Paracetamol)","Dosage":"1 tableta","Presentation":"Caja con 20","ActiveIngredient":"Paracetamol","ShowActiveIngredient":true},

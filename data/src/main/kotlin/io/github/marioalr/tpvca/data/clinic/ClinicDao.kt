@@ -179,6 +179,22 @@ interface ClinicDao {
 
     // ------------------------------------------------------------------ catálogo de la consulta
 
+    /** Los tickets del punto de venta (K9): los últimos, o los de un folio, con o sin conexión (`OriginalFolio`, 8.17). */
+    @Query("SELECT * FROM Sales ORDER BY Date DESC, SyncId LIMIT :limit")
+    fun recentSales(limit: Int): List<SaleEntity>
+
+    @Query("SELECT * FROM Sales WHERE lower(Folio) = :folio OR lower(OriginalFolio) = :folio ORDER BY Date DESC, SyncId")
+    fun salesByFolio(folio: String): List<SaleEntity>
+
+    @Query("SELECT * FROM SaleItems WHERE SaleSyncId IN (:sales)")
+    fun saleItemsOf(sales: List<String>): List<SaleItemEntity>
+
+    @Transaction
+    fun recentSalesWithItems(limit: Int): Pair<List<SaleEntity>, List<SaleItemEntity>> = recentSales(limit).let { it to saleItemsOf(it.map(SaleEntity::syncId)) }
+
+    @Transaction
+    fun salesByFolioWithItems(folio: String): Pair<List<SaleEntity>, List<SaleItemEntity>> = salesByFolio(folio).let { it to saleItemsOf(it.map(SaleEntity::syncId)) }
+
     @Query("SELECT * FROM ServiceDefaultProducts")
     fun serviceDefaultProducts(): List<ServiceDefaultProductEntity>
 

@@ -400,7 +400,7 @@ private fun Chart(view: BusinessPanelView) {
                     Legend(PhoneColors.BarSales, "Ventas")
                     Legend(PhoneColors.Accent, "Ganancia")
                     // La pérdida no se distingue solo por el color: su barra va hueca, con el borde rojo
-                    if (losses > 0) Legend(PhoneColors.Danger, "Pérdida", hollow = true)
+                    if (losses > 0) Legend(PhoneColors.Danger, "Pérdida", hollow = PhoneColors.current == PhonePalette.Dark)
                 }
             }
             if (max.signum() <= 0) {
@@ -422,9 +422,10 @@ private fun Chart(view: BusinessPanelView) {
                         Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.BottomCenter) {
                             Box(Modifier.fillMaxWidth().fillMaxHeight(salesH).clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)).background(PhoneColors.BarSales))
                             val barShape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
+                            // La pérdida: roja y sólida en el claro, como el diseño aprobado; hueca con el borde rojo en el oscuro (sobre el fondo oscuro se distingue mejor). La leyenda y TalkBack la nombran
                             Box(
                                 Modifier.fillMaxWidth().fillMaxHeight(profitH).clip(barShape)
-                                    .then(if (p.profit.signum() < 0) Modifier.background(PhoneColors.DangerSoft).border(1.5.dp, PhoneColors.Danger, barShape) else Modifier.background(PhoneColors.Accent)),
+                                    .then(if (p.profit.signum() < 0) lossBar(barShape) else Modifier.background(PhoneColors.Accent)),
                             )
                         }
                     }
@@ -438,6 +439,11 @@ private fun Chart(view: BusinessPanelView) {
         }
     }
 }
+
+/** La barra de una pérdida: sólida en el claro (el diseño) y hueca con el borde rojo en el oscuro. */
+@Composable
+private fun lossBar(shape: RoundedCornerShape): Modifier =
+    if (PhoneColors.current == PhonePalette.Dark) Modifier.background(PhoneColors.DangerSoft).border(1.5.dp, PhoneColors.Danger, shape) else Modifier.background(PhoneColors.Danger)
 
 private fun fraction(value: BigDecimal, max: BigDecimal): Float = (value.toFloat() / max.toFloat()).coerceIn(0f, 1f)
 
@@ -686,7 +692,7 @@ fun TicketScreen(env: PhoneEnv, saleSyncId: String, nav: PhoneNav) {
                     }
                     if (failed) PText(PhoneText.SHARE_FAILED, size = 12.sp, color = PhoneColors.Danger)
                     // El ticket es papel: claro también en el tema oscuro
-                    io.github.marioalr.tpvca.ui.theme.LightDocument { PCard(padding = 12.dp) {
+                    io.github.marioalr.tpvca.ui.theme.LightDocument { PCard(Modifier.testTag(PhoneTags.TICKET_PAPER), padding = 12.dp) {
                         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
                             // 42 columnas: la letra de ancho fijo se ajusta para que quepan, también en 360 dp
                             val size = with(androidx.compose.ui.platform.LocalDensity.current) { (maxWidth.toPx() / 42f / 0.6f).toSp() }

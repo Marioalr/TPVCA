@@ -537,7 +537,8 @@ internal fun ReceiptSheet(workspace: TabletWorkspace, shown: PosReceipt) {
                             Row(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
                                 Column(Modifier.weight(1f)) {
                                     TText(item.name, size = TType.detail, mono = true)
-                                    TText("${item.quantity} × ${MexicanText.currency(item.unitPrice)}", size = TType.detail, mono = true, color = colors.textSecondary)
+                                    // Dentro del papel: los colores del tema claro, no los de la hoja (en oscuro no se leían)
+                                    TText("${item.quantity} × ${MexicanText.currency(item.unitPrice)}", size = TType.detail, mono = true, color = LocalTpvcColors.current.textSecondary)
                                 }
                                 TText(MexicanText.currency(item.subtotal), Modifier.padding(start = 12.dp), size = TType.detail, mono = true)
                             }

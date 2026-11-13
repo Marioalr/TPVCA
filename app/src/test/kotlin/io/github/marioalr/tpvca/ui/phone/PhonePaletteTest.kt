@@ -56,7 +56,7 @@ class PhonePaletteTest {
         Triple("punto de «sincronizado»", { it.successDot }, { it.surface }),
         Triple("barras de ganancia", { it.accent }, { it.surface }),
         Triple("barras de ventas", { it.barSales }, { it.surface }),
-        Triple("barras de pérdida (huecas, con el borde rojo)", { it.danger }, { it.surface }),
+        Triple("barras de pérdida (sólidas en claro; huecas con el borde rojo en oscuro)", { it.danger }, { it.surface }),
         Triple("el borde de una barra de pérdida sobre su relleno", { it.danger }, { it.dangerSoft }),
         Triple("icono de un aviso de peligro", { it.danger }, { it.dangerSoft }),
         Triple("icono de un aviso de vigilar", { it.amber }, { it.amberSoft }),

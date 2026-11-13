@@ -110,6 +110,7 @@ object PhoneTags {
     const val PACIENTES = "phone-pacientes"
     const val CORTE = "phone-corte"
     const val PREVIEW = "phone-preview"
+    const val TICKET_PAPER = "phone-ticket-paper"
 
     // K4b: agendar
     const val SCHEDULE = "phone-schedule"

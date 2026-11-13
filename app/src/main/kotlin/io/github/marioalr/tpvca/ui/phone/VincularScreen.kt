@@ -62,7 +62,8 @@ fun VincularScreen(deviceSecure: Boolean, actions: LinkActions, onScan: () -> Un
                     .clip(RoundedCornerShape(20.dp))
                     // El visor de la cámara: oscuro también en el tema claro, como en el diseño
                     .background(PhonePalette.Light.text)
-                    .border(1.dp, PhoneColors.Border, RoundedCornerShape(20.dp))
+                    // En el oscuro el visor se confunde con la página: solo ahí lleva borde (el claro es el del diseño)
+                    .then(if (PhoneColors.current == PhonePalette.Dark) Modifier.border(1.dp, PhoneColors.Border, RoundedCornerShape(20.dp)) else Modifier)
                     .semantics(mergeDescendants = true) { role = Role.Button }
                     .clickable(enabled = deviceSecure, onClick = onScan)
                     .padding(16.dp)

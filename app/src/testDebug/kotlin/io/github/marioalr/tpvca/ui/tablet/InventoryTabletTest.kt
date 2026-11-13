@@ -468,4 +468,72 @@ class InventoryTabletTest {
         waitTag(TabletTags.KARDEX)
         waitFor { workspace.inventory.kardex != null }
     }
+
+    // ------------------------------------------------------------------ revisión independiente de K9b
+
+    /** El resumen de Lotes y «Por caducar» cuentan de hoy a 60 días, como `ExpiringSoonCount` de la PC (antes de hoy + 61). */
+    @Test
+    fun porVencerCuentaSesentaDias() {
+        enterConfig()
+        val before = workspace.inventory.summaries!!.batches
+        val omeprazol = product("MED-004")["SyncId"] as String
+        val engine = WriteEngine(store, { "tablet" }, MemoryFolioNumbers(), { null })
+        val today = workspace.today()
+        engine.receiveBatch(SyncIds.random(), omeprazol, "L-60", today.plusDays(60), 1, null, 1)
+        engine.receiveBatch(SyncIds.random(), omeprazol, "L-61", today.plusDays(61), 1, null, 1)
+        compose.runOnIdle { workspace.changed() }
+        waitFor { workspace.inventory.summaries?.batches != before }
+        val soon = Regex("(\\d+) por vencer").find(before)!!.groupValues[1].toInt()
+        assertTrue(workspace.inventory.summaries!!.batches.contains("${soon + 1} por vencer"))
+        compose.runOnIdle { workspace.inventory.expiringOnly = true }
+        compose.waitForIdle()
+        assertTrue(workspace.inventory.products().any { it.code == "MED-004" })
+    }
+
+    /** Dos productos iguales (mismo código y nombre, de dos equipos sin red) con stock bajo: la lista sugerida no se cae por llaves repetidas. */
+    @Test
+    fun laCompraSugeridaConDosProductosIgualesNoSeCae() {
+        val gasa = product("INS-001")
+        val twin = "10000000-0000-4000-8000-00000000beef"
+        val category = store.select("Products", listOf("SyncId", "CategorySyncId")).first { it["SyncId"] == gasa["SyncId"] }["CategorySyncId"]
+        LocalWriter(store, { "otro" }).create("Products", twin, mapOf("Code" to "INS-001", "Name" to gasa["Name"], "CategorySyncId" to category, "IsActive" to true, "CurrentStock" to 1L, "MinStock" to 5L))
+        show()
+        compose.onNodeWithTag(TabletTags.HUB_SUGGESTED).performClick()
+        waitTag(TabletTags.SUGGESTED)
+        waitFor { compose.onAllNodesWithText("Gasa estéril 10x10 cm").fetchSemanticsNodes().size == 2 }
+    }
+
+    /** Otro equipo cambia el contenido por paquete de 10 a 12 con la entrada abierta y sin tocar el campo: se queda 12. */
+    @Test
+    fun unaEntradaNoPisaElContenidoQueCambioOtroEquipo() {
+        val jeringa = product("INS-002")["SyncId"] as String
+        store.apply(StoreChanges(writes = listOf(io.github.marioalr.tpvca.sync.engine.RowWrite("Products", jeringa, mapOf("UnitsPerPackage" to 10L), isNew = false))))
+        enterConfig()
+        compose.onNodeWithTag(TabletTags.productEntry("INS-002")).performClick()
+        waitTag(TabletTags.QUICK_PANEL)
+        assertEquals("10", workspace.inventory.quick!!.unitsText)
+        LocalWriter(store, { "otro" }).edit("Products", jeringa, mapOf("UnitsPerPackage" to 12L))
+        compose.onNodeWithTag(TabletTags.QUICK_CONFIRM).performClick()
+        gone(TabletTags.QUICK_PANEL)
+        assertEquals(12L, product("INS-002")["UnitsPerPackage"])
+        assertEquals(90L, product("INS-002")["CurrentStock"])
+    }
+
+    /** Salir de Configuración mientras un alta espera la sincronización rápida no la tira: se guarda y se avisa. */
+    @Test
+    fun salirMientrasGuardaTerminaElGuardadoYLoDice() {
+        enterConfig()
+        compose.onNodeWithTag(TabletTags.PRODUCT_NEW).performClick()
+        waitTag(TabletTags.PRODUCT_EDITOR)
+        field("codigo", "MED-888")
+        field("nombre", "Loratadina 10 mg")
+        quickGate = CompletableDeferred()
+        compose.onNodeWithTag(TabletTags.PRODUCT_SAVE).performClick()
+        compose.waitForIdle()
+        compose.runOnIdle { workspace.goHub() }
+        assertNull(workspace.inventory.editor)
+        quickGate!!.complete(Unit)
+        waitText("\"Loratadina 10 mg\" guardado.")
+        assertEquals(1, products().count { it["Code"] == "MED-888" })
+    }
 }

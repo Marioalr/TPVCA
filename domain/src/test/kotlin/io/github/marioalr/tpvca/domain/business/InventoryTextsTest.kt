@@ -124,4 +124,23 @@ class InventoryTextsTest {
         assertEquals("≈ 1 sin costo capturado: se estiman con el 65 % del precio de venta.", InventoryTexts.estimatedCostNote(items))
         assertEquals("Lista_Compras_Sugerida_20261113_093005.csv", InventoryTexts.suggestedPurchaseFileName(LocalDateTime.of(2026, 11, 13, 9, 30, 5)))
     }
+
+    /** «Por caducar» es de 60 días, como `ExpirationWarningDays` de la PC (también los ya vencidos); no los 30 de las alertas del inicio. */
+    @Test
+    fun porCaducarSonSesentaDias() {
+        fun lot(days: Long) = ProductBatch(productId = 1, expirationDate = today.plusDays(days), quantity = 1)
+        val p = Product(id = 1, name = "x")
+        fun expiring(days: Long) = InventoryTexts.filterProducts(listOf(p), "", null, false, true, today) { listOf(lot(days)) }.isNotEmpty()
+        assertTrue(expiring(60))
+        assertTrue(expiring(-3))
+        assertTrue(!expiring(61))
+        assertEquals(60L, InventoryTexts.EXPIRATION_WARNING_DAYS)
+    }
+
+    /** Cada renglón de la compra sugerida lleva el `SyncId` de su producto: dos con el mismo código y nombre (dados de alta en dos equipos) no comparten llave. */
+    @Test
+    fun laCompraSugeridaLlevaElSyncIdDeCadaProducto() {
+        val items = SuggestedPurchaseRules.build(listOf(Product(syncId = "a", code = "X", name = "Gasa", minStock = 5), Product(syncId = "b", code = "X", name = "Gasa", minStock = 5)))
+        assertEquals(listOf("a", "b"), items.map { it.productSyncId }.sorted())
+    }
 }

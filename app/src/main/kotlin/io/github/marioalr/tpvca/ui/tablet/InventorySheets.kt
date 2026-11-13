@@ -419,7 +419,7 @@ internal fun SuggestedPurchasesSheet(workspace: TabletWorkspace, sheet: Suggeste
                 val wide = maxWidth >= 900.dp
                 LazyColumn(Modifier.fillMaxSize()) {
                     item(key = "encabezado") { SuggestedRow(null, wide) }
-                    items(sheet.items, key = { it.productCode + "|" + it.productName }) { SuggestedRow(it, wide) }
+                    itemsIndexed(sheet.items, key = { index, item -> item.productSyncId.ifEmpty { "renglon-$index" } }) { _, item -> SuggestedRow(item, wide) }
                     if (sheet.items.isEmpty()) item(key = "vacia") { TText("No hay productos con stock bajo.", Modifier.fillMaxWidth().padding(24.dp), color = colors.textSecondary, align = TextAlign.Center) }
                 }
             }

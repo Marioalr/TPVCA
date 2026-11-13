@@ -1184,10 +1184,10 @@ class WriteEngine(
     }
 
     /**
-     * «Entrada» de la lista de productos (`ConfirmQuickActionAsync`): una entrada por compra sin lote con el costo de ese momento y, si cambió, el contenido por paquete. **En una sola transacción**: la PC
+     * «Entrada» de la lista de productos (`ConfirmQuickActionAsync`): una entrada por compra sin lote con el costo de ese momento y, si el médico lo cambió ([unitsPerPackage] no nulo), el contenido por paquete. **En una sola transacción**: la PC
      * guarda primero el producto completo como lo tenía la lista y después el movimiento; aquí solo cambia el contenido por paquete, junto con la entrada.
      */
-    fun registerEntry(productSyncId: String, quantity: Int, reason: String, unitsPerPackage: Int): Boolean = guarded {
+    fun registerEntry(productSyncId: String, quantity: Int, reason: String, unitsPerPackage: Int?): Boolean = guarded {
         requireInventory("registrar entradas")
         if (quantity <= 0) throw WriteRefused(WriteRefused.Reason.CONFLICT, "La cantidad debe ser mayor a cero.")
         store.transaction {
@@ -1196,7 +1196,7 @@ class WriteEngine(
             val now = protocolLocalNow()
             val writes = ArrayList<RowWrite>()
             val marks = ArrayList<OutboxMark>()
-            if (product.int("UnitsPerPackage") != unitsPerPackage) state.setUnitsPerPackage(productSyncId, unitsPerPackage)
+            if (unitsPerPackage != null && product.int("UnitsPerPackage") != unitsPerPackage) state.setUnitsPerPackage(productSyncId, unitsPerPackage)
             val cost = BusinessReportRules.costToRecord(domainProduct(product), individualUnits = false)?.toPlainString()
             addMovement(product, productSyncId, null, null, "EntradaCompra", quantity, quantity, now, reason, "Dr. Consulta", SyncIds.random(), writes, marks, cost)
             product["UpdatedAt"] = now

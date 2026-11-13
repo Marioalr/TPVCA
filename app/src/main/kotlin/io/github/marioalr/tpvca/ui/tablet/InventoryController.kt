@@ -392,7 +392,7 @@ class InventoryController internal constructor(private val workspace: TabletWork
         val soon = lots.count { !it.batch.expirationDate.isBefore(today) && it.batch.expirationDate.isBefore(today.plusDays(InventoryTexts.EXPIRATION_WARNING_DAYS + 1)) }
         return ConfigSummaries(
             inventory = if (low > 0) "${active.size} productos · $low con stock bajo" else "${active.size} productos",
-            // Así dice la PC, aunque cuenta 30 días (`ExpiringSoonCount`)
+            // `ExpiringSoonCount`: de hoy a 60 días (antes de hoy + 61)
             batches = if (expired > 0) "$expired vencidos · $soon por vencer" else if (soon > 0) "$soon por vencer en 60 días" else "Sin lotes por vencer",
             movements = if (movementsToday == 1) "1 movimiento hoy" else "$movementsToday movimientos hoy",
         )
@@ -470,17 +470,20 @@ class InventoryController internal constructor(private val workspace: TabletWork
             try {
                 // Un alta: antes, la sincronización rápida (3 s como máximo), para ver lo que otro equipo acaba de dar de alta (plan §4.6, K9b)
                 if (e.isNew) env.quickSync()
-                if (editor !== e) return@launch
+                // Ya empezó: aunque se haya salido de Configuración mientras tanto, se termina y se dice cómo quedó (nunca se tira en silencio)
                 val taken = withContext(io) { engine().isProductCodeTaken(values.code, if (e.isNew) null else syncId) }
                 if (taken) {
-                    if (editor === e) e.error = InventoryTexts.codeTaken(values.code)
+                    if (editor === e) e.error = InventoryTexts.codeTaken(values.code) else workspace.show("No se guardó «$savedName»: ${InventoryTexts.codeTaken(values.code)}", warning = true)
                     return@launch
                 }
                 withContext(io) { engine().saveProduct(values, syncId, e.isNew, e.originalStock) }
                 workspace.changed()
                 env.noteLocalWrite()
                 refresh()
-                if (editor !== e) return@launch
+                if (editor !== e) {
+                    workspace.show(InventoryTexts.saved(savedName))
+                    return@launch
+                }
                 if (e.isNew) {
                     e.reset()
                     e.syncId = SyncIds.random()
@@ -489,7 +492,8 @@ class InventoryController internal constructor(private val workspace: TabletWork
                     editor = null
                 }
             } catch (ex: Exception) {
-                if (editor === e) e.error = "Error al guardar el insumo: ${workspace.problem(ex)}"
+                val text = "Error al guardar el insumo: ${workspace.problem(ex)}"
+                if (editor === e) e.error = text else workspace.show("«$savedName»: $text", warning = true)
             } finally {
                 e.saving = false
             }
@@ -550,7 +554,9 @@ class InventoryController internal constructor(private val workspace: TabletWork
                     if (q.consumption) {
                         engine().registerConsumption(q.product.syncId, quantity, q.notes)
                     } else {
-                        engine().registerEntry(q.product.syncId, quantity, q.notes, InventoryTexts.unitsPerPackage(q.unitsText))
+                        // Solo si el médico cambió el contenido que vio al abrir (la PC compara con su copia de la lista): si no, lo que otro equipo cambió mientras tanto se queda
+                        val typed = InventoryTexts.unitsPerPackage(q.unitsText)
+                        engine().registerEntry(q.product.syncId, quantity, q.notes, typed.takeIf { it != q.product.effectiveUnitsPerPackage })
                         null
                     }
                 }
@@ -560,7 +566,8 @@ class InventoryController internal constructor(private val workspace: TabletWork
                 refresh()
                 StockReviewRules.warningText(listOfNotNull(shortage))?.let { workspace.show(it, warning = true) }
             } catch (ex: Exception) {
-                if (quick === q) q.error = "No se pudo registrar el movimiento:\n${workspace.problem(ex)}"
+                val text = "No se pudo registrar el movimiento:\n${workspace.problem(ex)}"
+                if (quick === q) q.error = text else workspace.show("${q.product.name}: $text", warning = true)
             } finally {
                 q.saving = false
             }
@@ -658,10 +665,8 @@ class InventoryController internal constructor(private val workspace: TabletWork
         scope.launch {
             try {
                 if (entry.duplicateWarning.isNotEmpty() && !workspace.ask("TPVC - Pedido ya ingresado", entry.duplicateWarning + "\n\n¿Ingresarlo de todos modos?")) return@launch
-                if (order !== entry) return@launch
-                // Da de alta productos: antes, la sincronización rápida, como el alta de un producto
+                // Da de alta productos: antes, la sincronización rápida, como el alta de un producto. Ya confirmado, se termina aunque se salga de Configuración, y se avisa cómo quedó
                 if (entry.hasNewProducts) env.quickSync()
-                if (order !== entry) return@launch
                 val receipt = SupplierReceipt(entry.supplier.trim(), entry.order?.orderNumber, entry.categoryForNew, entry.lines.map { it.toReceiptLine() })
                 val result = withContext(io) {
                     val done = engine().receiveSupplierOrder(receipt)
@@ -674,7 +679,8 @@ class InventoryController internal constructor(private val workspace: TabletWork
                 workspace.show(SupplierOrderTexts.received(entry.title, result))
                 if (order === entry) order = null
             } catch (ex: Exception) {
-                if (order === entry) entry.error = "No se ingresó nada: ${workspace.problem(ex)}"
+                val text = "No se ingresó nada: ${workspace.problem(ex)}"
+                if (order === entry) entry.error = text else workspace.show("${entry.title}: $text", warning = true)
             } finally {
                 entry.busy = false
             }
@@ -735,10 +741,11 @@ class InventoryController internal constructor(private val workspace: TabletWork
                 withContext(io) { engine().receiveBatch(form.syncId, product.syncId, form.number, expiration, quantity, form.notes, InventoryTexts.unitsPerPackage(form.unitsText)) }
                 workspace.changed()
                 env.noteLocalWrite()
-                if (newBatch === form) newBatch = null
+                if (newBatch === form) newBatch = null else workspace.show("Lote ${form.number.trim()} registrado.")
                 refresh()
             } catch (ex: Exception) {
-                if (newBatch === form) form.error = "No se pudo registrar el lote:\n${workspace.problem(ex)}"
+                val text = "No se pudo registrar el lote:\n${workspace.problem(ex)}"
+                if (newBatch === form) form.error = text else workspace.show("Lote ${form.number.trim()}: $text", warning = true)
             } finally {
                 form.saving = false
             }

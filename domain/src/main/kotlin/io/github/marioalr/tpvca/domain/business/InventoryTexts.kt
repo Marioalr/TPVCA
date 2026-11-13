@@ -66,6 +66,9 @@ object InventoryTexts {
 
     fun codeTaken(code: String): String = "El código '${code.trim()}' ya está registrado en el inventario. Debe ingresar un código diferente."
 
+    /** Se guardó con el panel ya cerrado (se salió de Configuración mientras guardaba). */
+    fun saved(name: String): String = "\"$name\" guardado."
+
     fun savedNew(name: String): String = "\"$name\" guardado. Puede registrar el siguiente."
 
     /** El código para comparar: sin espacios a los lados y en mayúsculas (como `IsProductCodeTakenAsync`). */
@@ -82,12 +85,12 @@ object InventoryTexts {
     fun productsSummary(count: Int, inventoryValue: BigDecimal): String =
         (if (count == 1) "1 producto" else "$count productos") + if (inventoryValue.signum() > 0) " · ${currency0(inventoryValue)} al costo en existencia" else ""
 
-    /** Los 30 días de «Por caducar» (`ExpirationWarningDays`). */
-    const val EXPIRATION_WARNING_DAYS = 30L
+    /** Los 60 días de «Por caducar» y del resumen de Lotes (`InventoryService.ExpirationWarningDays`). Las alertas del inicio y el aviso de un lote nuevo usan 30: son otra cosa. */
+    const val EXPIRATION_WARNING_DAYS = 60L
 
     /**
      * Los productos de la lista (`GetProductsAsync`): activos, por nombre (ordinal, como SQLite), de la categoría elegida, con stock bajo (con mínimo) y con algún lote disponible con piezas que vence en
-     * 30 días o menos. [batches] da los lotes abiertos de cada producto.
+     * 60 días o menos (también los ya vencidos). [batches] da los lotes abiertos de cada producto.
      */
     fun filterProducts(
         products: List<Product>,

@@ -186,6 +186,16 @@ class InventoryWritesTest {
         assertEquals(io.github.marioalr.tpvca.sync.hrana.HranaValue.Integer(6L), cloud.admin("SELECT UnitsPerPackage FROM Products WHERE SyncId = ?", product).single()["UnitsPerPackage"])
     }
 
+    /** Sin cambiar el contenido en el formulario, la entrada no pisa el que otro equipo dejó mientras tanto. */
+    @Test
+    fun unaEntradaSinTocarElContenidoNoLoPisa() {
+        store.apply(StoreChanges(writes = listOf(io.github.marioalr.tpvca.sync.engine.RowWrite("Products", product, mapOf("UnitsPerPackage" to 12L), isNew = false))))
+        clearOutbox()
+        assertTrue(writes.registerEntry(product, 2, "Adquisición de insumos", null))
+        assertEquals(12L, row("Products", product)["UnitsPerPackage"])
+        assertEquals(5L, row("Products", product)["CurrentStock"])
+    }
+
     @Test
     fun registrarUnLoteUnaSolaVezAunqueSeToqueDosVeces() {
         val lot = SyncIds.random()

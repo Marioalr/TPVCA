@@ -54,6 +54,8 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.traversalIndex
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -201,7 +203,8 @@ fun InicioScreen(env: PhoneEnv, workspace: PhoneWorkspace, status: PhoneStatus, 
     var menuOpen by remember { mutableStateOf(false) }
     val swipe = rememberEdgeSwipe(towardsTop = true, scroll) { if (!menuOpen) onOpenNegocio() }
 
-    Box(Modifier.fillMaxSize().testTag(PhoneTags.INICIO)) {
+    // TalkBack: con el menú + abierto, después del botón que lo cerró sigue el menú (no la barra de abajo)
+    Box(Modifier.fillMaxSize().semantics { isTraversalGroup = true }.testTag(PhoneTags.INICIO)) {
         Column(
             Modifier
                 .fillMaxSize()
@@ -388,7 +391,8 @@ private fun QuickMenu(nav: PhoneNav, onSchedule: () -> Unit, onClose: () -> Unit
                 .shadow(12.dp, RoundedCornerShape(16.dp))
                 .clip(RoundedCornerShape(16.dp))
                 .background(PhoneColors.Surface)
-                .sheetPane(PhoneText.QUICK_ACTIONS, onClose),
+                .sheetPane(PhoneText.QUICK_ACTIONS, onClose)
+                .semantics { traversalIndex = 1f },
         ) {
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable {

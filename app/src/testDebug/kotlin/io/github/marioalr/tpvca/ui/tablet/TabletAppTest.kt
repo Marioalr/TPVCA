@@ -193,13 +193,16 @@ class TabletAppTest {
     // ------------------------------------------------------------------ navegación
 
     @Test
-    fun elInicioTieneLasTresTarjetasYSoloPacientesEntra() {
+    fun elInicioTieneLasTresTarjetasYConfiguracionTodaviaNoEntra() {
         show()
         compose.onNodeWithText("Consultorio Médico General").assertIsDisplayed()
         compose.onNodeWithText("Nueva Venta").assertIsDisplayed()
         compose.onNodeWithText("Configuración").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithText(NEXT_VERSION_TEXT, substring = true).fetchSemanticsNodes().isNotEmpty())
-        compose.onNodeWithContentDescription("Nueva Venta, en la siguiente versión").assertExists()
+        // K9: «Nueva Venta» ya entra; Configuración es de K9b
+        assertTrue(compose.onAllNodesWithContentDescription("Nueva Venta, en la siguiente versión").fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithContentDescription("Configuración, en la siguiente versión").assertExists()
+        compose.onNodeWithTag(TabletTags.HUB_POS).assertHasClickAction()
         compose.onNodeWithTag(TabletTags.HUB_PATIENTS).performClick()
         waitTag(TabletTags.HOME)
     }

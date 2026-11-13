@@ -39,4 +39,18 @@ class DomainRegexDeviceTest {
         assertEquals(BigDecimal("36.5"), vitals.temperature)
         assertEquals(BigDecimal("62"), vitals.weight)
     }
+
+    /** K9b: el correo del proveedor con ICU (el lookbehind acotado del IVA, `\b` y `\s` de Unicode). */
+    @Test
+    fun elCorreoDelProveedor() {
+        val order = io.github.marioalr.tpvca.domain.business.SupplierOrderParser.parse(
+            "Número de Orden: #5175\nProducto\tSKU\tCantidad\tTotal\nVALCLAN 875/125MG C/14 TABS\tWAN014\t2\t$145.02\nResumen de la Compra\nSubtotal\t$145.02\nIVA\t$0.00\nTotal + IVA\t$145.02",
+        )
+        assertEquals("5175", order.orderNumber)
+        assertEquals(1, order.lines.size)
+        assertEquals(BigDecimal("72.51"), order.lines.single().unitCost)
+        assertEquals(0, BigDecimal.ZERO.compareTo(order.tax))
+        assertEquals(true, order.matchesEmailTotal)
+        assertEquals("Caja con 14 tabletas", io.github.marioalr.tpvca.domain.business.SupplierOrderParser.presentationOf("VALCLAN 875/125MG C/14 TABS"))
+    }
 }

@@ -162,6 +162,25 @@ Cómo difiere de la PC:
 - El consumo sin cobro que deja las existencias en negativo **se avisa**; la PC solo lo anota en su registro.
 - La entrada cambia el contenido por paquete junto con el movimiento, en una transacción, y no vuelve a guardar el resto del producto como estaba en la lista.
 
+## K9b, segunda mitad (panel, Negocio, servicios y equipos vinculados)
+
+Sin vectores nuevos: el panel y «Negocio» usan los de K1 (`business-summary`, `sales-by-type`, `best-sellers`, `purchases`, `supply-consumption`, `inventory-value`), el aviso del catálogo `duplicate-catalog.json` y *Equipos vinculados* `linked-device.json`. Pruebas propias:
+
+- `ClinicReader.dashboard` y `servicesCatalog` (`ClinicReaderTest`): las cuentas de `GetDashboardMetricsAsync` con sus límites (60 días, 8 renglones, desde hoy).
+- `WriteEngine.saveService`, `setServiceActive`, `deleteService` y el aviso del catálogo después de cada bajada (`ServicesWritesTest`, `:sync`). `HandoffService.listedDevices` (`HandoffServiceTest`).
+- Los textos de `LinkedDevice` que no trae el vector (`CodeText`, `PendingText`, `ApprovalText`, `NewTokenText`) y el orden de la lista (`LinkedDeviceTextsTest`). `MexicanText.currency0` (`C0`, `NetTextTest`).
+- Las pantallas: `ConfigTabletTest`.
+
+Cómo difiere de la PC:
+
+- **«Ventas de hoy» del panel suma también los tickets cancelados**, como la PC (`GetDashboardMetricsAsync` no filtra `IsCancelled`; el corte y «Negocio» sí los quitan). Se deja igual para que los dos equipos digan lo mismo; está reportado como posible error de la PC.
+- «Nuevo servicio» del punto de venta revisa el código como Configuración (la PC no lo revisa en esa hoja) y sugiere el siguiente con el mayor SERV-00N más uno (la PC usa el número de servicios más uno, que con huecos repite uno que ya existe). Su lista de categorías no trae «Todos» (la de la PC sí, y se podría guardar un servicio con categoría «Todos»).
+- «Desactivar» solo cambia `IsActive` (la PC vuelve a guardar el servicio entero con lo que tenía la lista: lo mismo, salvo lo que haya bajado mientras tanto).
+- Un número que no se lee en el precio o los minutos lo dice al guardar; en la PC el cuadro no lo acepta.
+- «Exportar CSV» de «Negocio» se comparte (en la tablet no hay Escritorio); el aviso dice el nombre del archivo.
+- *Equipos vinculados* no tiene botones de administrar la nube, y el aviso de la PC principal no ofrece reemplazarla. «Por ahora solo este equipo usa la nube» en lugar de «solo esta computadora».
+- En la gráfica de «Negocio», lo que en la PC es el cartelito al pasar el ratón por una barra aparece abajo al tocarla.
+
 ## Pendientes (con el paso que los porta)
 
 | Vector | Paso | Qué es |

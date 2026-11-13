@@ -158,6 +158,41 @@ class HandoffServiceTest {
         assertLiteralSql()
     }
 
+    /** *Equipos vinculados* de la tablet (K9b): todos menos los quitados, con el orden de la PC, quién es la principal y cuándo se anularon los tokens; solo SQL del contrato. */
+    @Test
+    fun equiposVinculadosConElOrdenDeLaPcSinLosQuitados() {
+        registered("device-pc", "Consultorio", "WindowsDesktop", "Windows", 1, 5)
+        registered("cel-1", "Moto G", "AndroidMobileAdmin", "Android", 1, 4000)
+        registered("tab-nueva", "Galaxy Tab A", "AndroidTablet", "Android", 1, 20)
+        registered("tab-quitada", "Tablet robada", "AndroidTablet", "Android", 1, 30)
+        approved("device-pc", "P1", "WindowsDesktop", "PC del consultorio")
+        approved("cel-1", "C1", "AndroidMobileAdmin", "Celular")
+        approved("device-tablet", "T1", "AndroidTablet", "Tablet del consultorio")
+        approved("tab-quitada", "T2", "AndroidTablet", "Tablet robada")
+        cloud.admin("UPDATE DeviceRegistry SET RevokedAtUtc = strftime('%Y-%m-%d %H:%M:%f','now') WHERE DeviceId = 'tab-quitada'")
+        cloud.admin("INSERT INTO _tpvc_meta (Key, Value) VALUES ('primaryDeviceId', 'device-pc')")
+        cloud.admin("INSERT INTO _tpvc_meta (Key, Value) VALUES ('tokensRotatedAtUtc', strftime('%Y-%m-%d %H:%M:%f','now','-1 hours'))")
+
+        val heartbeat = Heartbeat.statements(HeartbeatInfo("device-tablet", "Galaxy Tab S9", DeviceRole.AndroidTablet, "0.4.0", 2, null, "nonce-1"))
+        val list = tablet.listedDevices(heartbeat)
+        assertNotNull(list.heartbeatBefore)
+        assertEquals(listOf("device-tablet", "device-pc", "tab-nueva", "cel-1"), list.devices.map { it.deviceId })
+        val (self, pc, pending, phone) = list.devices
+        assertTrue(self.isThisDevice)
+        assertEquals("Código T1", self.codeText)
+        assertEquals("2 cambios sin subir", self.pendingText)
+        assertTrue(pc.isPrimary)
+        assertTrue(pending.isPendingApproval)
+        assertEquals("Sin código todavía", pending.codeText)
+        assertEquals("Pide entrar como tablet · verifique que la tablet muestre -NUEVA", pending.approvalText)
+        // El celular no se conecta desde que se anularon los tokens
+        assertTrue(phone.needsNewToken)
+        assertTrue(phone.newTokenText.startsWith("Pegue el token nuevo en este equipo o lea con él el QR de esta PC: no se conecta desde que se anularon los tokens, el "))
+        // Compañeros para la cadencia: solo la PC (el celular no lleva consultas y la nueva no está aprobada)
+        assertEquals(1, list.peerCount)
+        assertLiteralSql()
+    }
+
     @Test
     fun laCadenciaVaRapidoEnPacientesConCompaneroYSeEspaciaSinRed() {
         var now = 0L

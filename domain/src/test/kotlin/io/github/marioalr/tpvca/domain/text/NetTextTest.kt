@@ -18,6 +18,16 @@ class NetTextTest {
         assertEquals(28, NetDecimal.divide(d("1"), d("3")).precision())
     }
 
+    /** `C0` de es-MX (el panel y los resúmenes de Configuración): sin centavos, el punto medio lejos del cero, miles con coma. */
+    @Test
+    fun monedaSinCentavos() {
+        assertEquals("$1,235", MexicanText.currency0(d("1234.50")))
+        assertEquals("$1,234", MexicanText.currency0(d("1234.49")))
+        assertEquals("$0", MexicanText.currency0(d("0")))
+        assertEquals("-$13", MexicanText.currency0(d("-12.5")))
+        assertEquals("$1,000,000", MexicanText.currency0(d("999999.5")))
+    }
+
     @Test
     fun redondearNoAgregaCeros() {
         assertEquals("12.5", NetDecimal.text(NetDecimal.round(d("12.5"), 2)))

@@ -685,7 +685,8 @@ fun TicketScreen(env: PhoneEnv, saleSyncId: String, nav: PhoneNav) {
                         }
                     }
                     if (failed) PText(PhoneText.SHARE_FAILED, size = 12.sp, color = PhoneColors.Danger)
-                    PCard(padding = 12.dp) {
+                    // El ticket es papel: claro también en el tema oscuro
+                    io.github.marioalr.tpvca.ui.theme.LightDocument { PCard(padding = 12.dp) {
                         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
                             // 42 columnas: la letra de ancho fijo se ajusta para que quepan, también en 360 dp
                             val size = with(androidx.compose.ui.platform.LocalDensity.current) { (maxWidth.toPx() / 42f / 0.6f).toSp() }
@@ -694,7 +695,7 @@ fun TicketScreen(env: PhoneEnv, saleSyncId: String, nav: PhoneNav) {
                                 style = androidx.compose.ui.text.TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = size, color = PhoneColors.Text),
                             )
                         }
-                    }
+                    } }
                 }
             }
         }

@@ -212,6 +212,8 @@ fun TButton(
     tag: String? = null,
     color: Color? = null,
     description: String? = null,
+    /** Por qué está deshabilitado, para TalkBack (la pantalla lo dice en su aviso): con [enabled] en `false`, se lee junto al botón. */
+    disabledReason: String? = null,
 ) {
     val colors = LocalTpvcColors.current
     val base = look(kind, colors)
@@ -232,6 +234,7 @@ fun TButton(
         }
     } else {
         m.clickable(enabled = enabled, role = Role.Button, onClick = onClick).let { if (description != null) it.semantics { contentDescription = description } else it }
+            .let { if (!enabled && !disabledReason.isNullOrBlank()) it.semantics { stateDescription = "deshabilitado: $disabledReason" } else it }
     }
     if (tag != null) m = m.testTag(tag)
     Row(m.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {

@@ -229,13 +229,13 @@ private fun TopBar(workspace: TabletWorkspace, draft: ConsultationDraft) {
             // «Enviar a…» (K8): solo con la nube vinculada, y deshabilitado mientras la última revisión no llegó a la nube
             val handoff = workspace.handoff
             if (handoff.showsSendButton) {
-                TButton("Enviar a…", handoff::openSendSheet, enabled = handoff.canSend, tag = TabletTags.HANDOFF_SEND)
+                TButton("Enviar a…", handoff::openSendSheet, enabled = handoff.canSend, tag = TabletTags.HANDOFF_SEND, disabledReason = if (handoff.canSend) null else consultation.readOnlyNotice ?: handoff.sendHint.ifEmpty { null })
                 if (handoff.sendHint.isNotEmpty()) TCaption(handoff.sendHint, color = colors.warningText)
             }
             // Enviada a otro equipo: se ve, pero aquí no se descarta ni se termina
             if (!draft.isHandedOff) {
                 TButton("Descartar", consultation::discard, kind = TButtonKind.DangerGhost, tag = TabletTags.CONSULTATION_DISCARD)
-                TButton("Terminar consulta", consultation::finalizeConsultation, kind = TButtonKind.Primary, enabled = !consultation.readOnly, tag = TabletTags.CONSULTATION_FINISH)
+                TButton("Terminar consulta", consultation::finalizeConsultation, kind = TButtonKind.Primary, enabled = !consultation.readOnly, tag = TabletTags.CONSULTATION_FINISH, disabledReason = consultation.readOnlyNotice)
             }
         }
         TDivider()
@@ -374,8 +374,8 @@ private fun Sections(workspace: TabletWorkspace, draft: ConsultationDraft) {
     Section(workspace, draft, 5, "Tratamiento, receta e indicaciones", draft.treatmentPlan) { Treatment(workspace, draft, readOnly) }
     Section(workspace, draft, 6, "Laboratorio", LabOrderRules.summary(draft.labOrder.studies)) { LabOrderSection(workspace, draft, readOnly) }
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        TButton("Agendar próxima cita", workspace::scheduleForChart, enabled = !readOnly, icon = TIcons.Calendar)
-        if (!draft.isHandedOff) TButton("Terminar consulta", consultation::finalizeConsultation, kind = TButtonKind.Primary, enabled = !readOnly)
+        TButton("Agendar próxima cita", workspace::scheduleForChart, enabled = !readOnly, icon = TIcons.Calendar, disabledReason = consultation.readOnlyNotice)
+        if (!draft.isHandedOff) TButton("Terminar consulta", consultation::finalizeConsultation, kind = TButtonKind.Primary, enabled = !readOnly, disabledReason = consultation.readOnlyNotice)
     }
 }
 

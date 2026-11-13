@@ -96,6 +96,10 @@ fun TpvcColors.toColorScheme(): ColorScheme {
     )
 }
 
+/** Un documento en la pantalla (el ticket como el papel térmico): claro también en el tema oscuro, porque es papel. Los PDF ya lo son. */
+@Composable
+fun LightDocument(content: @Composable () -> Unit) = TpvcTheme(TpvcThemes.claro, content)
+
 /**
  * Tema de la app. Sin una elección guardada (Apariencia llega con K9b), sigue el modo del sistema: claro u oscuro de la PC con
  * el acento «Azul consultorio».

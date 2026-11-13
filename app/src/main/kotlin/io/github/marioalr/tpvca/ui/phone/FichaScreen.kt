@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -302,7 +303,8 @@ private fun Summary(env: PhoneEnv, patient: Patient, data: FichaData, today: Loc
 
 @Composable
 private fun Vital(value: String, label: String, modifier: Modifier) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    // TalkBack lo lee de una vez y en orden: «Presión: 120/80», no el número y luego el nombre
+    Column(modifier.clearAndSetSemantics { contentDescription = "$label: $value" }, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         FigureText(value, 17.sp, weight = FontWeight.SemiBold)
         PText(label, size = 11.sp, color = PhoneColors.Muted)
     }

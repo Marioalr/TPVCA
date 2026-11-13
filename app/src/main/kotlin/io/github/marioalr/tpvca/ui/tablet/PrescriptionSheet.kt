@@ -136,7 +136,7 @@ private fun Capture(workspace: TabletWorkspace) {
 internal fun PrescriptionPreviewButton(workspace: TabletWorkspace, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val consultation = workspace.consultation
-    TButton("Vista previa", { consultation.prescription.openPreview(context) }, modifier, icon = TIcons.File, enabled = !consultation.readOnly, tag = SheetTags.PREVIEW)
+    TButton("Vista previa", { consultation.prescription.openPreview(context) }, modifier, icon = TIcons.File, enabled = !consultation.readOnly, tag = SheetTags.PREVIEW, disabledReason = consultation.readOnlyNotice)
 }
 
 /** Las indicaciones frecuentes debajo de un campo «Indicación». */

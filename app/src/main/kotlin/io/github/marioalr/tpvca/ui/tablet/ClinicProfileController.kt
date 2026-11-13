@@ -60,6 +60,10 @@ class ClinicProfileController internal constructor(private val workspace: Tablet
     var saving by mutableStateOf(false)
         private set
 
+    /** Cuántas imágenes elegidas se están leyendo: mientras tanto «Guardar» espera (si no, la imagen se perdería con un «guardado» en pantalla). */
+    var readingImages by mutableStateOf(0)
+        private set
+
     /** Las imágenes que se ven (las guardadas o las recién elegidas). */
     var crest by mutableStateOf<ByteArray?>(null)
         private set
@@ -143,7 +147,7 @@ class ClinicProfileController internal constructor(private val workspace: Tablet
 
     /** «Editar» abre los campos; «Guardar» revisa lo mínimo y guarda todo junto (`ToggleEditOrSave`). */
     fun toggleEditOrSave() {
-        if (saving) return
+        if (saving || readingImages > 0) return
         if (!isEditing) {
             // Una lectura que iba en camino ya no deja la pantalla bloqueada ni cambia lo que se va a editar
             request++
@@ -187,8 +191,13 @@ class ClinicProfileController internal constructor(private val workspace: Tablet
     /** «Elegir…»: una imagen PNG o JPG de hasta 10 MB; queda en la receta al presionar «Guardar». [read] lee el archivo (fuera del hilo principal). */
     fun chooseImage(kind: LetterheadKind, read: () -> ByteArray?) {
         if (!isEditing || saving) return
+        readingImages++
         scope.launch {
-            val bytes = withContext(io) { runCatching(read).getOrNull() }
+            val bytes = try {
+                withContext(io) { runCatching(read).getOrNull() }
+            } finally {
+                readingImages--
+            }
             if (!isEditing) return@launch
             if (bytes == null || ClinicProfileRules.imageProblem(bytes) != null) {
                 status = "Elija una imagen PNG o JPG de hasta 10 MB."

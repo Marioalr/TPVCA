@@ -55,6 +55,7 @@ class ExcelImportTest {
         assertEquals(LocalDate.of(2026, 3, 9), ExcelImport.recetaDate("9/3/2026", today))
         assertEquals(LocalDate.of(2026, 3, 9), ExcelImport.recetaDate("09/03/2026 00:00:00", today))
         assertEquals(today, ExcelImport.recetaDate("pronto", today))
+        assertNull(ExcelImport.parseRecetaDate("pronto"))
     }
 
     @Test
@@ -104,5 +105,47 @@ class ExcelImportTest {
         assertTrue(error is XlsxException)
         assertEquals(27, Xlsx.columnIndex("AA"))
         assertEquals(1, Xlsx.columnIndex("a"))
+    }
+
+    /** Revisión de #13: las fechas escritas como las lee `DateTime.TryParse` con es-MX; lo que no se lee es `null` (no hoy en silencio). */
+    @Test
+    fun fechasEscritasComoEnLaPc() {
+        assertEquals(LocalDate.of(2026, 1, 15), ExcelImport.parseRecetaDate("15 de enero de 2026"))
+        assertEquals(LocalDate.of(2026, 1, 15), ExcelImport.parseRecetaDate("15/ene/2026"))
+        assertEquals(LocalDate.of(2026, 1, 15), ExcelImport.parseRecetaDate("15-Ene.-2026"))
+        assertEquals(LocalDate.of(2026, 9, 3), ExcelImport.parseRecetaDate("Jueves, 3 de septiembre del 2026"))
+        assertEquals(LocalDate.of(2026, 1, 15), ExcelImport.parseRecetaDate("15 ENERO 26"))
+        assertEquals(LocalDate.of(1998, 2, 1), ExcelImport.parseRecetaDate("1/2/98"))
+        assertEquals(LocalDate.of(2026, 1, 15), ExcelImport.parseRecetaDate("2026-01-15 10:30"))
+        assertEquals(LocalDate.of(2026, 1, 15), ExcelImport.parseRecetaDate("15/01/2026 10:30 a. m."))
+        assertNull(ExcelImport.parseRecetaDate("31 de febrero de 2026"))
+        assertNull(ExcelImport.parseRecetaDate("el martes pasado"))
+        assertNull(ExcelImport.parseRecetaDate("12"))
+    }
+
+    /** Revisión de #13: fuera de los límites de Excel se rechaza (y el número de columna no se desborda). */
+    @Test
+    fun losLimitesDeExcel() {
+        assertEquals(16_384, Xlsx.columnIndex("XFD"))
+        assertEquals(16_385, Xlsx.columnIndex("XFE"))
+        assertEquals(16_385, Xlsx.columnIndex("ZZZZZZZZZZZZZZZZ"))
+        val sheet = XlsxSheet("x")
+        sheet.set(1_048_576, 16_384, "ok", null)
+        assertTrue(runCatching { sheet.set(1_048_577, 1, "x", null) }.exceptionOrNull() is XlsxException)
+        assertTrue(runCatching { sheet.set(1, 16_385, "x", null) }.exceptionOrNull() is XlsxException)
+    }
+
+    /** Revisión de #13: un libro con DTD o entidades (la «mil millones de risas») se rechaza antes de analizarlo. */
+    @Test
+    fun unaParteConDtdSeRechaza() {
+        val out = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry("xl/workbook.xml"))
+            zip.write("""<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY lol "lol"><!ENTITY lol2 "&lol;&lol;&lol;">]><workbook>&lol2;</workbook>""".toByteArray())
+            zip.closeEntry()
+        }
+        val error = runCatching { Xlsx.read(out.toByteArray()) }.exceptionOrNull()
+        assertTrue(error is XlsxException)
+        assertEquals("El archivo trae definiciones que un libro de Excel no usa; no se importa.", error!!.message)
     }
 }

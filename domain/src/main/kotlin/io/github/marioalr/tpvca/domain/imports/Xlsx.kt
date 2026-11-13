@@ -25,6 +25,8 @@ class XlsxSheet(val name: String) {
     val images = ArrayList<XlsxImage>()
 
     internal fun set(row: Int, col: Int, value: String, formula: String?) {
+        // Los límites de Excel: una celda más allá es un archivo dañado (y recorrerlo no terminaría)
+        if (row !in 1..Xlsx.MAX_ROWS || col !in 1..Xlsx.MAX_COLUMNS) throw XlsxException(Xlsx.OUT_OF_BOUNDS)
         if (value.isNotEmpty()) values[row to col] = value
         if (!formula.isNullOrEmpty()) formulas[row to col] = formula
         maxRow = maxOf(maxRow, row)
@@ -73,8 +75,18 @@ object Xlsx {
     private const val SHEET_DRAWING = "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
     private const val DRAWING_MAIN = "http://schemas.openxmlformats.org/drawingml/2006/main"
 
-    /** Lo más que se descomprime de un libro: un catálogo del consultorio pesa unos cuantos MB; esto ataja un archivo dañado o malicioso. */
-    const val MAX_UNZIPPED_BYTES = 200L * 1024 * 1024
+    /** Lo más que se descomprime de un libro: un catálogo del consultorio pesa unos cuantos MB; esto ataja un archivo dañado o malicioso sin agotar la memoria de la tablet. */
+    const val MAX_UNZIPPED_BYTES = 30L * 1024 * 1024
+
+    /** Lo más que se lee del archivo elegido. */
+    const val MAX_FILE_BYTES = 25L * 1024 * 1024
+
+    /** Los límites de una hoja de Excel: 1,048,576 filas y 16,384 columnas (XFD). */
+    const val MAX_ROWS = 1_048_576
+    const val MAX_COLUMNS = 16_384
+
+    const val OUT_OF_BOUNDS = "El libro tiene una celda fuera de los límites de Excel; puede estar dañado."
+    const val TOO_BIG = "El archivo es demasiado grande para importarlo en la tablet (hasta 25 MB). Quite las hojas o imágenes que no hacen falta, o impórtelo en la PC."
 
     private val COLUMN_LETTERS = Regex("^[A-Za-z]+")
 
@@ -95,7 +107,7 @@ object Xlsx {
             val doc = parse(content)
             var nextRow = 0
             for (rowElement in elements(doc.documentElement, MAIN, "row", deep = true)) {
-                val rowNumber = rowElement.getAttribute("r").toIntOrNull() ?: (nextRow + 1)
+                val rowNumber = rowElement.getAttribute("r").let { if (it.isEmpty()) nextRow + 1 else it.toIntOrNull() ?: throw XlsxException(OUT_OF_BOUNDS) }
                 nextRow = rowNumber
                 var nextCol = 0
                 for (cell in elements(rowElement, MAIN, "c")) {
@@ -112,11 +124,25 @@ object Xlsx {
         return sheets
     }
 
-    /** "A" → 1, "Z" → 26, "AA" → 27. */
+    /** "A" → 1, "Z" → 26, "AA" → 27. Más allá de XFD regresa [MAX_COLUMNS] + 1 (sin desbordarse). */
     fun columnIndex(letters: String): Int {
         var index = 0
-        for (c in letters.uppercase()) if (c in 'A'..'Z') index = index * 26 + (c - 'A' + 1)
+        for (c in letters.uppercase()) {
+            if (c !in 'A'..'Z') continue
+            index = index * 26 + (c - 'A' + 1)
+            if (index > MAX_COLUMNS) return MAX_COLUMNS + 1
+        }
         return index
+    }
+
+    /** Una parte con DTD o entidades no es de un libro de Excel: se rechaza antes de analizarla (el analizador de Android no siempre deja apagarlas). */
+    private fun rejectDoctype(content: ByteArray) {
+        val text = if (content.size >= 2 && ((content[0] == 0xFE.toByte() && content[1] == 0xFF.toByte()) || (content[0] == 0xFF.toByte() && content[1] == 0xFE.toByte()))) {
+            String(content, Charsets.UTF_16)
+        } else {
+            String(content, Charsets.ISO_8859_1)
+        }
+        if (text.contains("<!DOCTYPE", ignoreCase = true) || text.contains("<!ENTITY", ignoreCase = true)) throw XlsxException("El archivo trae definiciones que un libro de Excel no usa; no se importa.")
     }
 
     private fun unzip(bytes: ByteArray): Map<String, ByteArray> {
@@ -133,7 +159,7 @@ object Xlsx {
                         val n = zip.read(buffer)
                         if (n < 0) break
                         total += n
-                        if (total > MAX_UNZIPPED_BYTES) throw XlsxException("El libro de Excel es demasiado grande para importarlo.")
+                        if (total > MAX_UNZIPPED_BYTES) throw XlsxException(TOO_BIG)
                         out.write(buffer, 0, n)
                     }
                     entries[entry.name.trimStart('/')] = out.toByteArray()
@@ -147,6 +173,7 @@ object Xlsx {
     }
 
     private fun parse(content: ByteArray): Document {
+        rejectDoctype(content)
         val factory = DocumentBuilderFactory.newInstance()
         factory.isNamespaceAware = true
         factory.isExpandEntityReferences = false
@@ -270,7 +297,7 @@ object Xlsx {
         }
     }
 
-    private fun anchorIndex(marker: Element?, name: String): Int = elements(marker, SHEET_DRAWING, name).firstOrNull()?.textContent?.trim()?.toIntOrNull() ?: 0
+    private fun anchorIndex(marker: Element?, name: String): Int = (elements(marker, SHEET_DRAWING, name).firstOrNull()?.textContent?.trim()?.toIntOrNull() ?: 0).coerceIn(0, MAX_ROWS)
 
     /** El recorte en milésimas de por ciento ("50441" = 50.441 %) como fracción entre 0 y 1. */
     private fun cropFraction(srcRect: Element?, side: String): Double =

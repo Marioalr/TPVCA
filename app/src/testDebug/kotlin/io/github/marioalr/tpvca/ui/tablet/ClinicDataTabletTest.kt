@@ -65,6 +65,10 @@ class ClinicDataTabletTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var quickGate: CompletableDeferred<Unit>? = null
     private var quickSyncs = 0
+    private var importSyncs = 0
+
+    /** Lo que regresa la sincronización antes de importar: `null` es que terminó bien. */
+    private var importSync: String? = null
     private val onMainThread = java.util.concurrent.atomic.AtomicInteger()
 
     private fun checkThread() {
@@ -93,6 +97,7 @@ class ClinicDataTabletTest {
                 noteLocalWrite = {},
                 refreshNow = {},
                 isOnline = { false },
+                syncBeforeImport = { importSyncs++; importSync },
             ),
             scope,
         )
@@ -196,39 +201,86 @@ class ClinicDataTabletTest {
     // ------------------------------------------------------------------ Respaldos y datos
 
     @Test
-    fun importarElLibroInventadoEsperaLaNubeUnaVezYDiceLoQueEntro() {
+    fun importarMuestraQueCambiaPideConfirmarYEscribeTodoJunto() {
         open("Data", TabletTags.DATA)
         compose.onNodeWithText("Importar catálogo de Excel").assertExists()
+        // El paciente de la receta ya existe con otra edad: el resumen dice qué se le reemplaza
+        val ana = store.select("Patients", listOf("SyncId", "FullName")).first()
+        val name = ana["FullName"] as String
         var reads = 0
-        compose.runOnIdle { workspace.data.open(ImportFile("Catálogo del consultorio.xlsx", "12 KB") { reads++; TestWorkbook.clinic(patient = "Paciente Nuevo Ejemplo") }) }
-        waitTag(TabletTags.IMPORT_SHEET)
-        compose.onNodeWithText("Se agregan o actualizan medicamentos, plantillas de receta y dosis pediátricas.").assertExists()
-        quickGate = CompletableDeferred()
+        compose.runOnIdle { workspace.data.open(ImportFile("Catálogo del consultorio.xlsx", "12 KB") { reads++; TestWorkbook.clinic(patient = name) }) }
+        waitTag(TabletTags.IMPORT_PREVIEW)
+        assertEquals(1, importSyncs)
+        assertEquals(1, reads)
+        compose.onNodeWithText(io.github.marioalr.tpvca.domain.imports.ExcelImport.NO_BACKUP_WARNING).assertExists()
+        compose.onNodeWithText("El expediente de «$name» ya existe (encontrado por su nombre): se reemplazan", substring = true).assertExists()
+        compose.onNodeWithText("Médico en el perfil: «Dra. Nombre de Prueba» → «Dra. Ejemplo Prueba Ruiz»", substring = true).assertExists()
+        // Nada escrito todavía
+        assertEquals("Dra. Nombre de Prueba", profile()!!["DoctorName"])
         compose.onNodeWithTag(TabletTags.IMPORT_RUN).performClick()
         compose.runOnIdle { workspace.data.execute() }
-        // Mientras importa no se cierra (tampoco con Atrás)
-        compose.runOnIdle { workspace.back() }
-        assertTrue(workspace.data.sheetOpen)
-        assertEquals(1, quickSyncs)
-        quickGate!!.complete(Unit)
         waitTag(TabletTags.IMPORT_RESULT)
-        assertEquals(1, reads)
         waitText("✓ Catálogo procesado:")
-        compose.onNodeWithText("Perfil del médico: Dra. Ejemplo Prueba Ruiz", substring = true).assertExists()
+        assertEquals(1, reads)
         assertEquals("Dra. Ejemplo Prueba Ruiz", profile()!!["DoctorName"])
-        assertTrue(store.select("Patients", listOf("FullName")).any { it["FullName"] == "Paciente Nuevo Ejemplo" })
+        assertEquals(1, store.select("Patients", listOf("FullName")).count { it["FullName"] == name })
         compose.onNodeWithTag(TabletTags.IMPORT_CLOSE).performClick()
         gone(TabletTags.IMPORT_SHEET)
+    }
+
+    @Test
+    fun sinSincronizarNoSeImportaNada() {
+        open("Data", TabletTags.DATA)
+        importSync = "sin conexión"
+        val before = store.select("Products", listOf("SyncId")).size
+        compose.runOnIdle { workspace.data.open(ImportFile("Catálogo.xlsx", "") { TestWorkbook.clinic() }) }
+        waitText("No se importó nada: antes de importar la tablet sincroniza con la nube, y no se pudo (sin conexión).")
+        assertEquals(before, store.select("Products", listOf("SyncId")).size)
+    }
+
+    /** Revisión de #13: sin el código del equipo no hay folio para el expediente nuevo, y entonces no se escribe nada (antes quedaban el catálogo y el perfil). */
+    @Test
+    fun siNoHayFolioParaElExpedienteNoQuedaNadaAMedias() {
+        open("Data", TabletTags.DATA)
+        compose.runOnIdle { store.apply(io.github.marioalr.tpvca.sync.engine.StoreChanges(metaRemoved = setOf(SyncEngine.DEVICE_CODE))) }
+        val before = store.select("Products", listOf("SyncId")).size
+        compose.runOnIdle { workspace.data.open(ImportFile("Catálogo.xlsx", "") { TestWorkbook.clinic(patient = "Paciente Nuevo Ejemplo") }) }
+        waitTag(TabletTags.IMPORT_PREVIEW)
+        compose.runOnIdle { workspace.data.execute() }
+        waitTag(TabletTags.IMPORT_RESULT)
+        assertTrue(workspace.data.outcome!!.message.startsWith("No se importó nada: Sin conexión, este equipo todavía no tiene su código"))
+        assertEquals(before, store.select("Products", listOf("SyncId")).size)
+        assertEquals("Dra. Nombre de Prueba", profile()!!["DoctorName"])
+        assertTrue(store.select("Patients", listOf("FullName")).none { it["FullName"] == "Paciente Nuevo Ejemplo" })
     }
 
     @Test
     fun unFormatoQueNoSeImportaLoDice() {
         open("Data", TabletTags.DATA)
         compose.runOnIdle { workspace.data.open(ImportFile("receta.xls", "") { ByteArray(0) }) }
-        compose.onNodeWithTag(TabletTags.IMPORT_RUN).performClick()
         waitText("Formato no soportado (.xls).")
+        compose.runOnIdle { workspace.data.close() }
         compose.runOnIdle { workspace.data.open(ImportFile("roto.xlsx", "") { "no es un libro".toByteArray() }) }
-        compose.onNodeWithTag(TabletTags.IMPORT_RUN).performClick()
-        waitText("Error al procesar el archivo: El archivo no es un libro de Excel válido.")
+        waitText("No se importó nada. Error al procesar el archivo: El archivo no es un libro de Excel válido.")
+    }
+
+    /** Revisión de #13: «Guardar» espera a que termine de leerse la imagen elegida; antes se guardaba sin ella y decía «guardados». */
+    @Test
+    fun guardarEsperaLaImagenQueSeEstaLeyendo() {
+        open("Clinic", TabletTags.CLINIC)
+        waitFor { workspace.clinic.loaded }
+        compose.onNodeWithTag(TabletTags.CLINIC_ACTION).performClick()
+        waitText("Modo de edición activado.")
+        val gate = java.util.concurrent.CountDownLatch(1)
+        compose.runOnIdle { workspace.clinic.chooseImage(LetterheadKind.Header) { gate.await(); TestWorkbook.HEADER } }
+        waitFor { workspace.clinic.readingImages == 1 }
+        compose.onNodeWithTag(TabletTags.CLINIC_ACTION).assertIsNotEnabled()
+        compose.runOnIdle { workspace.clinic.toggleEditOrSave() }
+        assertTrue(workspace.clinic.isEditing)
+        gate.countDown()
+        waitFor { workspace.clinic.readingImages == 0 && workspace.clinic.header != null }
+        compose.onNodeWithTag(TabletTags.CLINIC_ACTION).performClick()
+        waitText("✓ Datos del consultorio y médico guardados exitosamente.")
+        assertEquals(ClinicProfileRules.hash(TestWorkbook.HEADER), profile()!!["HeaderImageHash"])
     }
 }

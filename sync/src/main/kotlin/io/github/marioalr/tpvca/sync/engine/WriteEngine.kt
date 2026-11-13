@@ -1322,92 +1322,215 @@ class WriteEngine(
 
     // ------------------------------------------------------------------ importar el Excel (K9b)
 
+    /** Lo que un renglón del catálogo le hace a la base: un alta, o los cambios de un producto que ya estaba (`UpsertCatalogProductsAsync`). */
+    private sealed interface CatalogAction {
+        class Create(val code: String, val line: CatalogLine, val generic: String?, val presentation: String?) : CatalogAction
+
+        class Update(val syncId: String, val oldName: String, val newName: String, val reactivated: Boolean, val change: Map<String, Any?>) : CatalogAction
+    }
+
+    /** Todo lo que se haría, calculado con la base de ahora y sin escribir nada: lo usan el resumen y la importación. */
+    private class ImportWork(
+        val catalog: List<CatalogAction>,
+        val templates: Map<String, List<String>>,
+        val pediatric: List<Pair<PediatricLine, String?>>,
+        val pediatricChanged: List<String>,
+        val receta: io.github.marioalr.tpvca.domain.imports.Receta?,
+        val patientSyncId: String?,
+        val patientChanges: List<String>,
+        val consultationExists: Boolean,
+        val doctorBefore: String,
+        val letterhead: Set<LetterheadKind>,
+    )
+
+    private fun importWork(plan: ExcelImportPlan, today: LocalDate, letterheadKinds: Set<LetterheadKind>): ImportWork {
+        val catalog = plan.catalog?.let(::planCatalog).orEmpty()
+        // Las plantillas que no estén (sin acentos ni mayúsculas)
+        val existingTemplates = store.select("PrescriptionTemplates", listOf("Kind", "Text"))
+        val templates = listOfNotNull(
+            plan.posology?.let { PrescriptionTemplate.POSOLOGY to it },
+            plan.generalMeasures?.let { PrescriptionTemplate.GENERAL_MEASURES to it },
+        ).associate { (kind, texts) ->
+            val known = existingTemplates.filter { it["Kind"] == kind }.map { TextSearch.normalize(it["Text"] as String?) }.toMutableSet()
+            kind to texts.filter { known.add(TextSearch.normalize(it)) }
+        }
+        // Las dosis por medicamento: la que ya está se actualiza; se anota si cambia su dosis o su fórmula
+        val doses = store.select("PediatricDoseRules", listOf("SyncId", "Medication", "DoseText", "MlPerKg", "DropsPerMl", "IsActive"))
+        val byName = LinkedHashMap<String, Map<String, Any?>>()
+        for (row in doses) byName.putIfAbsent(TextSearch.normalize(row["Medication"] as String?), row)
+        val pediatric = ArrayList<Pair<PediatricLine, String?>>()
+        val pediatricChanged = ArrayList<String>()
+        val seen = HashSet<String>()
+        for (line in plan.pediatric.orEmpty()) {
+            val key = TextSearch.normalize(line.medication)
+            val row = byName[key]
+            pediatric += line to (row?.get("SyncId") as String?)
+            if (row != null && seen.add(key) && (row["DoseText"] != line.doseText || (row["MlPerKg"] as Double?) != line.mlPerKg || row["DropsPerMl"] != line.dropsPerMl?.toLong() || row["IsActive"] != 1L)) {
+                pediatricChanged += row["Medication"] as String
+            }
+        }
+        // La receta, con las posologías de ahora y las que trae el libro
+        val known = existingTemplates.filter { it["Kind"] == PrescriptionTemplate.POSOLOGY }.map { it["Text"] as String? ?: "" } + plan.posology.orEmpty()
+        val receta = plan.receta?.let { ExcelImport.receta(it, known, today) }
+        val patient = receta?.patient
+        var patientSyncId: String? = null
+        val changes = ArrayList<String>()
+        var consultationExists = false
+        if (patient != null) {
+            val wanted = TextSearch.normalize(patient.fullName)
+            val found = store.select("Patients", listOf("SyncId", "FullName", "Age", "Allergies", "VitalSigns", PatientSheets.PRESCRIPTION)).firstOrNull { TextSearch.normalize(it["FullName"] as String?) == wanted }
+            if (found != null) {
+                patientSyncId = found["SyncId"] as String
+                if (patient.age > 0 && found["Age"] != patient.age.toLong()) changes += "su edad (${found["Age"]} → ${patient.age})"
+                if (patient.allergies.isNotBlank() && found["Allergies"] != patient.allergies) changes += "sus alergias («${found["Allergies"]}» → «${patient.allergies}»)"
+                if (patient.vitalSigns.isNotBlank() && found["VitalSigns"] != patient.vitalSigns) changes += "sus signos vitales"
+                if (patient.items.isNotEmpty()) changes += "su receta activa (por ${patient.items.size} medicamento(s) de la hoja)"
+                consultationExists = store.select("PatientConsultations", listOf("PatientRecordSyncId", "Date"), "PatientRecordSyncId", listOf(patientSyncId))
+                    .any { ProtocolDate.parse(it["Date"] as String?)?.toLocalDate() == patient.date }
+            }
+        }
+        val profile = store.profileRow()
+        val letterhead = letterheadKinds.filter { (profile?.get(it.column) as String?).isNullOrEmpty() }.toSet()
+        return ImportWork(catalog, templates, pediatric, pediatricChanged, receta, patientSyncId, changes, consultationExists, (profile?.get("DoctorName") as String?).orEmpty(), letterhead)
+    }
+
+    /** Las imágenes del membrete que se tomarían del libro: las que el perfil todavía no tiene (no se reemplaza la que eligió el médico). */
+    fun letterheadNeeded(plan: ExcelImportPlan): Set<LetterheadKind> = guarded {
+        val profile = store.profileRow()
+        listOfNotNull(plan.crest?.let { LetterheadKind.Crest }, plan.header?.let { LetterheadKind.Header }).filter { (profile?.get(it.column) as String?).isNullOrEmpty() }.toSet()
+    }
+
     /**
-     * «Importar catálogo de Excel» (`DataImportService.ImportExcelOrCsvAsync` de la PC), con lo ya leído del archivo. Como la PC, **lo que ya existe se actualiza y no se borra nada**: los medicamentos
-     * del catálogo (en una transacción con sus entradas en la cola; los nuevos con mínimo 0), las plantillas de posología y de medidas generales que no estén, las dosis pediátricas por medicamento, y de
-     * la hoja RECETA el perfil del médico, las imágenes del membrete (solo las que el perfil todavía no tiene: [letterhead], ya recortadas como se ven en Excel) y el expediente con la consulta de ese
-     * día. Sin respaldo antes: la tablet no hace respaldos de la base (es de la PC, `CanAdministerCloud`).
+     * El resumen que se confirma antes de importar (decisión del 2026-11-13: la tablet no importa a ciegas, porque no hace respaldo): qué medicamentos entran, cuáles se reactivan o cambian de nombre,
+     * las plantillas y dosis, el médico, las imágenes y qué del expediente de la receta se reemplaza. Solo lee.
      */
-    fun importCatalog(plan: ExcelImportPlan, today: LocalDate, letterhead: Map<LetterheadKind, ByteArray> = emptyMap()): ExcelImport.Result = guarded {
+    fun previewImport(plan: ExcelImportPlan, today: LocalDate): ExcelImport.Preview = guarded {
+        checkImportAllowed()
+        val work = importWork(plan, today, letterheadNeeded(plan))
+        val lines = ArrayList<String>()
+        val creates = work.catalog.filterIsInstance<CatalogAction.Create>()
+        val updates = work.catalog.filterIsInstance<CatalogAction.Update>()
+        if (plan.catalog != null) lines += "Medicamentos: ${creates.size} nuevo(s) y ${updates.size} que ya estaban se actualizan."
+        updates.filter { it.reactivated }.map { it.newName }.takeIf { it.isNotEmpty() }?.let { lines += "Se vuelven a activar (estaban dados de baja): ${ExcelImport.listed(it)}." }
+        updates.filter { it.oldName != it.newName }.map { "«${it.oldName}» → «${it.newName}»" }.takeIf { it.isNotEmpty() }?.let { lines += "Cambian de nombre: ${ExcelImport.listed(it)}." }
+        val templates = work.templates.values.sumOf { it.size }
+        if (templates > 0) lines += "Plantillas de receta nuevas: $templates."
+        val newDoses = work.pediatric.count { it.second == null }
+        if (newDoses > 0) lines += "Dosis pediátricas nuevas: $newDoses."
+        if (work.pediatricChanged.isNotEmpty()) lines += "Cambia la dosis o la fórmula (también si queda vacía) de: ${ExcelImport.listed(work.pediatricChanged)}."
+        work.receta?.doctor?.let { doctor ->
+            lines += if (work.doctorBefore.isBlank() || work.doctorBefore == doctor.name) "Médico en el perfil: «${doctor.name}» (con su universidad, cédula, teléfono y domicilio de la hoja)." else
+                "Médico en el perfil: «${work.doctorBefore}» → «${doctor.name}» (con su universidad, cédula, teléfono y domicilio de la hoja)."
+        }
+        if (work.letterhead.isNotEmpty()) lines += "Imágenes del membrete que se agregan: ${work.letterhead.joinToString(" y ") { if (it == LetterheadKind.Crest) "el escudo" else "la imagen del encabezado" }}."
+        work.receta?.patient?.let { p ->
+            val day = p.date.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+            val consultation = if (work.consultationExists) "ya tiene una consulta del $day: no se agrega otra" else "se agrega su consulta del $day"
+            lines += if (work.patientSyncId == null) {
+                "Se crea el expediente de «${p.fullName}» y $consultation."
+            } else if (work.patientChanges.isEmpty()) {
+                "El expediente de «${p.fullName}» ya existe: $consultation."
+            } else {
+                "El expediente de «${p.fullName}» ya existe (encontrado por su nombre): se reemplazan ${ExcelImport.joined(work.patientChanges)}, y $consultation."
+            }
+            p.unreadDate?.let { lines += "No se pudo leer la fecha de la receta («$it»): la consulta quedaría con la fecha de hoy (${today.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))})." }
+        }
+        if (lines.isEmpty()) lines += "El archivo no trae nada que importar."
+        ExcelImport.Preview(lines, work.receta?.patient?.unreadDate != null)
+    }
+
+    private fun checkImportAllowed() {
         val role = requireWritable()
         if (!DevicePermissions.canManageInventory(role) || !DevicePermissions.canConfigureSystem(role)) refuse("importar el catálogo")
-        var result = store.transaction { importCatalogRows(plan) }
-        val sheet = plan.receta
-        if (sheet != null) {
-            val known = store.select("PrescriptionTemplates", listOf("Kind", "Text")).filter { it["Kind"] == PrescriptionTemplate.POSOLOGY }.map { it["Text"] as String? ?: "" }
-            val receta = ExcelImport.receta(sheet, known, today)
-            receta.doctor?.let { doctor ->
-                val current = ProfileValues.of(store.profileRow())
-                writeProfile(
-                    current.copy(
-                        doctorName = doctor.name,
-                        university = doctor.university.ifBlank { current.university },
-                        professionalLicense = doctor.license.ifBlank { current.professionalLicense },
-                        phone = doctor.phone.ifBlank { current.phone },
-                        address = doctor.address.ifBlank { current.address },
-                    ).columns(),
-                    emptyMap(),
-                )
-                result = result.copy(doctorName = doctor.name)
-            }
-            receta.patient?.let { patient ->
-                importRecetaPatient(patient)
-                result = result.copy(patientsImported = 1)
-            }
-            // Las imágenes del membrete, solo las que el perfil todavía no tiene: no se reemplaza la que eligió el médico
-            val profile = store.profileRow()
-            val images = HashMap<LetterheadKind, String>()
-            for ((kind, bytes) in letterhead) {
-                if (!(profile?.get(kind.column) as String?).isNullOrEmpty()) continue
-                // Una imagen en otro formato (EMF, GIF…) no detiene la importación
-                if (ClinicProfileRules.imageProblem(bytes) != null) continue
-                val hash = ClinicProfileRules.hash(bytes)
-                if (!store.hasAsset(hash)) store.saveAsset(hash, kind.cloudKind, bytes)
-                images[kind] = hash
-            }
-            if (images.isNotEmpty()) {
-                writeProfile(ProfileValues.of(store.profileRow()).columns(), images)
-                result = result.copy(letterheadImagesImported = images.size)
-            }
-        }
-        result
-    }
-
-    /** El catálogo, las plantillas y las dosis pediátricas, dentro de la transacción. */
-    private fun importCatalogRows(plan: ExcelImportPlan): ExcelImport.Result {
-        var result = ExcelImport.Result(isCsv = plan.isCsv)
-        val catalog = plan.catalog
-        if (catalog != null) {
-            val (imported, updated) = upsertCatalogProducts(catalog, medicationCategory())
-            result = result.copy(productsImported = imported, productsUpdated = updated)
-        }
-        var templates = 0
-        plan.posology?.let { templates += importTemplates(it, PrescriptionTemplate.POSOLOGY) }
-        plan.generalMeasures?.let { templates += importTemplates(it, PrescriptionTemplate.GENERAL_MEASURES) }
-        val pediatric = plan.pediatric?.let(::importPediatricRules) ?: 0
-        return result.copy(templatesImported = templates, pediatricRulesImported = pediatric)
-    }
-
-    /** `EnsureMedicationCategoryAsync`: la que tiene «Medicamento» en el nombre, la primera, o una nueva «Medicamentos y Fármacos». */
-    private fun medicationCategory(): String {
-        val categories = store.select("Categories", listOf("SyncId", "Name"))
-        categories.firstOrNull { (it["Name"] as String?).orEmpty().contains("Medicamento") }?.let { return it["SyncId"] as String }
-        categories.firstOrNull()?.let { return it["SyncId"] as String }
-        val id = SyncIds.random()
-        writer.create("Categories", id, mapOf("Name" to "Medicamentos y Fármacos", "Description" to "Catálogo general de medicamentos", "Icon" to "Pill"))
-        return id
     }
 
     /**
-     * `UpsertCatalogProductsAsync`: un renglón es el mismo producto si su clave y su nombre coinciden, o su nombre y (sin clave, sin código, la misma clave o la clave repetida «1308-2»); entre
-     * repetidos se prefiere el activo. Uno que coincide se reactiva y recibe el nombre, el genérico y la presentación que le falten; uno nuevo entra con mínimo 0 (solo se receta) y, sin clave, MED-001…
+     * «Importar» (`DataImportService.ImportExcelOrCsvAsync` de la PC), ya confirmado el resumen ([previewImport]). **Todo o nada:** lo que puede fallar fuera de la base (el folio de un expediente
+     * nuevo, que sin conexión pide el código de este equipo) se toma antes de escribir, y después medicamentos, plantillas, dosis, el perfil, el expediente con su consulta y el membrete van en una
+     * sola transacción con sus entradas en la cola. [letterhead]: las imágenes ya recortadas como en Excel (solo las de [letterheadNeeded]). Sin respaldo antes: la tablet no respalda la base.
      */
-    private fun upsertCatalogProducts(rows: List<CatalogLine>, categorySyncId: String): Pair<Int, Int> {
-        var imported = 0
-        var updated = 0
+    fun importCatalog(plan: ExcelImportPlan, today: LocalDate, letterhead: Map<LetterheadKind, ByteArray> = emptyMap()): ExcelImport.Result {
+        val work = guarded {
+            checkImportAllowed()
+            importWork(plan, today, letterhead.keys)
+        }
+        val patient = work.receta?.patient
+        // Lo que puede fallar va antes de escribir nada
+        val folio = if (patient != null && work.patientSyncId == null) nextFolio(FolioKind.Patient, guarded { store.select("Patients", listOf("RecordNumber")).map { it["RecordNumber"] as String? } }) else null
+        val images = HashMap<LetterheadKind, String>()
+        for (kind in work.letterhead) {
+            val bytes = letterhead[kind] ?: continue
+            // Una imagen en otro formato (EMF, GIF…) no detiene la importación
+            if (ClinicProfileRules.imageProblem(bytes) != null) continue
+            val hash = ClinicProfileRules.hash(bytes)
+            guarded { if (!store.hasAsset(hash)) store.saveAsset(hash, kind.cloudKind, bytes) }
+            images[kind] = hash
+        }
+        return guarded {
+            checkImportAllowed()
+            var patientSyncId: String? = null
+            val result = store.transaction {
+                var result = ExcelImport.Result(isCsv = plan.isCsv)
+                if (plan.catalog != null) {
+                    val category = medicationCategory()
+                    var created = 0
+                    for (action in work.catalog) when (action) {
+                        is CatalogAction.Create -> {
+                            writeNewProduct(action, category)
+                            created++
+                        }
+                        is CatalogAction.Update -> writer.edit("Products", action.syncId, action.change)
+                    }
+                    result = result.copy(productsImported = created, productsUpdated = work.catalog.size - created)
+                }
+                var templates = 0
+                for ((kind, texts) in work.templates) {
+                    val existing = store.select("PrescriptionTemplates", listOf("Kind", "SortOrder")).filter { it["Kind"] == kind }
+                    var order = if (existing.isEmpty()) 0L else existing.maxOf { it["SortOrder"] as Long? ?: 0L } + 1
+                    for (text in texts) {
+                        writer.create("PrescriptionTemplates", SyncIds.random(), mapOf("Kind" to kind, "Title" to ExcelImport.templateTitle(text), "Text" to text, "SortOrder" to order++, "IsActive" to true))
+                        templates++
+                    }
+                }
+                result = result.copy(templatesImported = templates, pediatricRulesImported = importPediatricRules(work.pediatric.map { it.first }))
+                work.receta?.doctor?.let { doctor ->
+                    val current = ProfileValues.of(store.profileRow())
+                    writeProfile(
+                        current.copy(
+                            doctorName = doctor.name,
+                            university = doctor.university.ifBlank { current.university },
+                            professionalLicense = doctor.license.ifBlank { current.professionalLicense },
+                            phone = doctor.phone.ifBlank { current.phone },
+                            address = doctor.address.ifBlank { current.address },
+                        ).columns(),
+                        emptyMap(),
+                    )
+                    result = result.copy(doctorName = doctor.name)
+                }
+                if (patient != null) {
+                    patientSyncId = writeRecetaPatient(patient, work.patientSyncId, folio)
+                    result = result.copy(patientsImported = 1)
+                }
+                if (images.isNotEmpty()) {
+                    writeProfile(ProfileValues.of(store.profileRow()).columns(), images)
+                    result = result.copy(letterheadImagesImported = images.size)
+                }
+                result
+            }
+            patientSyncId?.let(::recalculate)
+            result
+        }
+    }
+
+    /**
+     * `UpsertCatalogProductsAsync`, sin escribir: un renglón es el mismo producto si su clave y su nombre coinciden, o su nombre y (sin clave, sin código, la misma clave o la clave repetida
+     * «1308-2»); entre repetidos se prefiere el activo. Uno que coincide se reactiva y recibe el nombre, el genérico y la presentación que le falten; uno nuevo entra con mínimo 0 (solo se receta) y,
+     * sin clave, MED-001…
+     */
+    private fun planCatalog(rows: List<CatalogLine>): List<CatalogAction> {
         val all = store.select("Products", listOf("SyncId", "Code", "Name", "GenericName", "Presentation", "IsActive", "CurrentStock", "Price", "MinStock", "OptimalStock"))
             .map { it.toMutableMap() }
-        val openBatches = store.select("ProductBatches", listOf("ProductSyncId")).map { it["ProductSyncId"] as String }.toSet()
+        val withBatches = store.select("ProductBatches", listOf("ProductSyncId")).map { it["ProductSyncId"] as String }.toSet()
         fun preferActive(group: List<MutableMap<String, Any?>>) = group.sortedByDescending { it["IsActive"] == 1L }.first()
         val byCode = HashMap<String, MutableMap<String, Any?>>()
         all.filter { !(it["Code"] as String?).isNullOrBlank() }.groupBy { (it["Code"] as String).trim().lowercase(Locale.ROOT) }.forEach { (k, g) -> byCode[k] = preferActive(g) }
@@ -1415,7 +1538,9 @@ class WriteEngine(
         all.groupBy { (it["Name"] as String?).orEmpty().trim().lowercase(Locale.ROOT) }.forEach { (k, g) -> byName[k] = preferActive(g) }
         val now = protocolLocalNow()
         var autoCode = 1
-        for ((name, clave) in rows) {
+        val actions = ArrayList<CatalogAction>()
+        for (line in rows) {
+            val (name, clave) = line
             val (generic, presentation) = ExcelImport.drugDetails(name)
             val sameCode = clave.takeIf { it.isNotBlank() }?.let { byCode[it.lowercase(Locale.ROOT)] }?.takeIf { (it["Name"] as String?).equals(name, ignoreCase = true) }
             val sameName = byName[name.lowercase(Locale.ROOT)]?.takeIf { p ->
@@ -1430,13 +1555,12 @@ class WriteEngine(
                 if (!presentation.isNullOrBlank() && (matched["Presentation"] as String?).isNullOrBlank()) change["Presentation"] = presentation
                 // Importaciones de antes (v1.8.x) dejaban mínimo 5 a medicamentos sin existencias ni precio
                 val price = NetDecimal.parseOrNull(matched["Price"] as String?) ?: BigDecimal.ZERO
-                if (matched["CurrentStock"] == 0L && price.signum() == 0 && matched["MinStock"] == 5L && matched["OptimalStock"] == 20L && id !in openBatches) {
+                if (matched["CurrentStock"] == 0L && price.signum() == 0 && matched["MinStock"] == 5L && matched["OptimalStock"] == 20L && id !in withBatches) {
                     change["MinStock"] = 0L
                     change["OptimalStock"] = 0L
                 }
-                writer.edit("Products", id, change)
+                actions += CatalogAction.Update(id, (matched["Name"] as String?).orEmpty(), name, matched["IsActive"] != 1L && matched["IsActive"] != true, change)
                 matched.putAll(change.mapValues { (_, v) -> if (v == true) 1L else v })
-                updated++
                 continue
             }
             var code = clave
@@ -1449,35 +1573,34 @@ class WriteEngine(
                 while (byCode.containsKey("${code.lowercase(Locale.ROOT)}-$suffix")) suffix++
                 code = "$code-$suffix"
             }
-            val id = SyncIds.random()
-            writer.create(
-                "Products", id,
-                mapOf(
-                    "Code" to code, "Name" to name, "GenericName" to generic, "Presentation" to presentation, "CategorySyncId" to categorySyncId, "Unit" to "Piezas",
-                    "Price" to "0.0", "UnitCost" to "0", "CurrentStock" to 0L, "MinStock" to 0L, "OptimalStock" to 0L, "UnitsPerPackage" to 1L, "OpenedUnitsRemaining" to 0L,
-                    "IsActive" to true, "CreatedAt" to now, "UpdatedAt" to now,
-                ),
-            )
-            val row = mutableMapOf<String, Any?>("SyncId" to id, "Code" to code, "Name" to name, "GenericName" to generic, "Presentation" to presentation, "IsActive" to 1L)
+            actions += CatalogAction.Create(code, line, generic, presentation)
+            val row = mutableMapOf<String, Any?>("SyncId" to "", "Code" to code, "Name" to name, "GenericName" to generic, "Presentation" to presentation, "IsActive" to 1L)
             byCode[code.lowercase(Locale.ROOT)] = row
             byName[name.lowercase(Locale.ROOT)] = row
-            imported++
         }
-        return imported to updated
+        return actions
     }
 
-    /** `ImportTemplatesAsync`: las que no estén (sin acentos ni mayúsculas), al final del orden. */
-    private fun importTemplates(texts: List<String>, kind: String): Int {
-        val existing = store.select("PrescriptionTemplates", listOf("Kind", "Text", "SortOrder")).filter { it["Kind"] == kind }
-        val known = existing.map { TextSearch.normalize(it["Text"] as String?) }.toMutableSet()
-        var order = if (existing.isEmpty()) 0L else existing.maxOf { it["SortOrder"] as Long? ?: 0L } + 1
-        var imported = 0
-        for (text in texts) {
-            if (!known.add(TextSearch.normalize(text))) continue
-            writer.create("PrescriptionTemplates", SyncIds.random(), mapOf("Kind" to kind, "Title" to ExcelImport.templateTitle(text), "Text" to text, "SortOrder" to order++, "IsActive" to true))
-            imported++
-        }
-        return imported
+    private fun writeNewProduct(action: CatalogAction.Create, categorySyncId: String) {
+        val now = protocolLocalNow()
+        writer.create(
+            "Products", SyncIds.random(),
+            mapOf(
+                "Code" to action.code, "Name" to action.line.name, "GenericName" to action.generic, "Presentation" to action.presentation, "CategorySyncId" to categorySyncId, "Unit" to "Piezas",
+                "Price" to "0.0", "UnitCost" to "0", "CurrentStock" to 0L, "MinStock" to 0L, "OptimalStock" to 0L, "UnitsPerPackage" to 1L, "OpenedUnitsRemaining" to 0L,
+                "IsActive" to true, "CreatedAt" to now, "UpdatedAt" to now,
+            ),
+        )
+    }
+
+    /** `EnsureMedicationCategoryAsync`: la que tiene «Medicamento» en el nombre, la primera, o una nueva «Medicamentos y Fármacos». */
+    private fun medicationCategory(): String {
+        val categories = store.select("Categories", listOf("SyncId", "Name"))
+        categories.firstOrNull { (it["Name"] as String?).orEmpty().contains("Medicamento") }?.let { return it["SyncId"] as String }
+        categories.firstOrNull()?.let { return it["SyncId"] as String }
+        val id = SyncIds.random()
+        writer.create("Categories", id, mapOf("Name" to "Medicamentos y Fármacos", "Description" to "Catálogo general de medicamentos", "Icon" to "Pill"))
+        return id
     }
 
     /** `ImportPediatricDoseSheetAsync`: por medicamento (sin acentos ni mayúsculas) se actualiza la dosis, o se agrega al final. Cuenta solo las nuevas. */
@@ -1504,61 +1627,59 @@ class WriteEngine(
     }
 
     /**
-     * El paciente de la hoja RECETA: el expediente con el mismo nombre (sin acentos ni mayúsculas) o uno nuevo, con su folio como cualquier alta de este equipo; su receta activa y una consulta de esa
-     * fecha (reimportar el mismo archivo no la duplica), con folio `CNS-aaaammdd-IMPnn`.
+     * El paciente de la hoja RECETA, dentro de la transacción: el expediente encontrado por su nombre ([found]) o uno nuevo con el folio ya tomado ([folio]), su receta activa y una consulta de esa
+     * fecha (reimportar el mismo archivo no la duplica), con folio `CNS-aaaammdd-IMPnn`. Regresa su `SyncId`.
      */
-    private fun importRecetaPatient(patient: RecetaPatient) {
-        val wanted = TextSearch.normalize(patient.fullName)
-        val found = store.select("Patients", listOf("SyncId", "FullName")).firstOrNull { TextSearch.normalize(it["FullName"] as String?) == wanted }?.get("SyncId") as String?
+    private fun writeRecetaPatient(patient: RecetaPatient, found: String?, folio: String?): String {
         val rows = patient.items.map { PrescriptionRow(rowId = SyncIds.random(), medicineName = it.medicineName, dosage = it.dosage, recommendedQuantity = 1) }
-        val syncId = found ?: newPatient(
-            patient.fullName,
-            mapOf("Age" to patient.age.toLong(), "Allergies" to patient.allergies, "VitalSigns" to patient.vitalSigns, "Phone" to ""),
-        ).first
-        store.transaction {
-            if (found != null) {
-                val change = HashMap<String, Any?>()
-                if (patient.age > 0) change["Age"] = patient.age.toLong()
-                if (patient.allergies.isNotBlank()) change["Allergies"] = patient.allergies
-                if (patient.vitalSigns.isNotBlank()) change["VitalSigns"] = patient.vitalSigns
-                change["IsActive"] = true
-                writer.edit("Patients", syncId, change)
-            }
-            if (rows.isNotEmpty()) writer.edit("Patients", syncId, mapOf(PatientSheets.PRESCRIPTION to JsonArray(rows.map { it.toJson() }).toString()))
-            val consultations = store.select("PatientConsultations", listOf("SyncId", "PatientRecordSyncId", "Folio", "Date"))
-            val sameDay = consultations.any { it["PatientRecordSyncId"] == syncId && ProtocolDate.parse(it["Date"] as String?)?.toLocalDate() == patient.date }
-            if (!sameDay) {
-                val prefix = "CNS-${patient.date.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)}-IMP"
-                val used = consultations.mapNotNull { it["Folio"] as String? }.filter { it.startsWith(prefix) }.toSet()
-                var n = 1
-                while ("$prefix%02d".format(Locale.ROOT, n) in used) n++
-                val vitals = VitalSignsRules.parse(patient.vitalSigns)
-                writer.create(
-                    "PatientConsultations", SyncIds.random(),
-                    mapOf(
-                        "PatientRecordSyncId" to syncId,
-                        "Folio" to "$prefix%02d".format(Locale.ROOT, n),
-                        "Date" to ProtocolDate.format(patient.date.atStartOfDay()),
-                        "ChiefComplaint" to "Consulta Médica General",
-                        "VitalSigns" to patient.vitalSigns,
-                        "Diagnosis" to "Evaluación Médica General",
-                        "TreatmentPlan" to patient.generalMeasures.ifBlank { "Tratamiento ambulatorio según receta." },
-                        "PrescriptionsJson" to JsonArray(rows.map { it.toJson() }).toString(),
-                        "BloodPressureSystolic" to vitals.bloodPressureSystolic?.toPlainString(),
-                        "BloodPressureDiastolic" to vitals.bloodPressureDiastolic?.toPlainString(),
-                        "HeartRate" to vitals.heartRate?.toPlainString(),
-                        "RespiratoryRate" to vitals.respiratoryRate?.toPlainString(),
-                        "Temperature" to vitals.temperature?.toPlainString(),
-                        "Weight" to vitals.weight?.toPlainString(),
-                        "Height" to vitals.height?.toPlainString(),
-                        "BMI" to vitals.bmi?.toPlainString(),
-                        "Glucose" to vitals.glucose?.toPlainString(),
-                        "OxygenSaturation" to vitals.oxygenSaturation?.toPlainString(),
-                    ),
-                )
-            }
+        val syncId = found ?: SyncIds.random().also { id ->
+            writer.create(
+                "Patients", id,
+                mapOf("FullName" to patient.fullName, "RecordNumber" to folio!!, "IsActive" to true, "CreatedAt" to protocolLocalNow(), "Age" to patient.age.toLong(), "Allergies" to patient.allergies, "VitalSigns" to patient.vitalSigns, "Phone" to ""),
+            )
         }
-        recalculate(syncId)
+        if (found != null) {
+            val change = HashMap<String, Any?>()
+            if (patient.age > 0) change["Age"] = patient.age.toLong()
+            if (patient.allergies.isNotBlank()) change["Allergies"] = patient.allergies
+            if (patient.vitalSigns.isNotBlank()) change["VitalSigns"] = patient.vitalSigns
+            change["IsActive"] = true
+            writer.edit("Patients", syncId, change)
+        }
+        if (rows.isNotEmpty()) writer.edit("Patients", syncId, mapOf(PatientSheets.PRESCRIPTION to JsonArray(rows.map { it.toJson() }).toString()))
+        val consultations = store.select("PatientConsultations", listOf("SyncId", "PatientRecordSyncId", "Folio", "Date"))
+        val sameDay = consultations.any { it["PatientRecordSyncId"] == syncId && ProtocolDate.parse(it["Date"] as String?)?.toLocalDate() == patient.date }
+        if (!sameDay) {
+            val prefix = "CNS-${patient.date.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)}-IMP"
+            val used = consultations.mapNotNull { it["Folio"] as String? }.filter { it.startsWith(prefix) }.toSet()
+            var n = 1
+            while ("$prefix%02d".format(Locale.ROOT, n) in used) n++
+            val vitals = VitalSignsRules.parse(patient.vitalSigns)
+            writer.create(
+                "PatientConsultations", SyncIds.random(),
+                mapOf(
+                    "PatientRecordSyncId" to syncId,
+                    "Folio" to "$prefix%02d".format(Locale.ROOT, n),
+                    "Date" to ProtocolDate.format(patient.date.atStartOfDay()),
+                    "ChiefComplaint" to "Consulta Médica General",
+                    "VitalSigns" to patient.vitalSigns,
+                    "Diagnosis" to "Evaluación Médica General",
+                    "TreatmentPlan" to patient.generalMeasures.ifBlank { "Tratamiento ambulatorio según receta." },
+                    "PrescriptionsJson" to JsonArray(rows.map { it.toJson() }).toString(),
+                    "BloodPressureSystolic" to vitals.bloodPressureSystolic?.toPlainString(),
+                    "BloodPressureDiastolic" to vitals.bloodPressureDiastolic?.toPlainString(),
+                    "HeartRate" to vitals.heartRate?.toPlainString(),
+                    "RespiratoryRate" to vitals.respiratoryRate?.toPlainString(),
+                    "Temperature" to vitals.temperature?.toPlainString(),
+                    "Weight" to vitals.weight?.toPlainString(),
+                    "Height" to vitals.height?.toPlainString(),
+                    "BMI" to vitals.bmi?.toPlainString(),
+                    "Glucose" to vitals.glucose?.toPlainString(),
+                    "OxygenSaturation" to vitals.oxygenSaturation?.toPlainString(),
+                ),
+            )
+        }
+        return syncId
     }
 
     /** «Eliminar» un servicio (`DeleteClinicalServiceAsync`): el servicio y sus insumos por defecto, con sus lápidas. Los tickets lo conservan por su código y su nombre. `false` si ya no existía. */

@@ -3,9 +3,6 @@ package io.github.marioalr.tpvca.domain.imports
 import io.github.marioalr.tpvca.domain.search.TextSearch
 import io.github.marioalr.tpvca.domain.text.NetDecimal
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
-import java.time.format.ResolverStyle
 import java.util.Locale
 
 /** Un renglón del catálogo: el nombre del medicamento y su clave (vacía si no trae). */
@@ -43,6 +40,8 @@ data class RecetaPatient(
     val vitalSigns: String,
     val items: List<RecetaItem>,
     val generalMeasures: String,
+    /** La fecha como venía, si no se pudo leer (entonces [date] es hoy y el resumen lo dice); `null` si se leyó. */
+    val unreadDate: String? = null,
 )
 
 /** Lo que dice la hoja RECETA. */
@@ -205,7 +204,9 @@ object ExcelImport {
         val name = valueAfterLabel(sheet, patientRow, "Paciente")
         if (name.isBlank()) return Receta(doctor, null)
         val ageText = valueAfterLabel(sheet, patientRow, "Edad")
-        val date = recetaDate(valueAfterLabel(sheet, patientRow, "Fecha"), today)
+        val dateRaw = valueAfterLabel(sheet, patientRow, "Fecha")
+        val parsedDate = parseRecetaDate(dateRaw)
+        val date = parsedDate ?: today
         val age = if (!ageText.contains("mes", ignoreCase = true)) FIRST_NUMBER.find(ageText)?.value?.toIntOrNull() ?: 0 else 0
 
         val vitalsRow = findRowStartingWith(sheet, "Alergias")
@@ -257,28 +258,47 @@ object ExcelImport {
             }
             row++
         }
-        return Receta(doctor, RecetaPatient(name, age, date, allergies, vitals.joinToString(" | "), items.map { RecetaItem(it.first, it.second ?: PENDING_DOSAGE) }, measures))
+        return Receta(doctor, RecetaPatient(name, age, date, allergies, vitals.joinToString(" | "), items.map { RecetaItem(it.first, it.second ?: PENDING_DOSAGE) }, measures, dateRaw.takeIf { parsedDate == null }))
     }
 
-    private val ES_DATES = listOf("d/M/uuuu", "d-M-uuuu", "d.M.uuuu", "uuuu-M-d", "d/M/uu").map { DateTimeFormatter.ofPattern(it, Locale.ROOT).withResolverStyle(ResolverStyle.STRICT) }
+    private val MONTHS = mapOf(
+        "enero" to 1, "febrero" to 2, "marzo" to 3, "abril" to 4, "mayo" to 5, "junio" to 6, "julio" to 7, "agosto" to 8,
+        "septiembre" to 9, "setiembre" to 9, "octubre" to 10, "noviembre" to 11, "diciembre" to 12,
+        "ene" to 1, "feb" to 2, "mar" to 3, "abr" to 4, "may" to 5, "jun" to 6, "jul" to 7, "ago" to 8, "sep" to 9, "sept" to 9, "set" to 9, "oct" to 10, "nov" to 11, "dic" to 12,
+    )
+
+    private val WEEKDAY = Regex("^(lunes|martes|miercoles|jueves|viernes|sabado|domingo),?\\s+")
+    private val TIME = Regex("[\\sT]+\\d{1,2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(\\s*[ap]\\.?\\s*m\\.?)?$")
+
+    /** Día, mes (número o nombre, completo o abreviado) y año: «15/01/2026», «15-ene-2026», «15 de enero de 2026», «15 ene. 26». */
+    private val DMY = Regex("^(\\d{1,2})\\s*(?:de\\s+|[/.\\-]\\s*|\\s+)([a-z]+|\\d{1,2})\\.?\\s*(?:del?\\s+|[/.\\-]\\s*|\\s+|,\\s*)(\\d{4}|\\d{2})$")
+    private val YMD = Regex("^(\\d{4})[/.\\-](\\d{1,2})[/.\\-](\\d{1,2})$")
 
     /**
-     * La fecha de la receta: un número de serie de Excel (entre 30000 y 80000) o una fecha escrita (día, mes y año, como la cultura es-MX de la PC); si no se lee, hoy. `DateTime.TryParse` de .NET
-     * acepta más formas («15 de enero de 2026»): aquí solo las numéricas.
+     * La fecha de la receta: un número de serie de Excel (entre 30000 y 80000) o una fecha escrita como la lee `DateTime.TryParse` con la cultura es-MX de la PC: día, mes y año con número o
+     * con el nombre del mes («15 de enero de 2026», «15/ene/2026»), con o sin el día de la semana y la hora; año de dos dígitos hasta 49 → 20xx. `null` si no se lee.
      */
-    fun recetaDate(raw: String, today: LocalDate): LocalDate {
+    fun parseRecetaDate(raw: String): LocalDate? {
         val serial = number(raw)
-        if (serial != null && serial > 30000 && serial < 80000) return LocalDate.of(1899, 12, 30).plusDays(serial.toLong())
-        val text = raw.trim().substringBefore(' ')
-        for (format in ES_DATES) {
-            try {
-                return LocalDate.parse(text, format)
-            } catch (_: DateTimeParseException) {
-                // la siguiente forma
-            }
+        if (serial != null) return if (serial > 30000 && serial < 80000) LocalDate.of(1899, 12, 30).plusDays(serial.toLong()) else null
+        var text = TextSearch.normalize(raw)
+        if (text.isEmpty()) return null
+        text = WEEKDAY.replace(text, "")
+        text = TIME.replace(text, "").trim()
+        return try {
+            YMD.matchEntire(text)?.let { m -> return LocalDate.of(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt()) }
+            val m = DMY.matchEntire(text) ?: return null
+            val month = m.groupValues[2].toIntOrNull() ?: MONTHS[m.groupValues[2]] ?: return null
+            var year = m.groupValues[3].toInt()
+            if (m.groupValues[3].length == 2) year += if (year <= 49) 2000 else 1900
+            LocalDate.of(year, month, m.groupValues[1].toInt())
+        } catch (_: java.time.DateTimeException) {
+            null
         }
-        return today
     }
+
+    /** La fecha que se usa: la de la receta, o hoy si no se pudo leer (y [RecetaPatient.dateText] dice qué decía). */
+    fun recetaDate(raw: String, today: LocalDate): LocalDate = parseRecetaDate(raw) ?: today
 
     fun isPosologyLine(line: String, knownKeys: List<String>): Boolean {
         val normalized = TextSearch.normalize(line)
@@ -380,6 +400,25 @@ object ExcelImport {
     }
 
     // ------------------------------------------------------------------ resultado
+
+    /** El resumen que se confirma antes de importar: un renglón por cosa que cambia. [unreadDate]: la fecha de la receta no se leyó. */
+    data class Preview(val lines: List<String>, val unreadDate: Boolean)
+
+    /** Lo que se dice siempre antes de importar en la tablet. */
+    const val NO_BACKUP_WARNING =
+        "La tablet no hace un respaldo antes de importar: lo que se reemplace no se puede recuperar desde aquí. Si necesita poder volver atrás, importe el archivo en la PC, que guarda un respaldo antes."
+
+    /** «A, B y C», y si son más de [max], «A, B, C… y 4 más». */
+    fun listed(items: List<String>, max: Int = 10): String {
+        if (items.size <= max) return joined(items)
+        return items.take(max).joinToString(", ") + " y ${items.size - max} más"
+    }
+
+    fun joined(items: List<String>): String = when (items.size) {
+        0 -> ""
+        1 -> items[0]
+        else -> items.dropLast(1).joinToString(", ") + " y " + items.last()
+    }
 
     /** Lo que se importó (`DataImportResult`). */
     data class Result(

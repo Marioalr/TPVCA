@@ -76,6 +76,7 @@ class TabletDeviceTest {
         noteLocalWrite = { saves++ },
         refreshNow = {},
         isOnline = { false },
+        syncBeforeImport = { null },
     )
 
     @Before
@@ -291,12 +292,13 @@ class TabletDeviceTest {
         assertEquals(listOf("Naproxeno 250 mg tabletas", "Crema de ejemplo"), plan.catalog!!.map { it.name })
         val header = plan.header!!
         assertEquals(10, header.fromColumn)
-        val cropped = DataController.displayed(header)
+        val cropped = DataController.displayed(header)!!
         val decoded = android.graphics.BitmapFactory.decodeByteArray(cropped, 0, cropped.size)
         assertEquals(10, decoded.width)
         assertEquals(6, decoded.height)
         show()
         compose.runOnIdle { workspace.data.open(ImportFile("Catálogo.xlsx", "") { bytes }) }
+        waitFor { workspace.data.ready != null || workspace.data.outcome != null }
         compose.runOnIdle { workspace.data.execute() }
         waitFor { workspace.data.outcome != null }
         assertTrue(workspace.data.outcome!!.message, workspace.data.outcome!!.success)
@@ -318,5 +320,21 @@ class TabletDeviceTest {
         compose.onNodeWithTag(TabletTags.SERVICE_SAVE).performClick()
         waitFor { store.select("ClinicalServices", listOf("Name")).any { it["Name"] == "Toma de muestra de ejemplo" } }
         waitText("Servicio guardado: Toma de muestra de ejemplo · $95.00")
+    }
+
+    /** Revisión de #13: la «mil millones de risas» con el analizador de Android: se rechaza antes de analizar, rápido y sin agotar la memoria. */
+    @Test
+    fun unLibroConEntidadesSeRechazaEnElEquipo() {
+        val lol = "<?xml version=\"1.0\"?><!DOCTYPE lolz [<!ENTITY lol \"lol\">" + (1..9).joinToString("") { i -> "<!ENTITY lol$i \"" + "&lol${if (i == 1) "" else (i - 1).toString()};".repeat(10) + "\">" } + "]><workbook>&lol9;</workbook>"
+        val out = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry("xl/workbook.xml"))
+            zip.write(lol.toByteArray())
+            zip.closeEntry()
+        }
+        val started = System.nanoTime()
+        val error = runCatching { io.github.marioalr.tpvca.domain.imports.Xlsx.read(out.toByteArray()) }.exceptionOrNull()
+        assertTrue(error is io.github.marioalr.tpvca.domain.imports.XlsxException)
+        assertTrue("Tardó demasiado", System.nanoTime() - started < 2_000_000_000L)
     }
 }

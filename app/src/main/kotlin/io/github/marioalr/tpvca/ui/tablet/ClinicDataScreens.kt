@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -90,7 +91,7 @@ internal fun ClinicProfileSection(workspace: TabletWorkspace) {
         val wide = isWide(860.dp)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             SectionHeader("Médico y consultorio", "Aparecen en recetas, tickets y cortes de caja") {
-                TButton(c.actionText, c::toggleEditOrSave, kind = TButtonKind.Primary, icon = if (c.isEditing) TIcons.Save else TIcons.Edit, enabled = c.loaded && !c.saving, tag = TabletTags.CLINIC_ACTION)
+                TButton(c.actionText, c::toggleEditOrSave, kind = TButtonKind.Primary, icon = if (c.isEditing) TIcons.Save else TIcons.Edit, enabled = c.loaded && !c.saving && c.readingImages == 0, tag = TabletTags.CLINIC_ACTION)
             }
             c.status?.let { TNotice(it, if (c.isSuccess) colors.infoSubtle else colors.dangerSubtle, if (c.isSuccess) colors.infoText else colors.dangerText, tag = TabletTags.CLINIC_STATUS) }
             if (!c.loaded) {
@@ -183,8 +184,18 @@ private fun LetterheadChooser(modifier: Modifier, label: String, caption: String
 
 @Composable
 private fun PaperImage(bytes: ByteArray?, modifier: Modifier) {
-    val bitmap = remember(bytes) { bytes?.let { runCatching { BitmapFactory.decodeByteArray(it, 0, it.size) }.getOrNull() }?.asImageBitmap() }
+    // Una muestra chica: nunca la imagen entera en memoria (puede ser de 10 MB)
+    val bitmap = remember(bytes) { bytes?.let { runCatching { decodeSmall(it) }.getOrNull() }?.asImageBitmap() }
     if (bitmap != null) Image(bitmap, null, modifier, contentScale = ContentScale.Fit)
+}
+
+/** La imagen a no más de unos 512 px de lado (`inSampleSize`). */
+private fun decodeSmall(bytes: ByteArray): android.graphics.Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    var sample = 1
+    while (bounds.outWidth / (sample * 2) >= 512 || bounds.outHeight / (sample * 2) >= 512) sample *= 2
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
 }
 
 /** «Así sale en la receta» (el encabezado y el pie, en papel blanco), «Vista previa de la receta» y «En tickets y cortes de caja». */
@@ -267,7 +278,7 @@ internal fun DataSection(workspace: TabletWorkspace) {
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         val (name, detail) = describe(context, uri)
-        data.open(ImportFile(name, detail) { readCapped(context, uri, io.github.marioalr.tpvca.domain.imports.Xlsx.MAX_UNZIPPED_BYTES) ?: throw io.github.marioalr.tpvca.domain.imports.XlsxException("El archivo es demasiado grande para importarlo.") })
+        data.open(ImportFile(name, detail) { readCapped(context, uri, io.github.marioalr.tpvca.domain.imports.Xlsx.MAX_FILE_BYTES) ?: throw io.github.marioalr.tpvca.domain.imports.XlsxException(io.github.marioalr.tpvca.domain.imports.Xlsx.TOO_BIG) })
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 18.dp).testTag(TabletTags.DATA), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SectionHeader("Respaldos y datos", "Copias de seguridad, importar el catálogo y restaurar información")
@@ -275,12 +286,12 @@ internal fun DataSection(workspace: TabletWorkspace) {
             Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(colors.infoSubtle), contentAlignment = Alignment.Center) { Icon(TIcons.File, null, tint = colors.infoText) }
             THeading("Importar catálogo de Excel", Modifier.padding(top = 12.dp))
             TText(
-                "Medicamentos, plantillas de receta, dosis pediátricas, datos del médico y las imágenes del membrete de la receta (si aún no tiene) desde la hoja de Excel (.xlsx) o un CSV. Lo que ya existe se actualiza; no se borra nada.",
+                "Medicamentos, plantillas de receta, dosis pediátricas, datos del médico y las imágenes del membrete de la receta (si aún no tiene) desde la hoja de Excel (.xlsx) o un CSV. No se borra nada, pero lo que ya existe se reemplaza (medicamentos, dosis, el médico y el expediente que traiga la receta): antes de importar se muestra qué cambia. La tablet no hace respaldo; la PC sí.",
                 Modifier.padding(top = 4.dp, bottom = 14.dp), size = TType.detail, color = colors.textSecondary,
             )
             TButton("Elegir archivo…", {
                 pick.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/csv", "text/comma-separated-values", "text/plain", "application/octet-stream"))
-            }, icon = TIcons.File, enabled = !data.importing, tag = TabletTags.DATA_CHOOSE)
+            }, icon = TIcons.File, enabled = !data.importing && !data.preparing, tag = TabletTags.DATA_CHOOSE)
         }
         TCaption("Respaldar y restaurar la base se hace en la PC.")
     }
@@ -297,7 +308,7 @@ internal fun ImportSheet(workspace: TabletWorkspace, file: ImportFile) {
         Column(Modifier.widthIn(max = 560.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors["ThemeCard"]).testTag(TabletTags.IMPORT_SHEET).padding(horizontal = 24.dp, vertical = 20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 THeading("Importar catálogo de Excel", Modifier.weight(1f), size = TType.heading)
-                TIconButton(TIcons.Close, "Cerrar", data::close, enabled = !data.importing, tag = TabletTags.PANEL_CLOSE)
+                TIconButton(TIcons.Close, "Cerrar", data::close, enabled = !data.importing && !data.preparing, tag = TabletTags.PANEL_CLOSE)
             }
             Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 14.dp).clip(RoundedCornerShape(10.dp)).background(colors.surfaceSubtle).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(TIcons.File, null, Modifier.padding(end = 10.dp), tint = colors.textSecondary)
@@ -306,18 +317,30 @@ internal fun ImportSheet(workspace: TabletWorkspace, file: ImportFile) {
                     if (file.detail.isNotEmpty()) TCaption(file.detail)
                 }
             }
+            val ready = data.ready
             if (outcome == null) {
-                TText("Qué va a pasar", Modifier.padding(bottom = 8.dp), size = TType.caption, weight = FontWeight.Bold, color = colors.textSecondary)
-                for ((i, step) in DataController.STEPS.withIndex()) {
-                    Row(Modifier.padding(bottom = 8.dp), verticalAlignment = Alignment.Top) {
-                        Box(Modifier.size(22.dp).clip(RoundedCornerShape(11.dp)).background(colors.infoSubtle), contentAlignment = Alignment.Center) { TText("${i + 1}", size = TType.caption, weight = FontWeight.Bold, color = colors.infoText) }
-                        TText(step, Modifier.padding(start = 10.dp), size = TType.detail)
+                if (ready == null) {
+                    TText("Qué va a pasar", Modifier.padding(bottom = 8.dp), size = TType.caption, weight = FontWeight.Bold, color = colors.textSecondary)
+                    for ((i, step) in DataController.STEPS.withIndex()) {
+                        Row(Modifier.padding(bottom = 8.dp), verticalAlignment = Alignment.Top) {
+                            Box(Modifier.size(22.dp).clip(RoundedCornerShape(11.dp)).background(colors.infoSubtle), contentAlignment = Alignment.Center) { TText("${i + 1}", size = TType.caption, weight = FontWeight.Bold, color = colors.infoText) }
+                            TText(step, Modifier.padding(start = 10.dp), size = TType.detail)
+                        }
                     }
-                }
-                if (data.importing) LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp), color = colors.accentStrong)
-                FlowRow(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                    TButton("Cancelar", data::close, kind = TButtonKind.Ghost, enabled = !data.importing)
-                    TButton(if (data.importing) "Importando…" else "Importar", data::execute, kind = TButtonKind.Primary, enabled = !data.importing, tag = TabletTags.IMPORT_RUN)
+                    TText("Sincronizando y revisando el archivo…", Modifier.padding(top = 4.dp), size = TType.detail, color = colors.textSecondary)
+                    LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp), color = colors.accentStrong)
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) { TButton("Cancelar", data::close, kind = TButtonKind.Ghost, enabled = false) }
+                } else {
+                    TText("Qué va a cambiar", Modifier.padding(bottom = 8.dp), size = TType.caption, weight = FontWeight.Bold, color = colors.textSecondary)
+                    Column(Modifier.heightIn(max = 340.dp).verticalScroll(rememberScrollState()).testTag(TabletTags.IMPORT_PREVIEW), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (line in ready.preview.lines) TText("• $line", size = TType.detail)
+                    }
+                    TNotice(io.github.marioalr.tpvca.domain.imports.ExcelImport.NO_BACKUP_WARNING, colors.warningSubtle, colors.warningText, Modifier.padding(top = 12.dp), tag = TabletTags.IMPORT_WARNING)
+                    if (data.importing) LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp), color = colors.accentStrong)
+                    FlowRow(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                        TButton("Cancelar", data::close, kind = TButtonKind.Ghost, enabled = !data.importing)
+                        TButton(if (data.importing) "Importando…" else "Importar", data::execute, kind = TButtonKind.Primary, enabled = !data.importing, tag = TabletTags.IMPORT_RUN)
+                    }
                 }
             } else {
                 TNotice(outcome.message, if (outcome.success) colors.successSubtle else colors.dangerSubtle, if (outcome.success) colors.successText else colors.dangerText, tag = TabletTags.IMPORT_RESULT)

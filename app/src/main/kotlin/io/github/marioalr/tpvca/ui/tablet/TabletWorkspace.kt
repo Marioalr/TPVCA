@@ -60,6 +60,8 @@ class TabletEnv(
     val uploadLabFiles: () -> Unit = {},
     /** La consulta entre equipos (K8): la nube, la sincronización que espera y lo que trae cada revisión. `null` sin vinculación (pruebas): «Enviar a…» no aparece. */
     val handoff: HandoffLink? = null,
+    /** Sincroniza y espera antes de importar el Excel: `null` si terminó bien; si no, por qué. Sin esto, la de [handoff] (en la app, `syncNow`). */
+    val syncBeforeImport: (suspend () -> String?)? = null,
 )
 
 sealed interface TabletPage {

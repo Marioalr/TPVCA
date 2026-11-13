@@ -594,6 +594,8 @@ object TabletTags {
     const val DATA_CHOOSE = "tablet-datos-elegir"
     const val IMPORT_SHEET = "tablet-importar"
     const val IMPORT_RUN = "tablet-importar-ejecutar"
+    const val IMPORT_PREVIEW = "tablet-importar-resumen"
+    const val IMPORT_WARNING = "tablet-importar-sin-respaldo"
     const val IMPORT_RESULT = "tablet-importar-resultado"
     const val IMPORT_CLOSE = "tablet-importar-cerrar"
     const val DEVICES = "tablet-equipos"

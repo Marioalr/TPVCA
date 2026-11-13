@@ -227,4 +227,63 @@ class ImportAndProfileTest {
         assertEquals("Medicamentos y Fármacos", store.rows("Categories").values.single()["Name"])
         assertNull(ExcelImport.csvPlan(""))
     }
+
+    /** Revisión de #13: el resumen que se confirma antes de importar, renglón por renglón, sin escribir nada. */
+    @Test
+    fun elResumenDiceQueCambiaSinEscribir() {
+        val writer = LocalWriter(store, { "device-b" })
+        val category = io.github.marioalr.tpvca.sync.rules.SyncIds.random()
+        writer.create("Categories", category, mapOf("Name" to "Medicamentos", "Icon" to ""))
+        writer.create("Products", io.github.marioalr.tpvca.sync.rules.SyncIds.random(), mapOf("Code" to "1308-2", "Name" to "loratadina 10 mg tabletas", "IsActive" to false, "CategorySyncId" to category, "Price" to "0", "UnitCost" to "0"))
+        writer.create("PediatricDoseRules", io.github.marioalr.tpvca.sync.rules.SyncIds.random(), mapOf("Medication" to "Ibuprofeno suspensión", "DoseText" to "5 mg/kg", "MlPerKg" to 0.25, "IsActive" to true, "SortOrder" to 0L))
+        writes.saveClinicProfile(ProfileValues(doctorName = "Dr. Anterior Ejemplo"))
+        val patient = writes.newPatient("Paciente Inventado Gómez", mapOf("Age" to 30L, "Allergies" to "", "VitalSigns" to "")).first
+        store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))
+        val outboxBefore = store.outbox().size
+
+        val preview = writes.previewImport(ExcelImport.plan(Xlsx.read(TestWorkbook.clinic())), today)
+        assertEquals(
+            listOf(
+                "Medicamentos: 3 nuevo(s) y 1 que ya estaban se actualizan.",
+                "Se vuelven a activar (estaban dados de baja): Loratadina 10 mg tabletas.",
+                "Cambian de nombre: «loratadina 10 mg tabletas» → «Loratadina 10 mg tabletas».",
+                "Plantillas de receta nuevas: 3.",
+                "Dosis pediátricas nuevas: 1.",
+                "Cambia la dosis o la fórmula (también si queda vacía) de: Ibuprofeno suspensión.",
+                "Médico en el perfil: «Dr. Anterior Ejemplo» → «Dra. Ejemplo Prueba Ruiz» (con su universidad, cédula, teléfono y domicilio de la hoja).",
+                "Imágenes del membrete que se agregan: el escudo y la imagen del encabezado.",
+                "El expediente de «Paciente Inventado Gómez» ya existe (encontrado por su nombre): se reemplazan su edad (30 → 34), sus alergias («» → «Penicilina»), sus signos vitales y su receta activa (por 2 medicamento(s) de la hoja), y se agrega su consulta del 15/01/2026.",
+            ),
+            preview.lines,
+        )
+        // Nada escrito
+        assertEquals(outboxBefore, store.outbox().size)
+        assertEquals("Dr. Anterior Ejemplo", store.profileRow()!!["DoctorName"])
+        assertEquals(30L, store.rows("Patients").getValue(patient)["Age"])
+        // Y al importar, el paciente y su consulta juntos
+        writes.importCatalog(ExcelImport.plan(Xlsx.read(TestWorkbook.clinic())), today)
+        assertEquals(34L, store.rows("Patients").getValue(patient)["Age"])
+        assertEquals(1, store.rows("PatientConsultations").values.count { it["PatientRecordSyncId"] == patient })
+    }
+
+    /** Revisión de #13: si no hay folio para el expediente nuevo (sin conexión y sin código de equipo), no se escribe nada. */
+    @Test
+    fun sinFolioNoSeEscribeNada() {
+        store.apply(StoreChanges(metaRemoved = setOf(SyncEngine.DEVICE_CODE)))
+        val error = assertThrows(WriteRefused::class.java) { writes.importCatalog(ExcelImport.plan(Xlsx.read(TestWorkbook.clinic())), today) }
+        assertEquals(WriteRefused.Reason.NO_DEVICE_CODE, error.reason)
+        assertTrue(products().isEmpty())
+        assertTrue(store.rows("PrescriptionTemplates").isEmpty())
+        assertNull(store.profileRow())
+        assertTrue(store.outbox().isEmpty())
+    }
+
+    /** Revisión de #13: una fecha escrita que no se lee queda con la de hoy, y el resumen lo dice. */
+    @Test
+    fun unaFechaQueNoSeLeeSeDice() {
+        val book = TestWorkbook.build(listOf(TestWorkbook.Sheet("RECETA", listOf(TestWorkbook.Cell("A6", "Paciente:"), TestWorkbook.Cell("B6", "Paciente Inventado"), TestWorkbook.Cell("H6", "Fecha:"), TestWorkbook.Cell("I6", "el martes pasado")))))
+        val preview = writes.previewImport(ExcelImport.plan(Xlsx.read(book)), today)
+        assertTrue(preview.unreadDate)
+        assertEquals("No se pudo leer la fecha de la receta («el martes pasado»): la consulta quedaría con la fecha de hoy (13/11/2026).", preview.lines.last())
+    }
 }

@@ -274,6 +274,21 @@ class ConsultationWritesTest {
         assertEquals(0, store.pendingChanges())
     }
 
+    /** Descartar mira el borrador guardado, no el que trae la pantalla: si el guardado ya se envió, no se descarta nada. */
+    @Test
+    fun descartarRevisaQueLaGuardadaNoSeHayaEnviado() {
+        link()
+        val d = draft()
+        writes.startConsultation(d)
+        writes.saveConsultation(d, mapOf(PatientSheets.PRESCRIPTION to { emptyList() }))
+        assertTrue(writes.setConsultationHandoff(d.folio, JsonObject(mapOf("ToDeviceName" to JsonPrimitive("La PC")))))
+        val pending = store.pendingChanges()
+        assertEquals(WriteRefused.Reason.CONFLICT, assertThrows(WriteRefused::class.java) { writes.discardConsultation(d, PREVIOUS) }.reason)
+        assertTrue(ConsultationDraft.decode(store.meta(WriteEngine.CONSULTATION_DRAFT))!!.isHandedOff)
+        assertEquals("[]", rows("Patients").getValue(patient)[PatientSheets.PRESCRIPTION])
+        assertEquals(pending, store.pendingChanges())
+    }
+
     @Test
     fun elCelularNoEmpiezaNiCobra() {
         link(DeviceRole.AndroidMobileAdmin, "C1")

@@ -472,7 +472,10 @@ class WriteEngine(
         if (draft.isHandedOff) throw WriteRefused(WriteRefused.Reason.CONFLICT, "La consulta se envió a otro equipo: aquí está en solo lectura.")
         requireWritable()
         store.transaction {
-            if (storedDraft().second?.folio != draft.folio) return@transaction false
+            val stored = storedDraft().second
+            if (stored?.folio != draft.folio) return@transaction false
+            // La guardada manda, como al cobrar: la de la pantalla pudo leerse antes de que se enviara
+            if (stored.isHandedOff) throw WriteRefused(WriteRefused.Reason.CONFLICT, "La consulta se envió a otro equipo: aquí está en solo lectura.")
             val progress = noteOf(draft.patientSyncId, draft.folio)?.get("SyncId") as String?
             if (progress != null && WritePolicy.canWrite(requireWritable(), "PatientConsultations", creating = false)) {
                 writer.delete("PatientConsultations", progress)

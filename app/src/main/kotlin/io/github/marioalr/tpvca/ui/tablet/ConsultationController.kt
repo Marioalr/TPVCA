@@ -708,7 +708,8 @@ class ConsultationController internal constructor(private val workspace: TabletW
         if (draft != null) return
         adopt(stored, state)
         autosaveStatus = if (stored.isHandedOff) "Enviada a ${stored.handoffTargetName}" else "Consulta recuperada · iniciada ${startedOf(stored).format(RECOVERED)}"
-        workspace.showConsultation()
+        // Una venta a la mitad no se deja por esto: el punto de venta ya dice que hay consulta en curso y lleva a ella
+        if (workspace.page != TabletPage.Pos) workspace.showConsultation()
     }
 
     // ------------------------------------------------------------------ lo que se teclea

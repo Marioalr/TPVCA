@@ -112,6 +112,31 @@ class ConsultationAccount(
         AccountLines.remove(lines, ref, quantity, isIndividualUnits)?.let { lines = it }
     }
 
+    /**
+     * Un renglón que llega del punto de venta (`AddCartItemToActiveConsultation`): «Pasar a la cuenta de la consulta» y los insumos de «Agregar a la consulta de…». Con su nombre, su precio y su modo; el mismo
+     * producto o servicio en el mismo modo (paquetes o piezas sueltas) suma a su renglón. Un servicio sin `SyncId` (los de muestra de la PC cuando el catálogo está vacío) va en un renglón propio.
+     */
+    fun addPointOfSaleLine(
+        kind: String,
+        catalogSyncId: String?,
+        code: String,
+        name: String,
+        genericName: String?,
+        presentation: String?,
+        unit: String,
+        unitPrice: BigDecimal,
+        quantity: Int,
+        isIndividualUnits: Boolean = false,
+    ): Boolean {
+        if (quantity <= 0) return false
+        val ref = when {
+            kind == AccountLines.PRODUCT && catalogSyncId != null -> LineRef.product(catalogSyncId)
+            kind == AccountLines.SERVICE -> LineRef(AccountLines.SERVICE, catalogSyncId)
+            else -> LineRef.free(name)
+        }
+        return add(ref, code, name, genericName, presentation, unit, unitPrice, quantity, isIndividualUnits)
+    }
+
     /** Quita un renglón de la cuenta (la X en «Cuenta de la consulta»). */
     fun removeLine(line: AccountLine) {
         if (readOnly) return

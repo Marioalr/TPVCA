@@ -21,7 +21,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.TreeMap
 
-/** `golden/lab-files.json`: cómo se parte un archivo, el SQL literal de bajar y los topes. Subir es de K7: el celular no sube. */
+/** `golden/lab-files.json`: cómo se parte un archivo, el SQL literal de bajar y de subir, y los topes. Subir lo prueba `LabFileUploaderTest`. */
 class LabFilesGoldenTest {
     private val cases = Json.parseToJsonElement(Contracts.file("golden/lab-files.json").readText()).jsonObject.getValue("cases").jsonArray.map { it.jsonObject }
 
@@ -50,10 +50,17 @@ class LabFilesGoldenTest {
     }
 
     @Test
-    fun elSqlDeBajarEsLiteral() {
+    fun elSqlDeBajarYSubirEsLiteral() {
         val sql = cases.first { it.getValue("name").jsonPrimitive.content == "sql" }.getValue("expected").jsonObject
         assertEquals(sql.getValue("state").jsonPrimitive.content, LabFileRules.STATE_SQL)
         assertEquals(sql.getValue("readChunks").jsonPrimitive.content, LabFileRules.READ_CHUNKS_SQL)
+        // Subir (K7, la tablet): la PC principal se queda con archivar, desalojar y los huérfanos
+        assertEquals(sql.getValue("existingChunks").jsonPrimitive.content, LabFileRules.EXISTING_CHUNKS_SQL)
+        assertEquals(sql.getValue("usage").jsonPrimitive.content, LabFileRules.USAGE_SQL)
+        assertEquals(sql.getValue("cloudSpace").jsonArray.map { it.jsonPrimitive.content }, LabFileRules.CLOUD_SPACE_SQL)
+        assertEquals(sql.getValue("register").jsonPrimitive.content, LabFileRules.REGISTER_SQL)
+        assertEquals(sql.getValue("insertChunk").jsonPrimitive.content, LabFileRules.INSERT_CHUNK_SQL)
+        assertEquals(sql.getValue("close").jsonPrimitive.content, LabFileRules.CLOSE_SQL)
     }
 
     @Test
@@ -61,6 +68,18 @@ class LabFilesGoldenTest {
         val limits = cases.first { it.getValue("name").jsonPrimitive.content == "topes" }.getValue("expected").jsonObject
         assertEquals(limits.getValue("chunksPerRead").jsonPrimitive.int, LabFileRules.CHUNKS_PER_READ)
         assertEquals(limits.getValue("maxFileBytes").jsonPrimitive.long, LabFileRules.MAX_FILE_BYTES)
+        assertEquals(limits.getValue("largePdfBytes").jsonPrimitive.long, LabFileRules.LARGE_PDF_BYTES)
+        assertEquals(limits.getValue("maxLongSidePixels").jsonPrimitive.int, LabFileRules.MAX_LONG_SIDE_PIXELS)
+        assertEquals(limits.getValue("jpegQuality").jsonPrimitive.int, LabFileRules.JPEG_QUALITY)
+        assertEquals(limits.getValue("maxPhotos").jsonPrimitive.int, LabFileRules.MAX_PHOTOS)
+        assertEquals(limits.getValue("mimeTypes").jsonArray.map { it.jsonPrimitive.content }, listOf(LabFileRules.PDF_MIME_TYPE, LabFileRules.JPEG_MIME_TYPE))
+        assertEquals(limits.getValue("cloudCapBytes").jsonPrimitive.long, LabFileRules.CLOUD_CAP_BYTES)
+        assertEquals(limits.getValue("cloudSpaceStopBytes").jsonPrimitive.long, LabFileRules.CLOUD_SPACE_STOP_BYTES)
+        assertEquals(limits.getValue("androidBytesPerDay").jsonObject.getValue("up").jsonPrimitive.long, LabFileRules.ANDROID_UP_BYTES_PER_DAY)
+        // Lo que viaja de un trozo es su base64
+        assertEquals(4L, LabFileRules.travelBytes(1))
+        assertEquals(4L, LabFileRules.travelBytes(3))
+        assertEquals(8L, LabFileRules.travelBytes(4))
     }
 
     /** Una nube con un archivo: responde lo que lee `LabFileDownloader`. */

@@ -71,7 +71,7 @@ fun PatientFormScreen(workspace: TabletWorkspace) {
             }
             TButton("Cancelar", workspace::cancelForm, kind = TButtonKind.Ghost, enabled = !session.writing)
             TButton(if (session.saving) "Guardando…" else "Guardar y abrir ficha", workspace::savePatient, enabled = !session.saving, tag = TabletTags.FORM_SAVE)
-            TButton("Guardar e iniciar consulta", {}, kind = TButtonKind.Primary, nextVersion = true)
+            TButton("Guardar e iniciar consulta", { workspace.savePatient(startConsultation = true) }, kind = TButtonKind.Primary, enabled = !session.saving, tag = TabletTags.FORM_SAVE_START)
         }
         TDivider()
         session.error?.let { message ->
@@ -269,7 +269,7 @@ private fun FormSections(workspace: TabletWorkspace, form: PatientForm, width: D
 
 /** La fecha con la máscara de la PC: el teclado de Android entrega el texto ya cambiado, y [DateMaskText.applyChange] lo vuelve la tecla que fue. */
 @Composable
-fun BirthDateField(text: String, onChange: (String) -> Unit) {
+fun BirthDateField(text: String, label: String = "Fecha de nacimiento *", tag: String = TabletTags.field("BirthDate"), onChange: (String) -> Unit) {
     var value by remember { mutableStateOf(TextFieldValue(text, TextRange(text.length))) }
     // Lo que puso el formulario (un borrador): el cursor al final
     if (value.text != text) value = TextFieldValue(text, TextRange(text.length))
@@ -289,9 +289,9 @@ fun BirthDateField(text: String, onChange: (String) -> Unit) {
                 }
             }
         },
-        label = "Fecha de nacimiento *",
+        label = label,
         placeholder = "dd/mm/aaaa",
-        tag = TabletTags.field("BirthDate"),
+        tag = tag,
     )
 }
 

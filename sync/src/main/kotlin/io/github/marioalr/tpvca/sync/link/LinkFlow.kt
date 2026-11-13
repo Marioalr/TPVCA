@@ -640,6 +640,20 @@ class LinkFlow(
         return connect(saved.url, token)
     }
 
+    /** Con el freno, la cuota, el token rechazado, solo lectura o revocado, ninguna subida de archivos toca la nube (`PauseReason` de la PC). */
+    fun labUploadsPaused(): Boolean {
+        val saved = credential ?: return true
+        return LabFileUploader.paused(openForWriting(saved, eraseCount), clock)
+    }
+
+    /** El subidor de los resultados de laboratorio que este equipo agregó (K7), con la base de ahora; `null` sin vinculación. Corre fuera del candado de la sincronización. */
+    fun labUploader(files: LabUploadFiles): LabFileUploader? {
+        val saved = credential ?: return null
+        val token = saved.token ?: return null
+        val store = openForWriting(saved, eraseCount)
+        return LabFileUploader(connect(saved.url, token), store, files, saved.deviceId, clock, guard = writeGuard)
+    }
+
     private fun session(saved: DeviceCredential): Session {
         session?.takeIf { it.credential === saved }?.let { return it }
         val token = requireNotNull(saved.token) { "Sin token no hay conexión." }

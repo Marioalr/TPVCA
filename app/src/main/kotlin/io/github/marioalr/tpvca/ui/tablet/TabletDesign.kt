@@ -96,6 +96,7 @@ object TIcons {
     }.build()
 
     val Plus by lazy { stroke("M12 5 V19 M5 12 H19") }
+    val Minus by lazy { stroke("M5 12 H19") }
     val Trash by lazy { stroke("M3 6 H21 M8 6 V4 A2 2 0 0 1 10 2 H14 A2 2 0 0 1 16 4 V6 M19 6 L18 20 A2 2 0 0 1 16 22 H8 A2 2 0 0 1 6 20 L5 6") }
     val More by lazy { stroke("M5 12 H5.01 M12 12 H12.01 M19 12 H19.01", 3f) }
     val Edit by lazy { stroke("M12 20 H21 M16.5 3.5 A2.12 2.12 0 0 1 19.5 6.5 L7 19 L3 20 L4 16 Z") }
@@ -228,8 +229,8 @@ fun TButton(
 
 /** Un botón con solo su icono. */
 @Composable
-fun TIconButton(icon: ImageVector, description: String, onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = LocalTpvcColors.current.textSecondary, tag: String? = null) {
-    var m = modifier.size(TOUCH_MIN).clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = description }
+fun TIconButton(icon: ImageVector, description: String, onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = LocalTpvcColors.current.textSecondary, tag: String? = null, enabled: Boolean = true) {
+    var m = modifier.size(TOUCH_MIN).clip(RoundedCornerShape(8.dp)).clickable(enabled = enabled, role = Role.Button, onClick = onClick).semantics { contentDescription = description }
     if (tag != null) m = m.testTag(tag)
     Box(m, contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(20.dp), tint = tint) }
 }
@@ -315,6 +316,7 @@ fun TField(
     keyboardType: KeyboardType = KeyboardType.Text,
     capitalization: KeyboardCapitalization = KeyboardCapitalization.Sentences,
     tag: String? = null,
+    description: String? = null,
 ) {
     val colors = LocalTpvcColors.current
     val source = remember { MutableInteractionSource() }
@@ -324,7 +326,7 @@ fun TField(
         BasicTextField(
             value,
             onChange,
-            (if (tag != null) Modifier.testTag(tag) else Modifier).fillMaxWidth().semantics { if (label != null) contentDescription = label },
+            (if (tag != null) Modifier.testTag(tag) else Modifier).fillMaxWidth().semantics { (description ?: label)?.let { contentDescription = it } },
             readOnly = readOnly,
             singleLine = !multiline,
             minLines = if (multiline) 3 else 1,
@@ -386,19 +388,19 @@ private fun FieldBox(empty: Boolean, placeholder: String, border: Color, readOnl
 /** La lista de opciones de la PC (`ChipList`) con el alto de un dedo. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun TChips(options: List<String>, selected: String?, onSelect: (String) -> Unit, modifier: Modifier = Modifier, tagPrefix: String? = null) {
+fun TChips(options: List<String>, selected: String?, onSelect: (String) -> Unit, modifier: Modifier = Modifier, tagPrefix: String? = null, enabled: Boolean = true) {
     FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        for (option in options) TChip(option, option == selected, { onSelect(option) }, tag = tagPrefix?.let { "$it-$option" })
+        for (option in options) TChip(option, option == selected, { onSelect(option) }, tag = tagPrefix?.let { "$it-$option" }, enabled = enabled)
     }
 }
 
 @Composable
-fun TChip(text: String, selected: Boolean, onClick: () -> Unit, tag: String? = null, icon: ImageVector? = null) {
+fun TChip(text: String, selected: Boolean, onClick: () -> Unit, tag: String? = null, icon: ImageVector? = null, enabled: Boolean = true) {
     val colors = LocalTpvcColors.current
     val shape = RoundedCornerShape(8.dp)
     var m = Modifier.heightIn(min = TOUCH_MIN).clip(shape).background(if (selected) colors["ThemeSelectionBackground"] else colors.surface)
         .border(1.dp, if (selected) colors["ThemeFocus"] else colors["ThemeControlBorder"], shape)
-        .clickable(role = Role.RadioButton, onClick = onClick)
+        .clickable(enabled = enabled, role = Role.RadioButton, onClick = onClick)
         .semantics { this.selected = selected }
     if (tag != null) m = m.testTag(tag)
     Row(m.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -461,7 +463,27 @@ object TabletTags {
     const val TOAST = "tablet-toast"
     const val MORE = "tablet-more"
     const val DETAIL = "tablet-detail"
+    const val TOAST_ACTION = "tablet-toast-action"
+    const val CHART_PRIMARY = "tablet-chart-primary"
+    const val FORM_SAVE_START = "tablet-form-save-start"
+    const val CONSULTATION = "tablet-consultation"
+    const val CONSULTATION_BANNER = "tablet-consultation-banner"
+    const val CONSULTATION_READ_ONLY = "tablet-consultation-read-only"
+    const val CONSULTATION_FINISH = "tablet-consultation-finish"
+    const val CONSULTATION_DISCARD = "tablet-consultation-discard"
+    const val CONSULTATION_CHART = "tablet-consultation-chart"
+    const val CONSULTATION_TIMER = "tablet-consultation-timer"
+    const val CONSULTATION_ACCOUNT = "tablet-consultation-account"
+    const val CHECKOUT = "tablet-checkout"
+    const val CHECKOUT_BACK = "tablet-checkout-back"
+    const val CHECKOUT_CHARGE = "tablet-checkout-charge"
+    const val CHECKOUT_RECEIVED = "tablet-checkout-received"
     fun field(name: String) = "tablet-field-$name"
     fun slot(time: String) = "tablet-slot-$time"
+    fun attend(time: String) = "tablet-attend-$time"
+    fun section(number: Int) = "tablet-section-$number"
+    fun accountRemove(name: String) = "tablet-account-remove-$name"
+    fun cartRemove(name: String) = "tablet-cart-remove-$name"
+    fun cartLess(name: String) = "tablet-cart-less-$name"
     fun appointmentMenu(time: String) = "tablet-appointment-menu-$time"
 }

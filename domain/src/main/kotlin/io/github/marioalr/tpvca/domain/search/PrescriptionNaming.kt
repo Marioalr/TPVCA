@@ -52,6 +52,9 @@ object PrescriptionNaming {
 
     fun medicineLine(product: Product, showActiveIngredient: Boolean = true): String = parts(product).compose(showActiveIngredient)
 
+    /** La presentación que se surte ("Caja con 20 tabletas"); vacía si el producto no la tiene. */
+    fun presentation(product: Product): String = product.presentation.orEmpty().trim()
+
     /** Las partes del renglón: la marca (o el genérico), su concentración y su forma, y el principio activo de una marca. */
     fun parts(product: Product): MedicineLineParts {
         val name = product.name.trim()

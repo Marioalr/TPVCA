@@ -1,5 +1,6 @@
 package io.github.marioalr.tpvca.data.clinic
 
+import io.github.marioalr.tpvca.domain.model.LabStudy
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -100,6 +101,36 @@ class ClinicReaderTest {
     }
 
     @Test
+    fun elCatalogoDeLaConsultaTraeSyncIdInsumosPlantillasYReglas() {
+        val cat = row("Categories", mapOf("Name" to "C"))
+        val gasa = row("Products", mapOf("Name" to "Gasa", "Code" to "P1", "CategorySyncId" to cat, "IsActive" to 1L, "Price" to "10.00"))
+        val vieja = row("Products", mapOf("Name" to "Antes", "Code" to "P2", "CategorySyncId" to cat, "IsActive" to 0L, "Price" to "10.00"))
+        val sutura = row("ClinicalServices", mapOf("Name" to "Sutura", "Code" to "S2", "Category" to "Zeta", "Price" to "450.00", "EstimatedDurationMinutes" to 30L, "IsActive" to 1L))
+        val consulta = row("ClinicalServices", mapOf("Name" to "Consulta", "Code" to "S1", "Category" to "Alfa", "Price" to "300.00", "EstimatedDurationMinutes" to 15L, "IsActive" to 1L))
+        row("ClinicalServices", mapOf("Name" to "Baja", "Code" to "S3", "Category" to "Alfa", "Price" to "1.00", "IsActive" to 0L))
+        row("ServiceDefaultProducts", mapOf("ClinicalServiceSyncId" to sutura, "ProductSyncId" to gasa, "Quantity" to 2L))
+        row("PrescriptionTemplates", mapOf("Kind" to "MedidasGenerales", "Title" to "B", "Text" to "bb", "SortOrder" to 2L, "IsActive" to 1L))
+        row("PrescriptionTemplates", mapOf("Kind" to "MedidasGenerales", "Title" to "A", "Text" to "aa", "SortOrder" to 1L, "IsActive" to 1L))
+        row("PrescriptionTemplates", mapOf("Kind" to "Posologia", "Title" to "P", "Text" to "pp", "SortOrder" to 1L, "IsActive" to 1L))
+        row("PrescriptionTemplates", mapOf("Kind" to "Posologia", "Title" to "Quitada", "Text" to "x", "SortOrder" to 2L, "IsActive" to 0L))
+        row("PediatricDoseRules", mapOf("Medication" to "Paracetamol", "DoseText" to "15 mg", "MlPerKg" to 0.5, "DropsPerMl" to 20L, "SortOrder" to 1L, "IsActive" to 1L))
+        flush()
+
+        val c = reader.consultationCatalog()
+        assertEquals(listOf(gasa), c.account.products.map { it.syncId })
+        assertEquals("Los desactivados, para encontrar lo ya cargado", setOf(gasa, vieja), c.account.allProducts.map { it.syncId }.toSet())
+        assertEquals("Por categoría y nombre, como la PC", listOf(consulta, sutura), c.account.services.map { it.syncId })
+        val service = c.account.services.last()
+        assertEquals(30, service.estimatedDurationMinutes)
+        assertEquals(gasa, service.defaultProducts.single().product?.syncId)
+        assertEquals(2, service.defaultProducts.single().quantity)
+        assertEquals(listOf("A", "B"), c.generalMeasures.map { it.title })
+        assertEquals(listOf("P"), c.posology.map { it.title })
+        assertEquals(20, c.pediatricRules.single().dropsPerMl)
+        assertEquals("También en el inventario de siempre", gasa, reader.products().first { it.code == "P1" }.syncId)
+    }
+
+    @Test
     fun laRecetaRespetaLaCasillaMostrarDeCadaRenglon() {
         val rows = ClinicMappers.prescriptions(
             """[{"MedicineName":"Tempra 500 mg tabletas (Paracetamol)","Dosage":"1 tableta","Presentation":"Caja con 20","ActiveIngredient":"Paracetamol","ShowActiveIngredient":true},
@@ -111,8 +142,8 @@ class ClinicReaderTest {
         assertEquals("Escrito a mano", rows[2].medicineName)
         assertEquals("2", rows[2].dosage)
         assertEquals(emptyList<Any>(), ClinicMappers.prescriptions("esto no es JSON"))
-        assertEquals(listOf("BH") to "En ayunas", ClinicMappers.labOrder("""{"Studies":[{"Name":"BH","Area":"H"}],"Indications":"En ayunas"}"""))
-        assertEquals(emptyList<String>() to "", ClinicMappers.labOrder(""))
+        assertEquals(listOf(LabStudy("BH", "H")) to "En ayunas", ClinicMappers.labOrder("""{"Studies":[{"Name":"BH","Area":"H"}],"Indications":"En ayunas"}"""))
+        assertEquals(emptyList<LabStudy>() to "", ClinicMappers.labOrder(""))
     }
 
     @Test

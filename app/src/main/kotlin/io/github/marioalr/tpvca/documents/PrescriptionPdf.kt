@@ -30,42 +30,42 @@ class PrescriptionImages(val crest: Bitmap? = null, val header: Bitmap? = null, 
  * sistema: la de la PC (Frosted Breath) no viene en Android.
  */
 object PrescriptionPdf {
-    private const val PAGE_WIDTH = 816f
-    private const val HALF_HEIGHT = 528f
-    private const val LETTER_HEIGHT = 1056f
-    private const val POINTS_PER_PX = 0.75f
-    private val MARGIN_X = (PrescriptionLayout.MARGIN_LEFT_RIGHT_INCHES * 96).toFloat()
-    private val MARGIN_Y = (PrescriptionLayout.MARGIN_TOP_BOTTOM_INCHES * 96).toFloat()
+    internal const val PAGE_WIDTH = 816f
+    internal const val HALF_HEIGHT = 528f
+    internal const val LETTER_HEIGHT = 1056f
+    internal const val POINTS_PER_PX = 0.75f
+    internal val MARGIN_X = (PrescriptionLayout.MARGIN_LEFT_RIGHT_INCHES * 96).toFloat()
+    internal val MARGIN_Y = (PrescriptionLayout.MARGIN_TOP_BOTTOM_INCHES * 96).toFloat()
 
-    private const val HEADER_HEIGHT = 92f
+    internal const val HEADER_HEIGHT = 92f
     private const val CREST = 76f
     private const val TRACE_W = 131f
     private const val TRACE_H = 44f
-    private const val ROW = 20f
-    private const val ROW_GAP = 13f
-    private const val BODY_GAP = 14f
-    private const val LINE = 16f
-    private const val FOOTER_GAP = 6f
-    private const val FOOTER_H = 27f
-    private const val LABEL_W = 70f
-    private const val BODY_PAD_X = 8f
-    private const val BODY_PAD_Y = 6f
-    private const val COLUMN_GAP = 10f
-    private const val TEXT_PX = 13.33f
-    private const val SMALL_PX = 12f
+    internal const val ROW = 20f
+    internal const val ROW_GAP = 13f
+    internal const val BODY_GAP = 14f
+    internal const val LINE = 16f
+    internal const val FOOTER_GAP = 6f
+    internal const val FOOTER_H = 27f
+    internal const val LABEL_W = 70f
+    internal const val BODY_PAD_X = 8f
+    internal const val BODY_PAD_Y = 6f
+    internal const val COLUMN_GAP = 10f
+    internal const val TEXT_PX = 13.33f
+    internal const val SMALL_PX = 12f
 
-    private val SHADE = Color.rgb(0xF0, 0xF0, 0xF0)
-    private val LABEL_COLOR = Color.rgb(0x5A, 0x68, 0x7D)
-    private val DOCTOR_COLOR = Color.rgb(0x03, 0x69, 0xA1)
+    internal val SHADE = Color.rgb(0xF0, 0xF0, 0xF0)
+    internal val LABEL_COLOR = Color.rgb(0x5A, 0x68, 0x7D)
+    internal val DOCTOR_COLOR = Color.rgb(0x03, 0x69, 0xA1)
     private val ALERT = Color.parseColor(PrescriptionLayout.ALERT_COLOR)
 
-    private fun paint(size: Float = TEXT_PX, color: Int = Color.BLACK, bold: Boolean = false) = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+    internal fun paint(size: Float = TEXT_PX, color: Int = Color.BLACK, bold: Boolean = false) = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = size
         this.color = color
         typeface = Typeface.create(Typeface.SANS_SERIF, if (bold) Typeface.BOLD else Typeface.NORMAL)
     }
 
-    private fun layout(text: CharSequence, width: Float, paint: TextPaint, align: Layout.Alignment = Layout.Alignment.ALIGN_NORMAL): StaticLayout =
+    internal fun layout(text: CharSequence, width: Float, paint: TextPaint, align: Layout.Alignment = Layout.Alignment.ALIGN_NORMAL): StaticLayout =
         StaticLayout.Builder.obtain(text, 0, text.length, paint, max(1f, width).toInt())
             .setAlignment(align)
             .setIncludePad(false)
@@ -82,10 +82,10 @@ object PrescriptionPdf {
     /** Las hojas que hacen falta y en qué papel. Devuelve también si cupo en media carta. */
     private class Plan(val paper: PrescriptionPaper, val pages: List<Page>, val measures: StaticLayout, val allergies: StaticLayout, val rowsHeight: Float)
 
-    private val rightFieldWidths = listOf("Edad:" to 90f, "Fecha:" to 90f)
+    internal val rightFieldWidths = listOf("Edad:" to 90f, "Fecha:" to 90f)
     private val vitalFields = listOf(Triple("T/A:", "ta", 76f), Triple("Temp:", "temp", 60f), Triple("Peso:", "peso", 52f), Triple("Talla:", "talla", 56f), Triple("SpO2%:", "spo2", 48f))
 
-    private fun fieldWidth(label: String, value: String, min: Float): Pair<Float, Float> {
+    internal fun fieldWidth(label: String, value: String, min: Float): Pair<Float, Float> {
         val labelW = paint().measureText(label) + 16f
         val valueW = max(min, paint(bold = true).measureText(value) + 12f)
         return labelW to valueW
@@ -253,7 +253,7 @@ object PrescriptionPdf {
     }
 
     /** Con un alto fijo de renglón (`line-height: 16px` de la PC), sin importar la letra. */
-    private fun drawLines(canvas: Canvas, text: StaticLayout, lines: IntRange) {
+    internal fun drawLines(canvas: Canvas, text: StaticLayout, lines: IntRange) {
         var offset = 0f
         for (line in lines) {
             canvas.save()
@@ -265,7 +265,7 @@ object PrescriptionPdf {
         }
     }
 
-    private fun drawHeader(canvas: Canvas, sheet: PrescriptionSheet, data: PrescriptionLayout, images: PrescriptionImages, left: Float, right: Float, top: Float) {
+    internal fun drawHeader(canvas: Canvas, sheet: PrescriptionSheet, data: PrescriptionLayout, images: PrescriptionImages, left: Float, right: Float, top: Float) {
         images.crest?.let { drawFit(canvas, it, RectF(left, top + 4f, left + CREST, top + 4f + CREST)) }
         val titlesLeft = left + CREST + 16f
         val center = (titlesLeft + right) / 2f
@@ -280,7 +280,7 @@ object PrescriptionPdf {
         images.header?.let { drawFit(canvas, it, RectF(right - TRACE_W, top + HEADER_HEIGHT - TRACE_H, right, top + HEADER_HEIGHT)) }
     }
 
-    private fun drawFooter(canvas: Canvas, data: PrescriptionLayout, images: PrescriptionImages, left: Float, right: Float, top: Float) {
+    internal fun drawFooter(canvas: Canvas, data: PrescriptionLayout, images: PrescriptionImages, left: Float, right: Float, top: Float) {
         val total = right - left - COLUMN_GAP
         val phoneW = total * 0.4f
         footerBox(canvas, data.fields["telefono"].orEmpty(), images.whatsApp, left, top, phoneW)
@@ -303,13 +303,13 @@ object PrescriptionPdf {
         canvas.restore()
     }
 
-    private fun drawLabel(canvas: Canvas, text: String, x: Float, y: Float, width: Float, height: Float, alert: Boolean) {
+    internal fun drawLabel(canvas: Canvas, text: String, x: Float, y: Float, width: Float, height: Float, alert: Boolean) {
         val p = paint(color = if (alert) ALERT else LABEL_COLOR)
         p.textAlign = Paint.Align.RIGHT
         canvas.drawText(text, x + width - 6f, baseline(y, height, p), p)
     }
 
-    private fun drawValue(canvas: Canvas, text: String, x: Float, y: Float, width: Float, height: Float, color: Int) {
+    internal fun drawValue(canvas: Canvas, text: String, x: Float, y: Float, width: Float, height: Float, color: Int) {
         shade(canvas, x, y, width, height)
         val p = paint(bold = true, color = color)
         canvas.save()
@@ -318,27 +318,27 @@ object PrescriptionPdf {
         canvas.restore()
     }
 
-    private fun ellipsize(text: String, width: Float, p: TextPaint): String =
+    internal fun ellipsize(text: String, width: Float, p: TextPaint): String =
         android.text.TextUtils.ellipsize(text, p, max(1f, width), android.text.TextUtils.TruncateAt.END).toString()
 
-    private fun baseline(y: Float, height: Float, p: Paint): Float {
+    internal fun baseline(y: Float, height: Float, p: Paint): Float {
         val m = p.fontMetrics
         return y + (height - m.ascent - m.descent) / 2f
     }
 
-    private fun centerText(canvas: Canvas, text: String, center: Float, middle: Float, p: TextPaint) {
+    internal fun centerText(canvas: Canvas, text: String, center: Float, middle: Float, p: TextPaint) {
         if (text.isEmpty()) return
         p.textAlign = Paint.Align.CENTER
         val m = p.fontMetrics
         canvas.drawText(text, center, middle - (m.ascent + m.descent) / 2f, p)
     }
 
-    private fun shade(canvas: Canvas, x: Float, y: Float, width: Float, height: Float) {
+    internal fun shade(canvas: Canvas, x: Float, y: Float, width: Float, height: Float) {
         canvas.drawRect(x, y, x + width, y + height, Paint().apply { color = SHADE })
     }
 
     /** `object-fit: contain`, centrada. */
-    private fun drawFit(canvas: Canvas, bitmap: Bitmap, box: RectF) {
+    internal fun drawFit(canvas: Canvas, bitmap: Bitmap, box: RectF) {
         val scale = minOf(box.width() / bitmap.width, box.height() / bitmap.height)
         val w = bitmap.width * scale
         val h = bitmap.height * scale

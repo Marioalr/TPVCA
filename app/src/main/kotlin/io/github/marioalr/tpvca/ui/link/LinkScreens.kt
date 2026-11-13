@@ -140,6 +140,23 @@ fun SecureWindow() {
     }
 }
 
+/** La pantalla no se apaga mientras esto se vea (la consulta y sus hojas); al salir, regresa a lo normal. */
+@Composable
+fun KeepScreenOn() {
+    val context = LocalContext.current
+    DisposableEffect(context) {
+        val window = context.findActivity()?.window
+        keepOnHolders += 1
+        window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose {
+            keepOnHolders -= 1
+            if (keepOnHolders == 0) window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+}
+
+private var keepOnHolders = 0
+
 /** Cuántas pantallas lo piden ahora: al pasar de una a otra, primero entra la nueva y después sale la anterior. Solo en el hilo principal. */
 private var secureHolders = 0
 

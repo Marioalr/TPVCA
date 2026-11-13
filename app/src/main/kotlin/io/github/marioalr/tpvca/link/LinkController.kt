@@ -12,6 +12,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
+import io.github.marioalr.tpvca.sync.link.LabUploadFiles
+import io.github.marioalr.tpvca.sync.link.LabUploadReport
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
@@ -32,6 +34,8 @@ class LinkController(
     private val tickMillis: Long = TICK_MILLIS,
     /** `true` mientras el motor sincroniza: lo pone `LinkFlow`. */
     private val syncingFlow: MutableStateFlow<Boolean> = MutableStateFlow(false),
+    /** Los resultados de laboratorio que este equipo agregó y faltan por subir (K7); `null` en el celular, que no sube. */
+    private val labUploads: LabUploadFiles? = null,
 ) {
     val state: StateFlow<LinkState?> = states
     val locked: StateFlow<Boolean> = appLock.locked
@@ -138,6 +142,7 @@ class LinkController(
             guarded {
                 flow.refresh(Refresh.BACKGROUND)
                 noteProgress()
+                uploadLabFilesNow()
             }
         }
     }
@@ -176,10 +181,12 @@ class LinkController(
     /** Al irse: sube lo que haya mientras Android deja vivo el proceso. `true` si queda algo: de respaldo, el trabajo único. */
     fun uploadOnLeaving(): Boolean = guardedResult(false) {
         if (!restored) return@guardedResult false
-        if (flow.pendingCount() == 0) return@guardedResult false
+        val filesPending = labUploads?.hasPending() == true
+        if (flow.pendingCount() == 0 && !filesPending) return@guardedResult false
         flow.refresh(Refresh.BACKGROUND)
         noteProgress()
-        flow.pendingCount() > 0
+        val report = uploadLabFilesNow()
+        flow.pendingCount() > 0 || (labUploads?.hasPending() == true && report?.failed != false)
     }
 
     /** Una vuelta de WorkManager, en un proceso que pudo arrancar solo para esto. `false` si conviene reintentar. */
@@ -187,7 +194,32 @@ class LinkController(
         restoreOnce()
         val state = flow.refresh(Refresh.BACKGROUND)
         noteProgress()
-        state !is LinkState.LocalError && !flow.lastFailed
+        val report = uploadLabFilesNow()
+        state !is LinkState.LocalError && !flow.lastFailed && report?.failed != true
+    }
+
+    /** Lo último que dejó la subida de resultados de laboratorio (el tope, el freno), para decirlo en la ficha. */
+    val labUploadNotice = MutableStateFlow<String?>(null)
+
+    /**
+     * Sube los archivos de laboratorio que faltan (`UploadLabFileAsync`), después de cada vuelta con la nube y al agregar uno. Fuera del candado de la sincronización, y nada con el freno,
+     * la cuota, el token rechazado o el equipo revocado. `null` si no había nada que subir o no se pudo empezar.
+     */
+    private fun uploadLabFilesNow(): LabUploadReport? {
+        val files = labUploads ?: return null
+        if (!files.hasPending()) return null
+        return guardedResult(null) {
+            val uploader = flow.labUploader(files) ?: return@guardedResult null
+            if (flow.labUploadsPaused()) return@guardedResult null
+            val report = uploader.run()
+            labUploadNotice.value = report.notice
+            report
+        }
+    }
+
+    /** Se agregó un resultado: se intenta subir ya, sin esperar a la siguiente vuelta. */
+    fun uploadLabFiles() {
+        scope.launch(io) { uploadLabFilesNow() }
     }
 
     private inline fun <T> guardedResult(fallback: T, action: () -> T): T = try {

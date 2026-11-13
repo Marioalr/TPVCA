@@ -29,11 +29,24 @@ data class Product(
     val openedUnitsRemaining: Int = 0,
     val location: String? = null,
     val isActive: Boolean = true,
+    val syncId: String = "",
 ) {
     /** Piezas por paquete; 1 si no se capturó o es menor. */
     val effectiveUnitsPerPackage: Int get() = if (unitsPerPackage > 1) unitsPerPackage else 1
 
     val hasMultipleUnitsPerPackage: Boolean get() = effectiveUnitsPerPackage > 1
+
+    /** El precio de una pieza suelta: el precio entre las piezas del paquete, a centavos hacia arriba (`Product.IndividualUnitPrice`). */
+    val individualUnitPrice: BigDecimal
+        get() = if (hasMultipleUnitsPerPackage) {
+            NetDecimal.round(NetDecimal.divide(price, BigDecimal(effectiveUnitsPerPackage)), 2, RoundingMode.HALF_UP)
+        } else {
+            price
+        }
+
+    /** Las piezas disponibles: las de los paquetes cerrados más las del abierto, sin contar negativos (`Product.AvailableIndividualUnits`). */
+    val availableIndividualUnits: Int
+        get() = maxOf(0, currentStock) * effectiveUnitsPerPackage + maxOf(0, openedUnitsRemaining)
 
     /** Tiene costo capturado (0 = todavía no). */
     val hasCost: Boolean get() = unitCost.signum() > 0
@@ -95,7 +108,7 @@ data class ProductBatch(
     }
 }
 
-/** Un servicio clínico del catálogo (`ClinicalServices`). */
+/** Un servicio clínico del catálogo (`ClinicalServices`), con sus insumos por defecto (`ServiceDefaultProducts`). */
 data class ClinicalService(
     val id: Int = 0,
     val code: String = "",
@@ -103,4 +116,19 @@ data class ClinicalService(
     val category: String = "",
     val price: BigDecimal = NetDecimal.ZERO,
     val isActive: Boolean = true,
+    val syncId: String = "",
+    val estimatedDurationMinutes: Int = 20,
+    val defaultProducts: List<ServiceDefaultProduct> = emptyList(),
+    val description: String = "",
 )
+
+/** Un insumo por defecto de un servicio: el producto (`null` si este equipo no lo tiene) y sus piezas por unidad. */
+data class ServiceDefaultProduct(val product: Product? = null, val quantity: Int = 1)
+
+/** Un texto para la receta (`Models/PrescriptionTemplate`): una posología o un bloque de medidas generales, de los que se ofrecen al recetar. */
+data class PrescriptionTemplate(val syncId: String = "", val kind: String = POSOLOGY, val title: String = "", val text: String = "", val sortOrder: Int = 0) {
+    companion object {
+        const val POSOLOGY = "Posologia"
+        const val GENERAL_MEASURES = "MedidasGenerales"
+    }
+}

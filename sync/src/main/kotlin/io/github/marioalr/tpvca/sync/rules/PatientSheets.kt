@@ -57,6 +57,12 @@ object PatientSheets {
 
     fun isSheet(column: String): Boolean = column in FIELDS
 
+    /** Los nombres de los campos que conoce una hoja: lo demás de un renglón son campos de otro equipo y se conservan. */
+    internal fun knownFields(column: String): Set<String> = FIELDS.getValue(column).map { it.name }.toSet()
+
+    /** Lo mismo para un insumo de la lista de un servicio (`Supplies`). */
+    internal val SERVICE_SUPPLY_FIELDS: Set<String> = SERVICE_SUPPLY.map { it.name }.toSet()
+
     /** Un renglón: su identidad, tal como llegó ([raw]) y su forma canónica. */
     class SheetRow(val rowId: String, val raw: JsonObject, val canonical: JsonObject, val text: String)
 

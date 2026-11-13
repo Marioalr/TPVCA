@@ -5,17 +5,23 @@ import io.github.marioalr.tpvca.data.entity.ClinicalServiceEntity
 import io.github.marioalr.tpvca.data.entity.PatientAppointmentEntity
 import io.github.marioalr.tpvca.data.entity.PatientConsultationEntity
 import io.github.marioalr.tpvca.data.entity.PatientRecordEntity
+import io.github.marioalr.tpvca.data.entity.PediatricDoseRuleEntity
+import io.github.marioalr.tpvca.data.entity.PrescriptionTemplateEntity
 import io.github.marioalr.tpvca.data.entity.ProductBatchEntity
 import io.github.marioalr.tpvca.data.entity.ProductEntity
+import io.github.marioalr.tpvca.domain.consultation.PediatricDoseRule
 import io.github.marioalr.tpvca.domain.model.Appointment
 import io.github.marioalr.tpvca.domain.model.ClinicProfile
 import io.github.marioalr.tpvca.domain.model.ClinicalService
 import io.github.marioalr.tpvca.domain.model.Consultation
+import io.github.marioalr.tpvca.domain.model.LabStudy
 import io.github.marioalr.tpvca.domain.model.EMPTY_SYNC_ID
 import io.github.marioalr.tpvca.domain.model.Patient
 import io.github.marioalr.tpvca.domain.model.PrescriptionItem
+import io.github.marioalr.tpvca.domain.model.PrescriptionTemplate
 import io.github.marioalr.tpvca.domain.model.Product
 import io.github.marioalr.tpvca.domain.model.ProductBatch
+import io.github.marioalr.tpvca.domain.model.ServiceDefaultProduct
 import io.github.marioalr.tpvca.domain.model.Vitals
 import io.github.marioalr.tpvca.domain.search.PrescriptionNaming
 import io.github.marioalr.tpvca.domain.text.NetDecimal
@@ -78,6 +84,7 @@ object ClinicMappers {
         openedUnitsRemaining = e.openedUnitsRemaining.toInt(),
         location = e.location,
         isActive = e.isActive != 0L,
+        syncId = e.syncId,
     )
 
     fun batch(e: ProductBatchEntity, id: Int, productId: Int): ProductBatch = ProductBatch(
@@ -90,8 +97,13 @@ object ClinicMappers {
         closedAtUtc = instantUtc(e.closedAtUtc),
     )
 
-    fun service(e: ClinicalServiceEntity, id: Int): ClinicalService =
-        ClinicalService(id, e.code, e.name, e.category, decimal(e.price), e.isActive != 0L)
+    /** [defaults]: sus insumos por defecto (`ServiceDefaultProducts`). */
+    fun service(e: ClinicalServiceEntity, id: Int, defaults: List<ServiceDefaultProduct> = emptyList()): ClinicalService =
+        ClinicalService(id, e.code, e.name, e.category, decimal(e.price), e.isActive != 0L, e.syncId, e.estimatedDurationMinutes.toInt(), defaults, e.description)
+
+    fun template(e: PrescriptionTemplateEntity): PrescriptionTemplate = PrescriptionTemplate(e.syncId, e.kind, e.title, e.text, e.sortOrder.toInt())
+
+    fun pediatricRule(e: PediatricDoseRuleEntity): PediatricDoseRule = PediatricDoseRule(e.medication, e.doseText, e.mlPerKg, e.dropsPerMl?.toInt())
 
     fun appointment(e: PatientAppointmentEntity): Appointment = Appointment(
         syncId = uuid(e.syncId),
@@ -166,6 +178,7 @@ object ClinicMappers {
     fun consultation(e: PatientConsultationEntity): Consultation {
         val (studies, indications) = labOrder(e.labOrderJson)
         return Consultation(
+            labOrderStudies = studies,
             date = dateTime(e.date),
             folio = e.folio,
             chiefComplaint = e.chiefComplaint,
@@ -176,7 +189,7 @@ object ClinicMappers {
             systemsReview = e.systemsReview,
             physicalExamination = e.physicalExamination,
             prescriptions = prescriptions(e.prescriptionsJson),
-            labStudies = studies,
+            labStudies = studies.map { it.name },
             labIndications = indications,
             vitals = Vitals(
                 bloodPressureSystolic = decimalOrNull(e.bloodPressureSystolic),
@@ -218,13 +231,14 @@ object ClinicMappers {
         }
     }
 
-    /** `LabOrderJson`: `{"Studies":[{"Name","Area"}],"Indications"}`; "" si la consulta no pidió estudios. */
-    fun labOrder(text: String?): Pair<List<String>, String> {
-        if (text.isNullOrBlank()) return emptyList<String>() to ""
-        val root = runCatching { json.parseToJsonElement(text) as? JsonObject }.getOrNull() ?: return emptyList<String>() to ""
+    /** `LabOrderJson`: `{"Studies":[{"Name","Area"}],"Indications"}`; "" si la consulta no pidió estudios. Como `LabOrder.FromJson` de la PC: nombres y área recortados, sin los vacíos. */
+    fun labOrder(text: String?): Pair<List<LabStudy>, String> {
+        if (text.isNullOrBlank()) return emptyList<LabStudy>() to ""
+        val root = runCatching { json.parseToJsonElement(text) as? JsonObject }.getOrNull() ?: return emptyList<LabStudy>() to ""
         val studies = (root.entries.firstOrNull { it.key.equals("Studies", ignoreCase = true) }?.value as? JsonArray).orEmpty()
-            .filterIsInstance<JsonObject>().mapNotNull { it.field("Name")?.contentOrNull?.takeIf(String::isNotBlank) }
-        return studies to root.field("Indications")?.contentOrNull.orEmpty()
+            .filterIsInstance<JsonObject>()
+            .mapNotNull { study -> study.field("Name")?.contentOrNull?.trim()?.takeIf(String::isNotEmpty)?.let { LabStudy(it, study.field("Area")?.contentOrNull.orEmpty().trim()) } }
+        return studies to root.field("Indications")?.contentOrNull.orEmpty().trim()
     }
 
     fun profile(e: ClinicProfileEntity?): ClinicProfile = ClinicProfile(

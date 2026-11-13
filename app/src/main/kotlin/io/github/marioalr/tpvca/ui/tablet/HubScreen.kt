@@ -98,7 +98,7 @@ fun HubScreen(workspace: TabletWorkspace, chrome: TabletChrome) {
             }
             val cards: List<@Composable (Modifier) -> Unit> = listOf(
                 { BigCard(it, TIcons.Cart, "Nueva Venta", "Punto de Venta / Farmacia", null, "Dispensación y venta de medicamentos, curación e insumos con carrito interactivo, cálculo de totales y descuento automático por caducidad (FEFO).", "Iniciar Venta", solid = true) },
-                { BigCard(it, TIcons.FileMedical, "Pacientes", "Consulta, expedientes y agenda", "NOM-004-SSA3", "Citas de hoy, búsqueda de pacientes, fichas NOM-004, consulta con receta y cobro en la misma pantalla.", "Abrir Pacientes", tag = TabletTags.HUB_PATIENTS, onClick = workspace::goPatients) },
+                { BigCard(it, TIcons.FileMedical, "Pacientes", "Consulta, expedientes y agenda", "NOM-004-SSA3", "Citas de hoy, búsqueda de pacientes, fichas NOM-004, consulta con receta y cobro en la misma pantalla.", "Abrir Pacientes", tag = TabletTags.HUB_PATIENTS, onClick = workspace::enterPatients) },
                 { BigCard(it, TIcons.Settings, "Configuración", "Gestión y Administración", null, "Panel de métricas, catálogo de inventario e insumos, control de lotes y caducidades (FEFO), kardex de movimientos y personalización de temas.", "Abrir Administración") },
             )
             if (wide) {

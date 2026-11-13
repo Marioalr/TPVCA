@@ -31,7 +31,7 @@ object VitalSignsRules {
         return NetDecimal.parseOrNull(t)
     }
 
-    private fun parseDouble(text: String?): Double? {
+    internal fun parseDouble(text: String?): Double? {
         val t = text.orEmpty().replace(',', '.').trim()
         return if (INVARIANT_NUMBER.matches(t)) t.toDoubleOrNull() else null
     }

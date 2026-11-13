@@ -113,8 +113,11 @@ data class PrescriptionItem(
     val sheetDetail: String get() = if (presentation.isNullOrBlank()) "" else " · " + presentation.trim()
 }
 
+/** Un estudio de la orden de laboratorio (`LabOrderStudy`): su nombre y el área del laboratorio que lo procesa ("Otros" en uno escrito a mano). */
+data class LabStudy(val name: String, val area: String = "")
+
 /**
- * Una consulta (`PatientConsultations`): la nota, la receta y la solicitud de laboratorio (`LabOrderJson`: [labStudies] y
+ * Una consulta (`PatientConsultations`): la nota, la receta y la solicitud de laboratorio (`LabOrderJson`: [labStudies], [labOrderStudies] con su área y
  * [labIndications]), y los signos en sus columnas si ya se guardaron (decimales; `null` = sin dato).
  */
 data class Consultation(
@@ -131,6 +134,7 @@ data class Consultation(
     val labStudies: List<String> = emptyList(),
     val labIndications: String = "",
     val vitals: Vitals = Vitals(),
+    val labOrderStudies: List<LabStudy> = labStudies.map { LabStudy(it) },
 )
 
 /** Los signos numéricos de una consulta (las columnas de `PatientConsultations`; talla en metros). */

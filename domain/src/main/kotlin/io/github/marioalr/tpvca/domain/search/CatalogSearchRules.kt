@@ -1,5 +1,7 @@
 package io.github.marioalr.tpvca.domain.search
 
+import io.github.marioalr.tpvca.domain.consultation.Cie10Catalog
+import io.github.marioalr.tpvca.domain.consultation.Cie10Diagnosis
 import io.github.marioalr.tpvca.domain.model.Patient
 import io.github.marioalr.tpvca.domain.model.Product
 import io.github.marioalr.tpvca.domain.text.MexicanText
@@ -106,6 +108,9 @@ object CatalogSearchRules {
     /** Cuántas sugerencias muestran la hoja de insumos y el buscador del CIE-10. */
     const val SHEET_SUGGESTION_LIMIT = 20
 
+    /** Con menos letras (sin los espacios de los lados) el diagnóstico no sugiere nada. */
+    const val CIE10_MIN_LENGTH = 2
+
     // Revisión 20: solo dígitos ASCII. Como .NET: `.` es todo menos \n (`[^\n]`), `$` el final o antes de un \n final (`(?d)`)
     // y `\s` de Unicode (`(?U)`)
     private val QUANTITY_PREFIX = NetRegex.of("^\\s*([0-9]{1,3})\\s*\\*\\s*([^\\n]*)$", "d")
@@ -157,5 +162,11 @@ object CatalogSearchRules {
         var list = products.filter(CatalogMatchingRules::isProductSupply)
         if (q.isNotBlank()) list = list.filter { TextSearch.matches(q, it.name, it.genericName, it.code, it.presentation) }
         return list.sortedWith(compareBy(MexicanText.nameOrder()) { it.name })
+    }
+
+    /** Lo que sugiere el diagnóstico de la consulta: nada con menos de 2 letras; si no, [Cie10Catalog.search] con 20 como mucho. */
+    fun cie10Suggestions(text: String?): List<Cie10Diagnosis> {
+        if (text.isNullOrBlank() || text.trim().length < CIE10_MIN_LENGTH) return emptyList()
+        return Cie10Catalog.search(text.trim(), SHEET_SUGGESTION_LIMIT)
     }
 }

@@ -33,6 +33,26 @@ class LabFileCacheTest {
         assertFalse("En disco va cifrado", saved.toList().windowed(16).contains(content.take(16)))
     }
 
+    /** El estado de la lista solo mira si el archivo existe: no lo descifra, no lo marca como usado ni borra uno dañado (eso es al abrirlo). */
+    @Test
+    fun contieneNoLeeNiBorra() {
+        val cache = cache()
+        val content = bytes(3)
+        val sha = LabFileRules.sha256(content)
+        assertFalse(cache.contains(sha))
+        cache.write(sha, content)
+        val file = File(temp.root, "lab/$sha")
+        file.writeBytes(ByteArray(40))
+        file.setLastModified(1_000_000L)
+        assertTrue(cache.contains(sha))
+        assertTrue("No se borra", file.exists())
+        assertEquals("No se marca como usado", 1_000_000L, file.lastModified())
+        val pending = bytes(4)
+        val pendingSha = LabFileRules.sha256(pending)
+        cache.writePending(pendingSha, pending)
+        assertTrue(cache.contains(pendingSha))
+    }
+
     @Test
     fun loDanadoSeBorraYVuelveABajar() {
         val cache = cache()
@@ -42,6 +62,38 @@ class LabFileCacheTest {
         File(temp.root, "lab/$sha").writeBytes(ByteArray(40))
         assertNull(cache.read(sha))
         assertFalse(File(temp.root, "lab/$sha").exists())
+    }
+
+    @Test
+    fun loPendienteDeSubirNoEntraAlTopeYAlSubirsePasaALaCache() {
+        val cache = cache(max = 1000)
+        val content = bytes(5)
+        val sha = LabFileRules.sha256(content)
+        cache.writePending(sha, content)
+        assertEquals(listOf(sha), cache.pending())
+        assertTrue(cache.isPending(sha))
+        assertArrayEquals("Se lee igual que uno bajado", content, cache.read(sha))
+        assertFalse("En disco va cifrado", File(temp.root, "lab/pendientes/$sha").readBytes().toList().windowed(16).contains(content.take(16)))
+        // Llenar la caché no lo tira
+        for (i in 10..14) {
+            val other = bytes(i)
+            cache.write(LabFileRules.sha256(other), other)
+        }
+        assertArrayEquals(content, cache.read(sha))
+        assertEquals(listOf(sha), cache.pending())
+        // Subido: a la caché, donde ya sí manda el LRU
+        cache.settle(sha)
+        assertTrue(cache.pending().isEmpty())
+        assertFalse(cache.isPending(sha))
+        assertTrue(File(temp.root, "lab/$sha").isFile)
+        assertArrayEquals(content, cache.read(sha))
+        // Volver a agregarlo lo vuelve pendiente (pudo soltarse como huérfano sin subirse): si ya está en la nube, la subida lo regresa con una lectura
+        cache.writePending(sha, content)
+        assertEquals(listOf(sha), cache.pending())
+        assertFalse(File(temp.root, "lab/$sha").exists())
+        assertArrayEquals(content, cache.read(sha))
+        cache.settle(sha)
+        cache.settle("0".repeat(64))
     }
 
     @Test

@@ -184,6 +184,8 @@ private fun AppointmentCard(item: DayAppointment, nav: PhoneNav, onActions: () -
     val attended = a.status == PatientSummaryRules.ATTENDED
     val confirmed = a.status == CONFIRMED
     val big = isBigText()
+    // Con el botón de acciones, el estado va debajo del motivo: en 360 dp el nombre no cabría junto a los dos
+    val hasActions = isOpenableSyncId(a.syncId.toString())
     val status: @Composable (Modifier) -> Unit = {
         Pill(a.status, if (attended) PhoneColors.Success else PhoneColors.Accent, if (attended) PhoneColors.SuccessSoft else PhoneColors.AccentSoft, it)
     }
@@ -206,11 +208,11 @@ private fun AppointmentCard(item: DayAppointment, nav: PhoneNav, onActions: () -
             PText(a.patientName, size = 15.sp, weight = FontWeight.Medium)
             if (a.reason.isNotBlank()) PText(a.reason, size = 12.sp, color = PhoneColors.Muted)
             if (marked.isOverlapping) Pill(marked.overlapText, PhoneColors.AmberDark, PhoneColors.AmberSoft, Modifier.padding(top = 4.dp))
-            if (big) status(Modifier.padding(top = 4.dp))
+            if (big || hasActions) status(Modifier.padding(top = 4.dp))
         }
-        if (!big) status(Modifier.align(Alignment.CenterVertically))
+        if (!big && !hasActions) status(Modifier.align(Alignment.CenterVertically))
         // Una cita sin `SyncId` que se pueda usar no se puede cambiar: no hay menú
-        if (isOpenableSyncId(a.syncId.toString())) {
+        if (hasActions) {
             Box(
                 Modifier.size(48.dp).align(Alignment.CenterVertically).clip(CircleShape)
                     .semantics { role = Role.Button; contentDescription = "Acciones de la cita de ${a.patientName}" }
@@ -244,6 +246,8 @@ private fun AppointmentActions(item: DayAppointment, workspace: PhoneWorkspace, 
                 // Lo que se toca en la hoja no pasa a lo de atrás
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                 .testTag(PhoneTags.APPOINTMENT_SHEET)
+                // Con la letra grande, en un celular chico, no cabe: se desplaza
+                .verticalScroll(rememberScrollState())
                 .padding(top = 8.dp, bottom = 12.dp),
         ) {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {

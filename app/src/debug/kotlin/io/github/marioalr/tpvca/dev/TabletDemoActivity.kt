@@ -39,6 +39,7 @@ import io.github.marioalr.tpvca.ui.theme.TpvcThemes
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.io.File
 import java.time.Instant
 
@@ -74,7 +75,7 @@ fun tabletDemoExtras(store: SyncStore) {
     )
 }
 
-/** La tablet con datos inventados y sin nube, sobre SQLCipher. Solo en depuración. Girar no la vuelve a armar; que Android cierre el proceso sí. `--es pagina hub|pacientes|ficha|alta|editar|agenda|sync|consulta`. */
+/** La tablet con datos inventados y sin nube, sobre SQLCipher. Solo en depuración. Girar no la vuelve a armar; que Android cierre el proceso sí. `--es pagina hub|pacientes|ficha|alta|editar|agenda|sync|consulta|enviada`. */
 class TabletDemoActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -92,6 +93,8 @@ class TabletDemoActivity : FragmentActivity() {
             }
             "sync" -> demo.workspace.goSync()
             "consulta" -> demo.workspace.consultation.chartPrimaryAction(demo.ana())
+            // La consulta de Ana enviada a la PC (K8): para ver la solo lectura sin otro equipo
+            "enviada" -> demo.sendAnaToPc()
         }
         setContent {
             TpvcTheme(TpvcThemes.claro) {
@@ -126,6 +129,21 @@ class TabletDemoActivity : FragmentActivity() {
                 isOnline = { false },
             )
             workspace = TabletWorkspace(env, CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate))
+        }
+
+        fun sendAnaToPc() {
+            val ana = ana()
+            workspace.consultation.chartPrimaryAction(ana)
+            CoroutineScope(Dispatchers.Main.immediate).launch {
+                while (workspace.consultation.draft == null) kotlinx.coroutines.delay(50)
+                val d = workspace.consultation.draft!!
+                workspace.consultation.markHandoff(
+                    io.github.marioalr.tpvca.sync.link.HandoffMarker(
+                        id = "demo-envio", toDeviceId = "demo-pc", toDeviceName = "PC del consultorio", fromDeviceId = "demo-tablet", fromDeviceName = "Tablet",
+                        databaseUrl = "", patientSyncId = ana, patientName = d.patientName, folio = d.folio, phase = io.github.marioalr.tpvca.sync.link.HandoffPhase.Sent,
+                    ),
+                )
+            }
         }
 
         fun ana(): String = store.select("Patients", listOf("SyncId", "RecordNumber")).first { it["RecordNumber"] == "EXP-2026-014" }["SyncId"] as String

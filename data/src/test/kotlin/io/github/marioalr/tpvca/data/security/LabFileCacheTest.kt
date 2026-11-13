@@ -33,6 +33,26 @@ class LabFileCacheTest {
         assertFalse("En disco va cifrado", saved.toList().windowed(16).contains(content.take(16)))
     }
 
+    /** El estado de la lista solo mira si el archivo existe: no lo descifra, no lo marca como usado ni borra uno dañado (eso es al abrirlo). */
+    @Test
+    fun contieneNoLeeNiBorra() {
+        val cache = cache()
+        val content = bytes(3)
+        val sha = LabFileRules.sha256(content)
+        assertFalse(cache.contains(sha))
+        cache.write(sha, content)
+        val file = File(temp.root, "lab/$sha")
+        file.writeBytes(ByteArray(40))
+        file.setLastModified(1_000_000L)
+        assertTrue(cache.contains(sha))
+        assertTrue("No se borra", file.exists())
+        assertEquals("No se marca como usado", 1_000_000L, file.lastModified())
+        val pending = bytes(4)
+        val pendingSha = LabFileRules.sha256(pending)
+        cache.writePending(pendingSha, pending)
+        assertTrue(cache.contains(pendingSha))
+    }
+
     @Test
     fun loDanadoSeBorraYVuelveABajar() {
         val cache = cache()

@@ -785,6 +785,26 @@ class ConsultationTabletTest {
         assertEquals(sales + 1, store.select("Sales", listOf("Folio")).size)
     }
 
+    /** Tocado «Cobrar», la cuenta no se cambia desde la pantalla; y se cobra la cuenta de después de esperar a la nube, como `ChargeAsync` de la PC. */
+    @Test
+    fun loQueSeCobraEsLaCuentaDeDespuesDeEsperarALaNube() {
+        startAna()
+        openCheckout()
+        val session = workspace.consultation.checkout!!
+        val saleId = workspace.consultation.draft!!.chargeSaleSyncId
+        val first = session.cart.items.first().name
+        quickGate = CompletableDeferred()
+        charge()
+        compose.onNodeWithTag(TabletTags.cartRemove(first)).assertIsNotEnabled()
+        // Algo que cambió la cuenta mientras se esperaba (no desde la pantalla): se cobra lo de ahora
+        compose.runOnIdle { session.change { setQuantity(0, 3) } }
+        val expected = session.cart.totalAmount
+        quickGate!!.complete(Unit)
+        waitFor { !workspace.consultation.hasConsultation }
+        val total = store.select("Sales", listOf("Total"), "SyncId", listOf(saleId)).single()["Total"] as String
+        assertEquals(0, expected.compareTo(java.math.BigDecimal(total)))
+    }
+
     /** Mientras solo espera a la nube se puede volver, y entonces no se cobra nada. */
     @Test
     fun volverMientrasEsperaALaNubeNoCobra() {
@@ -1187,6 +1207,24 @@ class ConsultationTabletTest {
         assertTrue("Con 2 piezas se surte", rows().single().dispenseInClinic)
     }
 
+    /** Atrás con la alerta de alergia abierta la contesta «No recetarlo»: no se queda escondida para después. */
+    @Test
+    fun atrasConLaAlertaDeAlergiaLaContestaNo() {
+        startAna()
+        openPrescriptionSheet()
+        pickMedicine("amoxi", "Amoxicilina 500 mg cápsulas")
+        compose.onNodeWithTag(SheetTags.ADD).performClick()
+        waitTag(SheetTags.ALLERGY_ALERT)
+        compose.runOnIdle { (activity as androidx.activity.ComponentActivity).onBackPressedDispatcher.onBackPressed() }
+        waitFor { workspace.consultation.prescription.allergyAlert == null }
+        assertTrue(rows().isEmpty())
+        assertEquals("La hoja sigue abierta", ConsultationSheet.Prescription, workspace.consultation.sheet)
+        // Cerrar y volver a abrir nunca trae una alerta vieja
+        compose.runOnIdle { workspace.consultation.closeSheet() }
+        openPrescriptionSheet()
+        assertNull(workspace.consultation.prescription.allergyAlert)
+    }
+
     @Test
     fun escritoAManoSeRecetaSinCobrar() {
         startAna()
@@ -1435,6 +1473,24 @@ class ConsultationTabletTest {
         assertEquals("[]", store.select("Patients", listOf("SyncId", PatientSheets.SUPPLIES)).first { it["SyncId"] == ana }[PatientSheets.SUPPLIES])
     }
 
+    /** Dos toques en «Agregar» de insumos: un renglón y un cargo. */
+    @Test
+    fun dosToquesEnAgregarInsumoAgreganUnoYCobranUnaVez() {
+        startAna()
+        openSuppliesSheet()
+        compose.onNodeWithTag(SheetTags.SUPPLY_SEARCH).performTextReplacement("Algodón especial")
+        compose.runOnIdle {
+            workspace.consultation.suppliesEditor.addTyped()
+            workspace.consultation.suppliesEditor.addTyped()
+        }
+        waitFor { supplies().size == 1 }
+        compose.waitForIdle()
+        Thread.sleep(400)
+        compose.waitForIdle()
+        assertEquals(1, supplies().size)
+        assertEquals(1, accountLine("Algodón especial")!!.quantity)
+    }
+
     @Test
     fun unInsumoEscritoAManoSeCobraComoCargoLibre() {
         startAna()
@@ -1642,6 +1698,25 @@ class ConsultationTabletTest {
         // La hoja muestra la receta corregida y sale de la corrección
         waitText("Loratadina 10 mg")
         assertTrue(compose.onAllNodesWithTag(SheetTags.CORRECT_SAVE).fetchSemanticsNodes().isEmpty())
+    }
+
+    /** Lo que se lleva corregido vive en el área de trabajo, no en la pantalla: volver a armarla (girar la tablet) no lo pierde. */
+    @Test
+    fun laCorreccionSobreviveAQueSeVuelvaAArmarLaPantalla() {
+        workspace.openChart(ana)
+        show()
+        waitTag(TabletTags.CHART_PRIMARY)
+        workspace.detail = latestConsultation(ana)
+        waitTag(TabletTags.DETAIL)
+        compose.onNodeWithTag(SheetTags.CORRECT).performScrollTo().performClick()
+        waitTag(SheetTags.correctDosage(0))
+        compose.onNodeWithTag(SheetTags.correctDosage(0)).performScrollTo().performTextReplacement("1 tableta cada 12 horas")
+        compose.runOnIdle { shown = null }
+        compose.waitForIdle()
+        compose.runOnIdle { shown = workspace }
+        waitTag(SheetTags.correctDosage(0))
+        assertTrue(workspace.correction.editing)
+        waitText("1 tableta cada 12 horas")
     }
 
     @Test

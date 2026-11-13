@@ -103,27 +103,29 @@ private fun NoteAndLines(workspace: TabletWorkspace, session: ConsultationChecko
 
 @Composable
 private fun CartLine(session: ConsultationCheckout, item: CartItem, index: Int) {
+    // Tocado «Cobrar», la cuenta ya no cambia desde la pantalla
+    val open = !session.charging
     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Column(Modifier.weight(1f)) {
             TText(item.name, size = TType.detail, weight = FontWeight.SemiBold)
             TCaption("${item.code} · ${item.stockText} · ${MexicanText.currency(item.unitPrice)}")
         }
-        TIconLabel("−", "Una menos: ${item.name}", TabletTags.cartLess(item.name)) { session.change { decreaseQuantity(index) } }
-        QuantityField(item.quantity) { value -> session.change { setQuantity(index, value) } }
-        TIconLabel("+", "Una más: ${item.name}", null) { session.change { increaseQuantity(index) } }
+        TIconLabel("−", "Una menos: ${item.name}", TabletTags.cartLess(item.name), open) { session.change { decreaseQuantity(index) } }
+        QuantityField(item.quantity, open) { value -> session.change { setQuantity(index, value) } }
+        TIconLabel("+", "Una más: ${item.name}", null, open) { session.change { increaseQuantity(index) } }
         TText(MexicanText.currency(item.subtotal), Modifier.widthIn(min = 76.dp), size = TType.detail, weight = FontWeight.SemiBold, mono = true)
-        TIconButton(TIcons.Close, "Quitar: ${item.name}", { session.change { removeFromCart(index) } }, tag = TabletTags.cartRemove(item.name))
+        TIconButton(TIcons.Close, "Quitar: ${item.name}", { session.change { removeFromCart(index) } }, tag = TabletTags.cartRemove(item.name), enabled = open)
     }
 }
 
 @Composable
-private fun TIconLabel(text: String, description: String, tag: String?, onClick: () -> Unit) {
-    TButton(text, onClick, Modifier.width(TOUCH_MIN), tag = tag, description = description)
+private fun TIconLabel(text: String, description: String, tag: String?, enabled: Boolean, onClick: () -> Unit) {
+    TButton(text, onClick, Modifier.width(TOUCH_MIN), enabled = enabled, tag = tag, description = description)
 }
 
 /** La cantidad escrita a mano: mínimo 1, y mientras está vacía no cambia la cuenta. */
 @Composable
-private fun QuantityField(quantity: Int, onChange: (Int) -> Unit) {
+private fun QuantityField(quantity: Int, enabled: Boolean, onChange: (Int) -> Unit) {
     var text by remember(quantity) { mutableStateOf(quantity.toString()) }
     TField(
         text,
@@ -132,6 +134,7 @@ private fun QuantityField(quantity: Int, onChange: (Int) -> Unit) {
             text.toIntOrNull()?.let(onChange)
         },
         Modifier.width(64.dp),
+        readOnly = !enabled,
         keyboardType = KeyboardType.Number,
     )
 }
@@ -142,6 +145,7 @@ private fun QuantityField(quantity: Int, onChange: (Int) -> Unit) {
 private fun Payment(workspace: TabletWorkspace, session: ConsultationCheckout) {
     val colors = LocalTpvcColors.current
     val cart = session.observed
+    val open = !session.charging
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             TText("Total", weight = FontWeight.SemiBold)
@@ -150,13 +154,13 @@ private fun Payment(workspace: TabletWorkspace, session: ConsultationCheckout) {
         TText(MexicanText.currency(cart.totalAmount), size = TType.title, weight = FontWeight.Bold, mono = true)
     }
     FieldLabel("Forma de pago")
-    TChips(CheckoutCart.PAYMENT_METHODS, cart.selectedPaymentMethod, { method -> session.change { selectedPaymentMethod = method } })
+    TChips(CheckoutCart.PAYMENT_METHODS, cart.selectedPaymentMethod, { method -> session.change { selectedPaymentMethod = method } }, enabled = open)
     if (cart.isCash) {
-        TField(cart.cashReceivedText, { text -> session.change { typeCashReceived(text) } }, Modifier.fillMaxWidth(), label = "Recibido", placeholder = "Exacto", keyboardType = KeyboardType.Decimal, tag = TabletTags.CHECKOUT_RECEIVED)
+        TField(cart.cashReceivedText, { text -> session.change { typeCashReceived(text) } }, Modifier.fillMaxWidth(), label = "Recibido", placeholder = "Exacto", readOnly = !open, keyboardType = KeyboardType.Decimal, tag = TabletTags.CHECKOUT_RECEIVED)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            TButton("Exacto", { session.change { setExactCash() } })
+            TButton("Exacto", { session.change { setExactCash() } }, enabled = open)
             for (amount in cart.quickCashAmounts) {
-                key(amount.toPlainString()) { TButton(MexicanText.currency(amount).removeSuffix(".00"), { session.change { setCashReceived(amount) } }) }
+                key(amount.toPlainString()) { TButton(MexicanText.currency(amount).removeSuffix(".00"), { session.change { setCashReceived(amount) } }, enabled = open) }
             }
         }
         if (cart.hasChange) AmountRow("Cambio", MexicanText.currency(cart.changeDue), colors.successSubtle, colors.successText)

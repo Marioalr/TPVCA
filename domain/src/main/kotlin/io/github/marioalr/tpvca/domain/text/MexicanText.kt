@@ -91,6 +91,12 @@ object MexicanText {
         else -> false
     }
 
+    /** El formato `C0` de es-MX: "$1,235" (el punto medio lejos del cero, como .NET al dar formato; negativo "-$1,235"). */
+    fun currency0(value: BigDecimal): String {
+        val text = n2(value.setScale(0, RoundingMode.HALF_UP)).substringBefore('.')
+        return if (text.startsWith("-")) "-$" + text.substring(1) else "$$text"
+    }
+
     /** El formato `C2` de es-MX: "$1,234.56" (negativo "-$1,234.56"). */
     fun currency(value: BigDecimal): String {
         val text = n2(value)

@@ -394,4 +394,72 @@ class ClinicReaderTest {
         assertEquals(listOf("Medicamentos"), snapshot.categories.map { it.name })
         assertTrue(snapshot.products.single { it.syncId == gone }.isActive.not())
     }
+
+    /**
+     * K9b: el panel del consultorio con las cuentas de `GetDashboardMetricsAsync`: 60 días para «por vencer» (hasta antes de hoy + 61), los lotes abiertos con piezas de productos activos, el consumo en
+     * consulta desde hoy, las ventas del día **sin las canceladas** (como el corte y «Negocio»; la PC lo corrige en v1.57.0) y las listas de 8.
+     */
+    @Test
+    fun elPanelCuentaComoLaPc() {
+        val category = row("Categories", mapOf("Name" to "Medicamentos"))
+        fun product(name: String, stock: Long, min: Long, active: Long = 1L, cost: String = "10") =
+            row("Products", mapOf("Name" to name, "Code" to name, "IsActive" to active, "CategorySyncId" to category, "CurrentStock" to stock, "MinStock" to min, "UnitCost" to cost, "UnitsPerPackage" to 1L))
+        val low = (1..9).map { product("Bajo %02d".format(it), 1, 5) }
+        val ok = product("Normal", 20, 5, cost = "2.50")
+        val inactive = product("De baja", 0, 5, active = 0L)
+        product("Sin costo", 3, 0, cost = "0")
+        fun lot(productSyncId: String, days: Long, qty: Long = 3L, closed: Boolean = false) = row(
+            "ProductBatches",
+            mapOf("ProductSyncId" to productSyncId, "BatchNumber" to "L$days", "Quantity" to qty, "ExpirationDate" to "${today.plusDays(days)} 00:00:00.0000000", "ClosedAtUtc" to if (closed) "2026-01-01 00:00:00.0000000" else null),
+        )
+        lot(ok, 60)
+        lot(ok, 61)
+        lot(ok, -1)
+        lot(ok, 0)
+        lot(ok, 10, qty = 0)
+        lot(ok, 5, closed = true)
+        lot(inactive, 3)
+        row("InventoryMovements", mapOf("ProductSyncId" to ok, "MovementType" to 2L, "Quantity" to 4L, "Delta" to -4L, "Date" to "$today 09:00:00.0000000", "Reason" to "Consulta"))
+        row("InventoryMovements", mapOf("ProductSyncId" to ok, "MovementType" to 2L, "Quantity" to 7L, "Delta" to -7L, "Date" to "${today.minusDays(1)} 09:00:00.0000000", "Reason" to "Consulta"))
+        row("Sales", mapOf("Folio" to "V-1", "Date" to "$today 10:00:00.0000000", "Total" to "100.50", "IsCancelled" to 0L))
+        row("Sales", mapOf("Folio" to "V-2", "Date" to "$today 11:00:00.0000000", "Total" to "50", "IsCancelled" to 1L))
+        row("Sales", mapOf("Folio" to "V-3", "Date" to "${today.plusDays(1)} 00:00:00.0000000", "Total" to "999", "IsCancelled" to 0L))
+        flush()
+
+        val panel = reader.dashboard(today)
+        val m = panel.metrics
+        assertEquals(11, m.totalProducts)
+        assertEquals(9, m.lowStockCount)
+        assertEquals("De hoy a 60 días", 2, m.expiringSoonCount)
+        assertEquals(1, m.expiredCount)
+        assertEquals(4, m.consumedInConsultationToday)
+        assertEquals(1, m.movementsToday)
+        assertEquals("Sin el cancelado", 1, m.salesTodayCount)
+        assertEquals(java.math.BigDecimal("100.50"), m.salesTodayTotal)
+        // 9 × 1 × 10 + 20 × 2.50; uno con existencias sin costo
+        assertEquals(0, java.math.BigDecimal("140").compareTo(m.inventoryValue))
+        assertEquals(1, m.stockedWithoutCost)
+        assertEquals((1..8).map { "Bajo %02d".format(it) }, panel.lowStock.map { it.name })
+        assertEquals(listOf(-1L, 0L, 60L), panel.expiring.map { java.time.temporal.ChronoUnit.DAYS.between(today, it.batch.expirationDate) })
+    }
+
+    /** K9b: Configuración → Servicios lee también los desactivados, con sus insumos (el producto, las piezas y las indicaciones). */
+    @Test
+    fun losServiciosTraenSusInsumosYLosDesactivados() {
+        val category = row("Categories", mapOf("Name" to "Material"))
+        val gauze = row("Products", mapOf("Name" to "Gasa", "Code" to "G", "IsActive" to 1L, "CategorySyncId" to category, "UnitsPerPackage" to 10L))
+        row("Products", mapOf("Name" to "Algodón viejo", "Code" to "A", "IsActive" to 0L, "CategorySyncId" to category))
+        val cure = row("ClinicalServices", mapOf("Name" to "Curación", "Code" to "SERV-010", "Category" to "Curaciones", "Price" to "150.00", "IsActive" to 1L, "EstimatedDurationMinutes" to 20L))
+        row("ClinicalServices", mapOf("Name" to "Retirado", "Code" to "SERV-011", "Category" to "Curaciones", "Price" to "10", "IsActive" to 0L))
+        row("ServiceDefaultProducts", mapOf("ClinicalServiceSyncId" to cure, "ProductSyncId" to gauze, "Quantity" to 2L, "Instructions" to "Dobladas"))
+        flush()
+        val catalog = reader.servicesCatalog()
+        assertEquals(listOf("Curación", "Retirado"), catalog.services.map { it.name }.sorted())
+        val supply = catalog.services.single { it.syncId == cure }.defaultProducts.single()
+        assertEquals(gauze, supply.productSyncId)
+        assertEquals("Gasa", supply.product?.name)
+        assertEquals(2, supply.quantity)
+        assertEquals("Dobladas", supply.instructions)
+        assertEquals("Solo los activos para agregar", listOf("Gasa"), catalog.products.map { it.name })
+    }
 }

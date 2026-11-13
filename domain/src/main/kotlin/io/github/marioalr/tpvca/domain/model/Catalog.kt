@@ -132,8 +132,11 @@ data class ClinicalService(
     val description: String = "",
 )
 
-/** Un insumo por defecto de un servicio: el producto (`null` si este equipo no lo tiene) y sus piezas por unidad. */
-data class ServiceDefaultProduct(val product: Product? = null, val quantity: Int = 1)
+/**
+ * Un insumo por defecto de un servicio: el producto (`null` si este equipo no lo tiene) y sus piezas por unidad. [productSyncId] y [instructions] los lee Configuración → Servicios (K9b): el renglón se
+ * guarda por producto, como `SaveClinicalServiceAsync` de la PC.
+ */
+data class ServiceDefaultProduct(val product: Product? = null, val quantity: Int = 1, val productSyncId: String = product?.syncId.orEmpty(), val instructions: String? = null)
 
 /** Un texto para la receta (`Models/PrescriptionTemplate`): una posología o un bloque de medidas generales, de los que se ofrecen al recetar. */
 data class PrescriptionTemplate(val syncId: String = "", val kind: String = POSOLOGY, val title: String = "", val text: String = "", val sortOrder: Int = 0) {

@@ -689,6 +689,10 @@ class SyncEngine(
         val touched = ArrayList<Pair<String, Row>>()
         val patientsArrived = ArrayList<String>()
         val appointmentsArrived = ArrayList<String>()
+        val catalogArrived = ArrayList<String>()
+        // El catálogo (K9b, regla «Catálogo con varios equipos»): lo que hace que se parezca a otro, como estaba aquí antes de aplicar
+        val identity = SyncNotices.catalogIdentityColumns(table.table)
+        val identityBefore = if (identity == null || force || ids.isEmpty()) emptyMap() else store.select(table.table, listOf("SyncId") + identity, "SyncId", ids).associateBy { it["SyncId"] as String }
         val forced = ArrayList<String>()
         // Lo que aquí se borró, aunque no haya subido: una fila que no es más nueva que su lápida no revive
         val absent = ids.filter { it !in stamps }
@@ -767,11 +771,14 @@ class SyncEngine(
             if (force) forced += syncId
             if (!force && table.table == PatientSummaryRecalculator.PATIENTS) patientsArrived += syncId
             if (!force && table.table == PatientSummaryRecalculator.APPOINTMENTS) appointmentsArrived += syncId
+            // Un alta, o una bajada que le cambió el código, el nombre, la presentación o si está activo; un cambio de precio o de existencias (una venta en otro equipo) no cuenta
+            if (!force && identity != null && (isNew || identity.any { column -> column in values && identityBefore[syncId]?.get(column) != values[column] })) catalogArrived += syncId
         }
         store.apply(StoreChanges(writes = writes, park = park, unpark = unpark, meta = meta, outbox = marks))
         touched.forEach { (syncId, row) -> run.touch(table.table, syncId, row) }
         run.arrivedPatients += patientsArrived
         run.arrivedAppointments += appointmentsArrived
+        run.arrivedCatalog += catalogArrived
         run.forceApplied += forced
         run.applied += writes.size
         run.mergedForUpload += marks.size
@@ -1458,9 +1465,9 @@ class SyncEngine(
 
     /** Los empalmes y posibles duplicados de lo que acaba de llegar: un aviso de este equipo que no viaja y se queda hasta descartarlo (regla «Empalmes» y «Duplicados»). */
     private fun noteArrivals(run: Run) {
-        if (run.arrivedPatients.isEmpty() && run.arrivedAppointments.isEmpty()) return
+        if (run.arrivedPatients.isEmpty() && run.arrivedAppointments.isEmpty() && run.arrivedCatalog.isEmpty()) return
         val notices = SyncNotices.read(store.meta(NOTICES))
-        val next = SyncNotices.merged(store, notices, SyncNotices.check(store, run.arrivedPatients, run.arrivedAppointments))
+        val next = SyncNotices.merged(store, notices, SyncNotices.check(store, run.arrivedPatients, run.arrivedAppointments, run.arrivedCatalog))
         if (next != notices) store.apply(StoreChanges(meta = mapOf(NOTICES to SyncNotices.write(next))))
     }
 
@@ -1543,17 +1550,21 @@ class SyncEngine(
         var mergedForUpload = 0
         val arrivedPatients = LinkedHashSet<String>()
         val arrivedAppointments = LinkedHashSet<String>()
+
+        /** Productos, servicios y categorías que llegaron (K9b): se comparan con el catálogo al terminar. */
+        val arrivedCatalog = LinkedHashSet<String>()
         val forceApplied = HashSet<String>()
 
         /** Filas de «Volver a aplicar» cuyo principal obligatorio se borró. */
         val reapplyDead = HashSet<Pair<String, String>>()
         var checkArrivals = false
 
-        fun arrivalsSoFar() = arrivedPatients.toSet() to arrivedAppointments.toSet()
+        fun arrivalsSoFar() = Triple(arrivedPatients.toSet(), arrivedAppointments.toSet(), arrivedCatalog.toSet())
 
-        fun restoreArrivals(saved: Pair<Set<String>, Set<String>>) {
+        fun restoreArrivals(saved: Triple<Set<String>, Set<String>, Set<String>>) {
             arrivedPatients.retainAll(saved.first)
             arrivedAppointments.retainAll(saved.second)
+            arrivedCatalog.retainAll(saved.third)
         }
         var applied = 0
         var generation: String? = null

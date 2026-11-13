@@ -36,6 +36,29 @@ object SyncNotices {
         CatalogDuplicateRules.Kind.Category to "Categories",
     )
 
+    /**
+     * Lo que hace que un registro del catálogo se parezca a otro (`CatalogIdentityColumns` de la PC): una bajada que solo cambia esto en una fila que ya estaba aquí cuenta como llegada para el aviso.
+     * `null` si [table] no es del catálogo.
+     */
+    fun catalogIdentityColumns(table: String): List<String>? = when (table) {
+        "Products" -> listOf("Code", "Name", "Presentation", "IsActive")
+        "ClinicalServices" -> listOf("Code", "Name", "IsActive")
+        "Categories" -> listOf("Name")
+        else -> null
+    }
+
+    /** Todo el catálogo como lo ve la regla (`LoadCatalogItemsAsync` sin filtro): los productos, servicios y categorías de este equipo. */
+    private fun catalogItems(store: SyncStore): List<CatalogDuplicateRules.Item> = CATALOG_TABLES.flatMap { (kind, table) ->
+        val columns = when (kind) {
+            CatalogDuplicateRules.Kind.Product -> listOf("SyncId", "Code", "Name", "Presentation", "IsActive")
+            CatalogDuplicateRules.Kind.Service -> listOf("SyncId", "Code", "Name", "IsActive")
+            CatalogDuplicateRules.Kind.Category -> listOf("SyncId", "Name")
+        }
+        store.select(table, columns).map { row ->
+            CatalogDuplicateRules.Item(kind, row["SyncId"] as String, row["Code"] as String?, row["Name"] as String?, row["Presentation"] as String?, kind == CatalogDuplicateRules.Kind.Category || row["IsActive"] == 1L)
+        }
+    }
+
     /** El registro del catálogo como lo ve la regla; `null` si ya no existe. */
     private fun catalogItem(store: SyncStore, kind: CatalogDuplicateRules.Kind, syncId: String): CatalogDuplicateRules.Item? {
         val table = CATALOG_TABLES.getValue(kind)
@@ -185,7 +208,14 @@ object SyncNotices {
     fun write(notices: Set<SyncNotice>): String =
         JsonArray(notices.map { JsonArray(listOf(JsonPrimitive(it.kind), JsonPrimitive(it.first), JsonPrimitive(it.second))) }).toString()
 
-    fun check(store: SyncStore, arrivedPatients: Set<String>, arrivedAppointments: Set<String>): Set<SyncNotice> = buildSet {
+    /**
+     * Lo que llegó contra lo de aquí: expedientes parecidos, citas empalmadas y (K9b) productos, servicios y categorías repetidos con **todo** el catálogo de este equipo (`CheckArrivalsAsync`). Solo lee
+     * la base local.
+     */
+    fun check(store: SyncStore, arrivedPatients: Set<String>, arrivedAppointments: Set<String>, arrivedCatalog: Set<String> = emptySet()): Set<SyncNotice> = buildSet {
+        if (arrivedCatalog.isNotEmpty()) {
+            CatalogDuplicateRules.pairs(catalogItems(store), arrivedCatalog).forEach { add(SyncNotice(catalogKind(it.first.kind), it.first.syncId, it.second.syncId)) }
+        }
         if (arrivedPatients.isNotEmpty()) {
             val patients = store.select("Patients", listOf("SyncId", "FullName", "BirthDate", "Phone", "IsActive", "MergedIntoSyncId")).map {
                 DuplicateCandidate(it["SyncId"] as String, it["FullName"] as String?, it["BirthDate"] as String?, it["Phone"] as String?, it["IsActive"] == 1L, it["MergedIntoSyncId"] as String?)

@@ -188,7 +188,7 @@ class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -
         val byId = products.associateBy { it.syncId }
         val defaults = c.serviceDefaults.groupBy { it.clinicalServiceSyncId }
         val services = c.services.withIndex().map { (i, e) ->
-            ClinicMappers.service(e, i + 1, defaults[e.syncId].orEmpty().map { ServiceDefaultProduct(byId[it.productSyncId], it.quantity.toInt()) })
+            ClinicMappers.service(e, i + 1, defaults[e.syncId].orEmpty().map { ServiceDefaultProduct(byId[it.productSyncId], it.quantity.toInt(), it.productSyncId, it.instructions) })
         }
         val templates = c.templates.map(ClinicMappers::template).groupBy { it.kind }
         ConsultationCatalog(
@@ -286,6 +286,63 @@ class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -
         rows.count { it.delta == 0L } + rows.filter { it.delta != 0L }.map { listOf(it.productSyncId, it.movementType, it.date, it.saleItemSyncId, it.reason, it.responsible) }.distinct().size
     }
 
+    /**
+     * El panel del consultorio (`GetDashboardMetricsAsync` y `DashboardViewModel.RefreshAsync` de la PC), de una sola foto: las cifras, los productos con stock bajo (8, por nombre) y los lotes que vencen en
+     * 60 días (8, el que vence primero arriba). Los movimientos recientes son el Kardex ([kardex], 15 operaciones).
+     */
+    fun dashboard(today: LocalDate): DashboardData = gate.read {
+        val c = dao().dashboardColumns(ClinicMappers.protocol(today), ClinicMappers.protocol(today.plusDays(1)))
+        val categoryIds = c.categories.withIndex().associate { (i, category) -> category.syncId to i + 1 }
+        val categoryNames = c.categories.associate { it.syncId to it.name }
+        val ids = c.products.withIndex().associate { (i, p) -> p.syncId to i + 1 }
+        val products = c.products.map { ClinicMappers.product(it, ids.getValue(it.syncId), categoryIds[it.categorySyncId] ?: 0, categoryNames[it.categorySyncId]) }
+        val bySyncId = products.associateBy { it.syncId }
+        val active = products.filter { it.isActive }
+        // `ProductBatch.IsAvailableExpression`, con existencias y de un producto activo (un lote sin su producto también cuenta, como `b.Product == null`)
+        val lots = c.batches.mapIndexedNotNull { i, b ->
+            val product = bySyncId[b.productSyncId]
+            if (product != null && !product.isActive) return@mapIndexedNotNull null
+            BatchRow(b.syncId, ClinicMappers.batch(b, i + 1, product?.id ?: 0), b.productSyncId, product?.name.orEmpty(), product?.isActive ?: true, b.notes)
+        }.filter { it.batch.isAvailable && it.batch.quantity > 0 }
+        val limit = today.plusDays(InventoryTexts.EXPIRATION_WARNING_DAYS + 1)
+        val (value, withoutCost) = io.github.marioalr.tpvca.domain.business.InventoryValueRules.summarize(active.filter { it.currentStock > 0 })
+        val movements = c.movementsToday
+        val metrics = DashboardMetrics(
+            totalProducts = active.size,
+            lowStockCount = active.count { it.minStock > 0 && it.currentStock <= it.minStock },
+            expiringSoonCount = lots.count { !it.batch.expirationDate.isBefore(today) && it.batch.expirationDate.isBefore(limit) },
+            expiredCount = lots.count { it.batch.expirationDate.isBefore(today) },
+            // Operaciones, no renglones del libro (paso 8.19), como [movementsToday]
+            movementsToday = movements.count { it.delta == 0L } + movements.filter { it.delta != 0L }.map { listOf(it.productSyncId, it.movementType, it.date, it.saleItemSyncId, it.reason, it.responsible) }.distinct().size,
+            consumedInConsultationToday = movements.filter { MovementRules.typeOf(it.movementType.toInt()) == MovementType.SalidaConsulta }.sumOf { it.quantity }.toInt(),
+            // Sin las canceladas, como el corte y «Negocio» (la PC lo corrige en v1.57.0: a `todaySales` le faltaba `!s.IsCancelled`)
+            salesTodayCount = c.salesToday.count { it.isCancelled == 0L },
+            salesTodayTotal = c.salesToday.filter { it.isCancelled == 0L }.fold(BigDecimal.ZERO) { sum, sale -> sum.add(ClinicMappers.decimal(sale.total)) },
+            inventoryValue = value,
+            stockedWithoutCost = withoutCost,
+        )
+        // `GetProductsAsync(onlyLowStock: true)`: activos, por nombre (el `OrderBy` de SQLite es ordinal)
+        val lowStock = active.filter { it.minStock > 0 && it.currentStock <= it.minStock }.sortedBy { it.name }.take(DASHBOARD_LIST)
+        // `GetBatchesAsync` por caducidad; los de 60 días o menos (también los vencidos)
+        val expiring = lots.filter { it.batch.daysRemainingOn(today) <= InventoryTexts.EXPIRATION_WARNING_DAYS }.sortedBy { it.batch.expirationDate }.take(DASHBOARD_LIST)
+        DashboardData(metrics, lowStock, expiring)
+    }
+
+    /** Configuración → Servicios (`GetClinicalServicesAsync(includeInactive: true)`), con sus insumos, y los productos activos por nombre para agregar uno. De una sola foto. */
+    fun servicesCatalog(): ServicesCatalog = gate.read {
+        val c = dao().catalogColumns()
+        val categoryIds = c.categories.withIndex().associate { (i, category) -> category.syncId to i + 1 }
+        val categoryNames = c.categories.associate { it.syncId to it.name }
+        val productIds = c.products.withIndex().associate { (i, p) -> p.syncId to i + 1 }
+        val products = c.products.map { ClinicMappers.product(it, productIds.getValue(it.syncId), categoryIds[it.categorySyncId] ?: 0, categoryNames[it.categorySyncId]) }
+        val byId = products.associateBy { it.syncId }
+        val defaults = c.serviceDefaults.groupBy { it.clinicalServiceSyncId }
+        val services = c.services.withIndex().map { (i, e) ->
+            ClinicMappers.service(e, i + 1, defaults[e.syncId].orEmpty().sortedBy { it.syncId }.map { ServiceDefaultProduct(byId[it.productSyncId], it.quantity.toInt(), it.productSyncId, it.instructions) })
+        }
+        ServicesCatalog(services, products.filter { it.isActive }.sortedBy { it.name })
+    }
+
     /** Cuándo se ingresó ya un pedido (la primera entrada con su motivo); `null` si nunca. */
     fun supplierOrderReceivedAt(reason: String): LocalDateTime? = gate.read { ClinicMappers.dateTimeOrNull(dao().firstMovementWithReason(reason)) }
 
@@ -380,7 +437,7 @@ class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -
         val byId = products.associateBy { it.syncId }
         val defaults = c.serviceDefaults.groupBy { it.clinicalServiceSyncId }
         val services = c.services.withIndex().map { (i, e) ->
-            ClinicMappers.service(e, i + 1, defaults[e.syncId].orEmpty().map { ServiceDefaultProduct(byId[it.productSyncId], it.quantity.toInt()) })
+            ClinicMappers.service(e, i + 1, defaults[e.syncId].orEmpty().map { ServiceDefaultProduct(byId[it.productSyncId], it.quantity.toInt(), it.productSyncId, it.instructions) })
         }.filter { it.isActive }.sortedWith(compareBy({ it.category }, { it.name }))
         val categories = c.categories.map { PosCategory(categoryIds.getValue(it.syncId), it.name) }.sortedBy { it.name }
         PosCatalog(rows, categories, services)
@@ -460,6 +517,12 @@ class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -
         const val CONSULTATIONS_PAGE = 20
         const val PRODUCT_MOVEMENTS = 20
         const val RECENT_TICKETS = 50
+
+        /** Los renglones de «Stock bajo» y «Lotes por vencer» del panel (`Take(8)`). */
+        const val DASHBOARD_LIST = 8
+
+        /** «Movimientos recientes» del panel (`GetKardexAsync(15)`). */
+        const val DASHBOARD_MOVEMENTS = 15
     }
 }
 
@@ -477,6 +540,26 @@ class InventorySnapshot(val products: List<Product>, val categories: List<Invent
 
     fun batchesOf(product: Product): List<ProductBatch> = byProduct[product.id].orEmpty().map { it.batch }
 }
+
+/** Las cifras del panel del consultorio (`DashboardMetrics` de la PC). */
+data class DashboardMetrics(
+    val totalProducts: Int,
+    val lowStockCount: Int,
+    val expiringSoonCount: Int,
+    val expiredCount: Int,
+    val movementsToday: Int,
+    val consumedInConsultationToday: Int,
+    val salesTodayCount: Int,
+    val salesTodayTotal: BigDecimal,
+    val inventoryValue: BigDecimal,
+    val stockedWithoutCost: Int,
+)
+
+/** El panel del consultorio: las cifras y las dos listas de la izquierda. */
+data class DashboardData(val metrics: DashboardMetrics, val lowStock: List<Product>, val expiring: List<BatchRow>)
+
+/** Configuración → Servicios: todos los servicios (también los desactivados) y los productos activos que se pueden agregar como insumo. */
+data class ServicesCatalog(val services: List<io.github.marioalr.tpvca.domain.model.ClinicalService>, val products: List<Product>)
 
 /** Un renglón de Inventario con el `SyncId` que abre el producto. */
 data class InventoryEntry(val syncId: String, val row: InventoryRow)

@@ -58,6 +58,38 @@ data class LinkedDevice(
 
     val needsNewToken: Boolean get() = tokensRotatedAtUtc != null
 
+    /** «Código T1» o «Sin código todavía» (`CodeText`, para *Equipos vinculados*). */
+    val codeText: String get() = deviceCode?.takeIf { it.isNotEmpty() }?.let { "Código $it" } ?: "Sin código todavía"
+
+    /** «Sin cambios pendientes», «3 cambios sin subir desde 14/01 09:00»… (`PendingText`), con la hora del consultorio. */
+    val pendingText: String
+        get() = when (val count = pendingCount) {
+            null -> "Cambios pendientes: su versión no los informa"
+            0 -> "Sin cambios pendientes"
+            else -> (if (count == 1) "1 cambio sin subir" else "${groupThousands(count)} cambios sin subir") + (oldestPendingUtc?.let { " desde ${localText(it)}" } ?: "")
+        }
+
+    /** Los últimos 6 caracteres del `DeviceId`, en mayúsculas (`DeviceIdSuffix`). */
+    val deviceIdSuffix: String get() = (if (deviceId.length <= 6) deviceId else deviceId.takeLast(6)).uppercase(Locale.ROOT)
+
+    /** Un equipo que espera que la PC lo vincule (`ApprovalText`). */
+    val approvalText: String
+        get() = if (role == DeviceRole.AndroidMobileAdmin) "Pide entrar como celular · verifique que el celular muestre $deviceIdSuffix" else "Pide entrar como tablet · verifique que la tablet muestre $deviceIdSuffix"
+
+    /** No se conecta desde que se anularon los tokens (`NewTokenText`, paso 8.15). */
+    val newTokenText: String
+        get() = tokensRotatedAtUtc?.let { at ->
+            (if (role == DeviceRole.AndroidTablet || role == DeviceRole.AndroidMobileAdmin) "Pegue el token nuevo en este equipo o lea con él el QR de esta PC" else "Pegue el token nuevo en esa computadora") +
+                ": no se conecta desde que se anularon los tokens, el ${localText(at)}. No pierde sus cambios."
+        }.orEmpty()
+
+    private fun localText(utc: LocalDateTime): String = utc.atOffset(ZoneOffset.UTC).atZoneSameInstant(Clinic.ZONE).toLocalDateTime().let {
+        "%02d/%02d %02d:%02d".format(Locale.ROOT, it.dayOfMonth, it.monthValue, it.hour, it.minute)
+    }
+
+    /** `N0` de es-MX: 1,234. */
+    private fun groupThousands(n: Int): String = "%,d".format(Locale.US, n)
+
     private val versionText: String get() = if (appVersion.isBlank()) "" else " ($appVersion)"
 
     val wholeRowMergeText: String
@@ -235,6 +267,11 @@ object LinkedDevices {
             (d.role == null || DevicePermissions.canTakeConsultations(d.role)) &&
             d.lastSeenUtc != null && Duration.between(d.lastSeenUtc, serverNowUtc) < FORGOTTEN_DEVICE_AGE
     }
+
+    /** *Equipos vinculados* (`GetDevicesAsync`): todos menos los quitados; este equipo primero, luego la PC principal, los que están en línea y los vistos hace menos. */
+    fun listed(devices: List<LinkedDevice>): List<LinkedDevice> = devices.filter { !it.isRevoked }.sortedWith(
+        compareByDescending<LinkedDevice> { it.isThisDevice }.thenByDescending { it.isPrimary }.thenByDescending { it.isOnline }.thenByDescending { it.lastSeenUtc ?: LocalDateTime.MIN },
+    )
 
     /** Los que ofrece «Enviar a…»: los que pueden llevar la consulta, en línea primero y luego los vistos hace menos. */
     fun sendTargets(devices: List<LinkedDevice>, serverNowUtc: LocalDateTime): List<LinkedDevice> =

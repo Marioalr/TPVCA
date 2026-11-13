@@ -137,6 +137,9 @@ enum class HandoffResolution {
  * consulta en solo lectura; quien recibe la toma con un UPDATE condicionado y su ficha; «Recuperar» inserta o cancela en una instrucción. Cada llamada es una petición y bloquea: la
  * app la corre fuera del hilo principal. La cadencia de la revisión vive en [HandoffCadence]; la tabla no la crea ni la limpia esta app.
  */
+/** *Equipos vinculados*: la lista como la muestra la PC, cuántos compañeros reciben consultas (para la cadencia) y lo que había en la fila del latido antes de escribirlo. */
+class LinkedDeviceList(val devices: List<LinkedDevice>, val peerCount: Int, val heartbeatBefore: ResultSet?)
+
 class HandoffService(private val connection: HranaConnection, val deviceId: String, val deviceName: String, val databaseUrl: String) {
     /**
      * La revisión, en una sola petición: las consultas dirigidas a este equipo, la marca de cambios, el estado del envío propio ([outgoingId]), y cuando toca el latido
@@ -186,6 +189,21 @@ class HandoffService(private val connection: HranaConnection, val deviceId: Stri
         return devices to (if (heartbeat == null) null else results[0])
     }
 
+    /**
+     * *Equipos vinculados* (K9b, solo para consultar en la tablet): todos los equipos con latido o con fila en `DeviceRegistry`, menos los quitados, con el orden de la PC (`GetDevicesAsync`). Con
+     * [heartbeat], este equipo escribe antes su latido (así aparece con sus cambios pendientes de este momento). Lee `meta.all` para saber cuándo se anularon los tokens.
+     */
+    fun listedDevices(heartbeat: List<Statement>? = null): LinkedDeviceList {
+        val statements = (heartbeat ?: emptyList()) + peerListQueries() + Statement(Statements.REGISTRY_PRIMARY) + Statement(Statements.META_ALL)
+        val results = connection.query(statements)
+        val base = heartbeat?.size ?: 0
+        val serverNow = serverNowOf(results[base])
+        val primary = results[base + 3].rows.firstOrNull()?.text("PrimaryDeviceId")
+        val rotated = results[base + 4].rows.firstOrNull { it.text("Key") == TOKENS_ROTATED_KEY }?.text("Value")?.let(LinkedDevices::parseUtc)
+        val all = LinkedDevices.merge(rowsOf(results[base + 1]), rowsOf(results[base + 2]), primary, serverNow, deviceId, rotated)
+        return LinkedDeviceList(LinkedDevices.listed(all), LinkedDevices.handoffTargets(all, serverNow).count { it.isAvailable }, if (heartbeat == null) null else results[0])
+    }
+
     // ------------------------------------------------------------------ quien envía
 
     /** Inserta el renglón «enviada». Lanza si falla: quien llama decide con [HandoffErrors] si fue definitivo. */
@@ -229,6 +247,11 @@ class HandoffService(private val connection: HranaConnection, val deviceId: Stri
     }
 
     // ------------------------------------------------------------------ utilidades
+
+    private companion object {
+        /** La clave de `_tpvc_meta` con la hora en que la PC anuló los tokens (`TursoSyncService.TokensRotatedKey`, paso 8.15). */
+        const val TOKENS_ROTATED_KEY = "tokensRotatedAtUtc"
+    }
 
     private fun peerListQueries() = listOf(Statement(Statements.CHECK_PEERS_SERVER_NOW), Statement(Statements.CHECK_PEERS_DEVICES), Statement(Statements.CHECK_PEERS_REGISTRY))
 

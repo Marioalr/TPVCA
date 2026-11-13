@@ -17,6 +17,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import io.github.marioalr.tpvca.domain.devices.LinkedDevice
 import io.github.marioalr.tpvca.domain.Clinic
 import io.github.marioalr.tpvca.sync.engine.SavedSummary
 import io.github.marioalr.tpvca.sync.engine.SyncNotices
@@ -89,6 +100,62 @@ fun SyncScreen(workspace: TabletWorkspace, chrome: TabletChrome) {
                 }
             }
         }
+        LinkedDevicesCard(workspace)
         TCaption("Vincular, aprobar y quitar equipos, y lo demás de la nube, se hacen en la PC.")
+    }
+}
+
+/** *Equipos vinculados* (`TursoSyncView`), solo para consultar: los equipos que usan esta nube, su código, cuándo se vieron y sus cambios sin subir. Sin los botones de la PC. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LinkedDevicesCard(workspace: TabletWorkspace) {
+    val colors = LocalTpvcColors.current
+    val devices = workspace.devices
+    // Una consulta pequeña a la nube, solo al abrir la sección (`RefreshDevicesOnOpen`)
+    LaunchedEffect(Unit) { devices.refresh() }
+    TCard(Modifier.fillMaxWidth().widthIn(max = 880.dp).testTag(TabletTags.DEVICES), padding = 20.dp) {
+        Row(verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f)) {
+                THeading("Equipos vinculados")
+                TCaption("Los equipos que usan esta nube: su código, cuándo se vieron por última vez y sus cambios sin subir.", Modifier.padding(top = 2.dp))
+            }
+            TButton("Actualizar", devices::refresh, kind = TButtonKind.Ghost, icon = TIcons.Refresh, enabled = !devices.loading, tag = TabletTags.DEVICES_REFRESH, description = "Vuelve a leer la lista de la nube")
+        }
+        if (devices.loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 12.dp), color = colors.accentStrong)
+        devices.primaryText.takeIf { it.isNotEmpty() }?.let { TNotice(it, colors.infoSubtle, colors.infoText, Modifier.padding(top = 12.dp)) }
+        Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (device in devices.devices) key(device.deviceId) { DeviceRow(device) }
+        }
+        if (devices.statusText.isNotEmpty()) TCaption(devices.statusText, Modifier.padding(top = 4.dp))
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DeviceRow(d: LinkedDevice) {
+    val colors = LocalTpvcColors.current
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(colors.surfaceSubtle).testTag(TabletTags.device(d.deviceId)).semantics(mergeDescendants = true) {}.padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        val icon = when (d.roleText) {
+            "Tablet" -> TIcons.Tablet
+            "Celular" -> TIcons.Phone
+            else -> TIcons.Monitor
+        }
+        Icon(icon, null, Modifier.padding(top = 2.dp, end = 12.dp).size(20.dp), tint = colors.textSecondary)
+        Column(Modifier.weight(1f)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                TText(d.title, weight = FontWeight.SemiBold)
+                if (d.isPrimary) TBadge("PC principal", colors.infoSubtle, colors.infoText)
+            }
+            TCaption("${d.roleText} · ${d.codeText} · ${d.seenText}", Modifier.padding(top = 2.dp))
+            TCaption(d.pendingText, Modifier.padding(top = 2.dp))
+            if (d.needsNewToken) TCaption(d.newTokenText, Modifier.padding(top = 4.dp), color = colors.warningText)
+            if (d.mergesAsWholeRow) TCaption(d.wholeRowMergeText, Modifier.padding(top = 4.dp), color = colors.warningText)
+            if (d.ignoresServiceSupplies) TCaption(d.serviceSuppliesText, Modifier.padding(top = 4.dp), color = colors.warningText)
+            // Un equipo nuevo espera que lo vinculen: se aprueba en la PC
+            if (d.isPendingApproval) TCaption("${d.approvalText}. Se aprueba en la PC.", Modifier.padding(top = 8.dp), color = colors.warningText)
+        }
     }
 }

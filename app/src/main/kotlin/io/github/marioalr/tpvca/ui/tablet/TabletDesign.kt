@@ -125,6 +125,8 @@ object TIcons {
     val Info by lazy { stroke("M12 21 A9 9 0 1 1 12 3 A9 9 0 1 1 12 21 Z M12 16 V12 M12 8 H12.01") }
     val Save by lazy { stroke("M19 21 H5 A2 2 0 0 1 3 19 V5 A2 2 0 0 1 5 3 H16 L21 8 V19 A2 2 0 0 1 19 21 Z M17 21 V13 H7 V21 M7 3 V8 H15") }
     val Tablet by lazy { stroke("M6 2 H18 A2 2 0 0 1 20 4 V20 A2 2 0 0 1 18 22 H6 A2 2 0 0 1 4 20 V4 A2 2 0 0 1 6 2 Z M12 18 H12.01") }
+    val Monitor by lazy { stroke("M4 3 H20 A2 2 0 0 1 22 5 V15 A2 2 0 0 1 20 17 H4 A2 2 0 0 1 2 15 V5 A2 2 0 0 1 4 3 Z M8 21 H16 M12 17 V21") }
+    val Phone by lazy { stroke("M22 16.9 V19.9 A2 2 0 0 1 19.8 21.9 A19.8 19.8 0 0 1 11.2 18.8 A19.5 19.5 0 0 1 5.2 12.8 A19.8 19.8 0 0 1 2.1 4.2 A2 2 0 0 1 4.1 2 H7.1 A2 2 0 0 1 9.1 3.7 A12.8 12.8 0 0 0 9.8 6.5 A2 2 0 0 1 9.3 8.6 L8.1 9.9 A16 16 0 0 0 14.1 15.9 L15.4 14.6 A2 2 0 0 1 17.5 14.1 A12.8 12.8 0 0 0 20.3 14.8 A2 2 0 0 1 22 16.9 Z") }
     val Sun by lazy { stroke("M12 16 A4 4 0 1 1 12 8 A4 4 0 1 1 12 16 Z M12 2 V4 M12 20 V22 M4.9 4.9 L6.3 6.3 M17.7 17.7 L19.1 19.1 M2 12 H4 M20 12 H22 M4.9 19.1 L6.3 17.7 M17.7 6.3 L19.1 4.9") }
     val Cart by lazy { fill("M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z") }
     val FileMedical by lazy { fill("M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z") }
@@ -546,6 +548,45 @@ object TabletTags {
     const val CONFIG_HOME = "tablet-config-inicio"
     const val CONFIG_SEARCH = "tablet-config-buscar"
     const val PRODUCTS = "tablet-productos"
+    const val DASHBOARD = "tablet-panel"
+    const val DASHBOARD_LOW = "tablet-panel-stock-bajo"
+    const val DASHBOARD_EXPIRING = "tablet-panel-por-vencer"
+    const val DASHBOARD_RECENT = "tablet-panel-movimientos"
+    const val BUSINESS = "tablet-negocio"
+    const val BUSINESS_REFRESH = "tablet-negocio-actualizar"
+    const val BUSINESS_EXPORT = "tablet-negocio-exportar"
+    const val BUSINESS_PERIOD = "tablet-negocio-periodo"
+    const val BUSINESS_TYPE = "tablet-negocio-tipo"
+    const val BUSINESS_FROM = "tablet-negocio-desde"
+    const val BUSINESS_TO = "tablet-negocio-hasta"
+    const val BUSINESS_APPLY = "tablet-negocio-aplicar"
+    const val BUSINESS_STATUS = "tablet-negocio-aviso"
+    const val BUSINESS_SUMMARY = "tablet-negocio-resumen"
+    const val BUSINESS_BY_TYPE = "tablet-negocio-por-seccion"
+    const val BUSINESS_CHART = "tablet-negocio-grafica"
+    const val BUSINESS_TOP_PRODUCTS = "tablet-negocio-mas-vendidos"
+    const val BUSINESS_TOP_KIND = "tablet-negocio-mas-vendidos-tipo"
+    const val BUSINESS_RANKING = "tablet-negocio-orden"
+    const val BUSINESS_TOP_SERVICES = "tablet-negocio-servicios"
+    const val BUSINESS_PURCHASES = "tablet-negocio-compras"
+    const val BUSINESS_CONSUMPTION = "tablet-negocio-consumo"
+    const val SERVICES = "tablet-servicios"
+    const val SERVICE_NEW = "tablet-servicio-nuevo"
+    const val SERVICE_SEARCH = "tablet-servicio-buscar"
+    const val SERVICE_INACTIVE = "tablet-servicio-desactivados"
+    const val SERVICE_EDITOR = "tablet-servicio-editor"
+    const val SERVICE_SAVE = "tablet-servicio-guardar"
+    const val SERVICE_DELETE_EDITING = "tablet-servicio-eliminar-editando"
+    const val SERVICE_ERROR = "tablet-servicio-error"
+    const val SERVICE_GONE = "tablet-servicio-ya-no-existe"
+    const val SERVICE_SUPPLY_ADD = "tablet-servicio-insumo-agregar"
+    const val SERVICE_SUPPLY_PRODUCT = "tablet-servicio-insumo"
+    const val SERVICE_SUPPLY_QUANTITY = "tablet-servicio-insumo-cantidad"
+    const val POS_SERVICE_NEW = "tablet-pv-servicio-nuevo"
+    const val POS_SERVICE_DELETE = "tablet-pv-servicio-eliminar"
+    const val POS_NEW_SERVICE_SHEET = "tablet-pv-nuevo-servicio"
+    const val DEVICES = "tablet-equipos"
+    const val DEVICES_REFRESH = "tablet-equipos-actualizar"
     const val PRODUCT_NEW = "tablet-producto-nuevo"
     const val PRODUCT_SEARCH = "tablet-producto-buscar"
     const val PRODUCT_LOW = "tablet-producto-stock-bajo"
@@ -587,6 +628,20 @@ object TabletTags {
     const val SUGGESTED_EXPORT = "tablet-compra-sugerida-csv"
     const val SUGGESTED_STATUS = "tablet-compra-sugerida-estado"
     fun configSection(name: String) = "tablet-config-$name"
+
+    fun businessType(name: String) = "tablet-negocio-tipo-fila-$name"
+
+    fun serviceRow(code: String) = "tablet-servicio-$code"
+
+    fun serviceEdit(code: String) = "tablet-servicio-editar-$code"
+
+    fun serviceToggle(code: String) = "tablet-servicio-activar-$code"
+
+    fun serviceDelete(code: String) = "tablet-servicio-eliminar-$code"
+
+    fun serviceSupply(name: String) = "tablet-servicio-insumo-$name"
+
+    fun device(id: String) = "tablet-equipo-$id"
     fun productRow(code: String) = "tablet-producto-$code"
     fun productEntry(code: String) = "tablet-producto-entrada-$code"
     fun productMore(code: String) = "tablet-producto-mas-$code"

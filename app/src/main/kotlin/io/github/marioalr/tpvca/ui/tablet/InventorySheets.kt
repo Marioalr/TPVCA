@@ -69,7 +69,7 @@ internal fun SidePanel(
     width: Dp = 480.dp,
     /** Un aviso nuevo arriba (un error o «guardado»): el panel sube a mostrarlo, aunque se haya tocado un campo de abajo. */
     notice: String? = null,
-    footer: @Composable () -> Unit,
+    footer: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = LocalTpvcColors.current

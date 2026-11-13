@@ -145,10 +145,12 @@ class InventoryTabletTest {
         compose.onNodeWithTag(TabletTags.field(name)).performTextInput(text)
     }
 
-    /** Entra por la tarjeta del inicio y espera la lista. */
+    /** Entra por la tarjeta del inicio (abre en el panel, como la PC), va a Productos y espera la lista. */
     private fun enterConfig() {
         show()
         compose.onNodeWithTag(TabletTags.HUB_CONFIG).performClick()
+        waitTag(TabletTags.DASHBOARD)
+        compose.onNodeWithTag(TabletTags.configSection("Inventory")).performClick()
         waitTag(TabletTags.PRODUCTS)
         waitFor { workspace.inventory.snapshot != null }
     }
@@ -161,8 +163,8 @@ class InventoryTabletTest {
         assertEquals("El menú y el título", 2, compose.onAllNodesWithText("Productos").fetchSemanticsNodes().size)
         waitText("con stock bajo")
         // Lo que no es de esta versión se ve y lo dice
-        assertTrue(compose.onAllNodesWithText(NEXT_VERSION_TEXT).fetchSemanticsNodes().size >= 8)
-        compose.onNodeWithTag(TabletTags.configSection("Business")).performClick()
+        assertTrue(compose.onAllNodesWithText(NEXT_VERSION_TEXT).fetchSemanticsNodes().size >= 3)
+        compose.onNodeWithTag(TabletTags.configSection("Updates")).performClick()
         assertEquals(ConfigSection.Inventory, workspace.inventory.section)
         assertFalse("Configuración no es Pacientes", workspace.isPatientsSection())
         // El buscador de ajustes lleva a la sección

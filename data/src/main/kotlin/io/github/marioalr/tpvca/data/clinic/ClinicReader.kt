@@ -10,6 +10,9 @@ import io.github.marioalr.tpvca.data.security.DataGate
 import io.github.marioalr.tpvca.domain.business.BusinessReportData
 import io.github.marioalr.tpvca.domain.business.InventoryListRules
 import io.github.marioalr.tpvca.domain.business.InventoryRow
+import io.github.marioalr.tpvca.domain.business.InventoryTexts
+import io.github.marioalr.tpvca.domain.business.KardexMovement
+import io.github.marioalr.tpvca.domain.business.KardexRows
 import io.github.marioalr.tpvca.domain.business.MovementRules
 import io.github.marioalr.tpvca.domain.consultation.PediatricDoseRule
 import io.github.marioalr.tpvca.domain.model.Appointment
@@ -219,6 +222,64 @@ class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -
         )
     }
 
+    /** Productos, categorías y lotes abiertos (K9b). Las categorías por nombre, ordinal como el `OrderBy` de SQLite de la PC. */
+    fun inventorySnapshot(): InventorySnapshot = gate.read {
+        val (categoryEntities, productEntities, batchEntities) = dao().inventoryColumns()
+        val categories = categoryEntities.withIndex().map { (i, c) -> InventoryCategory(i + 1, c.syncId, c.name) }
+        val categoryIds = categories.associate { it.syncId to it.id }
+        val categoryNames = categories.associate { it.syncId to it.name }
+        val ids = productEntities.withIndex().associate { (i, p) -> p.syncId to i + 1 }
+        val products = productEntities.map { ClinicMappers.product(it, ids.getValue(it.syncId), categoryIds[it.categorySyncId] ?: 0, categoryNames[it.categorySyncId]) }
+        val bySyncId = products.associateBy { it.syncId }
+        val batches = batchEntities.mapIndexedNotNull { i, b ->
+            val product = bySyncId[b.productSyncId] ?: return@mapIndexedNotNull null
+            BatchRow(b.syncId, ClinicMappers.batch(b, i + 1, product.id), b.productSyncId, product.name, product.isActive, b.notes)
+        }
+        InventorySnapshot(products, categories.sortedBy { it.name }, batches)
+    }
+
+    /**
+     * El Kardex (`GetKardexAsync`): las [count] operaciones más recientes, con las partes de cada una en un renglón (`KardexRows`). Las partes de una operación tienen la misma hora: la última hora leída
+     * puede seguir en lo que no se leyó, así que se deja fuera y se leen más hasta juntar las operaciones completas.
+     */
+    fun kardex(count: Int = InventoryTexts.KARDEX_PAGE): List<KardexMovement> = gate.read { readKardex(count) }
+
+    private fun readKardex(count: Int): List<KardexMovement> {
+        val d = dao()
+        val names = d.products().associate { it.syncId to (it.name to it.code) }
+        var take = count + 16
+        while (true) {
+            var rows = d.recentMovements(take)
+            val all = rows.size < take
+            if (!all) {
+                val lastDate = rows.last().date
+                rows = rows.filter { it.date != lastDate }
+            }
+            val operations = KardexRows.group(rows.map { kardexMovement(it, names[it.productSyncId]) })
+            if (all || operations.size >= count) return operations.take(count)
+            take *= 2
+        }
+    }
+
+    private fun kardexMovement(e: InventoryMovementEntity, product: Pair<String, String>?) = KardexMovement(
+        syncId = e.syncId,
+        productSyncId = e.productSyncId,
+        productName = product?.first,
+        productCode = product?.second,
+        type = MovementRules.typeOf(e.movementType.toInt()),
+        quantity = e.quantity.toInt(),
+        delta = e.delta.toInt(),
+        stockBefore = e.stockBefore.toInt(),
+        stockAfter = e.stockAfter.toInt(),
+        date = ClinicMappers.dateTime(e.date),
+        saleItemSyncId = e.saleItemSyncId,
+        reason = e.reason,
+        responsible = e.responsible,
+    )
+
+    /** Cuándo se ingresó ya un pedido (la primera entrada con su motivo); `null` si nunca. */
+    fun supplierOrderReceivedAt(reason: String): LocalDateTime? = gate.read { ClinicMappers.dateTimeOrNull(dao().firstMovementWithReason(reason)) }
+
     /** Las ventas y los movimientos de [from] (incluido) a [to] (sin incluir), con el catálogo completo. */
     fun businessReport(from: LocalDate, to: LocalDate): BusinessReportData = gate.read {
         val d = dao()
@@ -391,6 +452,21 @@ class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -
         const val PRODUCT_MOVEMENTS = 20
         const val RECENT_TICKETS = 50
     }
+}
+
+/** Una categoría de Productos (K9b): el número de esta lectura y su `SyncId`, que es lo que se guarda. */
+data class InventoryCategory(val id: Int, val syncId: String, val name: String)
+
+/** Un lote abierto de «Lotes y caducidades» con su producto. */
+data class BatchRow(val syncId: String, val batch: ProductBatch, val productSyncId: String, val productName: String, val productActive: Boolean, val notes: String?)
+
+/**
+ * Productos, Lotes y Kardex (K9b), de una sola foto: **todos** los productos (también los dados de baja, que «Ingresar pedido» puede volver a activar), las categorías por nombre y los lotes abiertos.
+ */
+class InventorySnapshot(val products: List<Product>, val categories: List<InventoryCategory>, val batches: List<BatchRow>) {
+    private val byProduct = batches.groupBy { it.batch.productId }
+
+    fun batchesOf(product: Product): List<ProductBatch> = byProduct[product.id].orEmpty().map { it.batch }
 }
 
 /** Un renglón de Inventario con el `SyncId` que abre el producto. */

@@ -78,6 +78,9 @@ sealed interface TabletPage {
 
     /** El punto de venta (K9). */
     data object Pos : TabletPage
+
+    /** Configuración (K9b): el menú de la PC con Productos, Lotes y Kardex; la sección está en [InventoryController.section]. */
+    data object Config : TabletPage
 }
 
 /** Una pregunta de Sí o No, con los textos de la PC. */
@@ -125,13 +128,16 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
             if (value != currentPage) detail = null
             // Lo abierto en el punto de venta es de esa pantalla: nunca se queda encima de otra
             if (currentPage == TabletPage.Pos && value != TabletPage.Pos) pos.left()
+            // Lo abierto en Configuración es de ella; la lista sugerida, del inicio
+            if (currentPage == TabletPage.Config && value != TabletPage.Config) inventory.left()
+            if (currentPage == TabletPage.Hub && value != TabletPage.Hub) inventory.closeSuggested()
             currentPage = value
             labResults.leftChart(value)
             if (entering) handoff.onEnterPatients()
         }
 
-    /** Pacientes, como la cadencia lo cuenta: todo menos el inicio, Sincronización y el punto de venta. */
-    internal fun isPatientsSection(page: TabletPage = this.page): Boolean = page != TabletPage.Hub && page != TabletPage.Sync && page != TabletPage.Pos
+    /** Pacientes, como la cadencia lo cuenta: todo menos el inicio, Sincronización, el punto de venta y Configuración. */
+    internal fun isPatientsSection(page: TabletPage = this.page): Boolean = page != TabletPage.Hub && page != TabletPage.Sync && page != TabletPage.Pos && page != TabletPage.Config
     var homeQuery by mutableStateOf("")
         private set
     var agendaOpen by mutableStateOf(false)
@@ -171,6 +177,9 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
 
     /** El punto de venta (K9). */
     val pos = PosController(this, scope, io)
+
+    /** Configuración: Productos, Lotes y Kardex, y la compra sugerida del inicio (K9b). */
+    val inventory = InventoryController(this, scope, io)
 
     init {
         env.handoff?.let { link -> scope.launch { link.checks.collect { check -> if (check != null) handoff.onCheck(check) } } }
@@ -244,6 +253,15 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         closeAgenda()
         homeQuery = ""
         page = TabletPage.Pos
+    }
+
+    /** «Abrir Administración» del inicio (`OpenConfiguration`), o un aviso que lleva a una sección. Con un formulario abierto, a él: es el único camino para regresar a lo escrito. */
+    fun enterConfig(section: ConfigSection? = null) {
+        if (returnToOpenForm()) return
+        closeAgenda()
+        homeQuery = ""
+        if (section != null) inventory.open(section)
+        page = TabletPage.Config
     }
 
     /** «Volver a la consulta». Si hay un formulario abierto, la consulta queda detrás de él. */
@@ -346,6 +364,8 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
             page == TabletPage.Sync -> leaveSync()
             // Lo de encima primero; la cuenta se queda para cuando vuelva
             page == TabletPage.Pos -> if (!pos.back()) page = TabletPage.Hub
+            page == TabletPage.Config -> if (!inventory.back()) page = TabletPage.Hub
+            page == TabletPage.Hub && inventory.suggested != null -> inventory.closeSuggested()
             homeQuery.isNotEmpty() -> homeQuery = ""
             page == TabletPage.PatientsHome -> page = TabletPage.Hub
             else -> return false
@@ -873,6 +893,7 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         consultation.clearMemory()
         handoff.clearMemory()
         pos.clearMemory()
+        inventory.clearMemory()
         page = TabletPage.Hub
         restored = false
     }

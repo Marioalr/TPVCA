@@ -78,8 +78,8 @@ class InventoryTextsTest {
         assertEquals("¿Eliminar el lote L-01?\n\nEsta acción no se puede deshacer.", InventoryTexts.deleteBatchConfirmation("L-01", "Tempra", 0, isAvailable = true, closedElsewhere = false))
         assertEquals("Este lote ya se había cerrado en otro equipo; revise las existencias de Tempra", InventoryTexts.batchClosedElsewhere("Tempra"))
         assertEquals(InventoryTexts.BatchFilter.Vencidos, InventoryTexts.batchFilterOf(today.minusDays(1), today))
-        assertEquals(InventoryTexts.BatchFilter.Proximos, InventoryTexts.batchFilterOf(today.plusDays(30), today))
-        assertEquals(InventoryTexts.BatchFilter.Vigentes, InventoryTexts.batchFilterOf(today.plusDays(31), today))
+        assertEquals(InventoryTexts.BatchFilter.Proximos, InventoryTexts.batchFilterOf(today.plusDays(60), today))
+        assertEquals(InventoryTexts.BatchFilter.Vigentes, InventoryTexts.batchFilterOf(today.plusDays(61), today))
         assertEquals("LOT-20261113-47", InventoryTexts.newBatchNumber(today.atTime(9, 0), 47))
     }
 

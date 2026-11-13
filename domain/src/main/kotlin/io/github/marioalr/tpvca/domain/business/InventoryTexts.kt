@@ -178,12 +178,12 @@ object InventoryTexts {
     /** Los filtros de Lotes con su conteo, en el orden de la PC: Todos, Por vencer, Vencidos y Vigentes (`RebuildFilterChips`). */
     enum class BatchFilter(val label: String) { Todos("Todos"), Proximos("Por vencer"), Vencidos("Vencidos"), Vigentes("Vigentes") }
 
-    /** El estado de un lote (`ProductBatch.Status`): vencido antes de hoy, por vencer hasta 30 días, vigente después. */
+    /** El estado de un lote (`ProductBatch.Status`): vencido antes de hoy, por vencer hasta 60 días (los de `statusTextOn`), vigente después. */
     fun batchFilterOf(expiration: LocalDate, today: LocalDate): BatchFilter {
         val days = ChronoUnit.DAYS.between(today, expiration)
         return when {
             days < 0 -> BatchFilter.Vencidos
-            days <= EXPIRATION_WARNING_DAYS -> BatchFilter.Proximos
+            days <= 60 -> BatchFilter.Proximos
             else -> BatchFilter.Vigentes
         }
     }

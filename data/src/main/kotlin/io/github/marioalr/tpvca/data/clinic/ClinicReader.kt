@@ -277,6 +277,15 @@ class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -
         responsible = e.responsible,
     )
 
+    /**
+     * Los movimientos de hoy como operaciones (`DashboardMetrics.MovementsToday`): una fila anterior a la revisión 11 es la suya; las demás se cuentan una vez por producto, tipo, hora, renglón del
+     * ticket, motivo y responsable.
+     */
+    fun movementsToday(today: LocalDate): Int = gate.read {
+        val rows = dao().movementsFrom(ClinicMappers.protocol(today))
+        rows.count { it.delta == 0L } + rows.filter { it.delta != 0L }.map { listOf(it.productSyncId, it.movementType, it.date, it.saleItemSyncId, it.reason, it.responsible) }.distinct().size
+    }
+
     /** Cuándo se ingresó ya un pedido (la primera entrada con su motivo); `null` si nunca. */
     fun supplierOrderReceivedAt(reason: String): LocalDateTime? = gate.read { ClinicMappers.dateTimeOrNull(dao().firstMovementWithReason(reason)) }
 

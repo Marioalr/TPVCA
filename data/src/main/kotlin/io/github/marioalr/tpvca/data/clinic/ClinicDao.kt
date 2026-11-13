@@ -144,6 +144,9 @@ interface ClinicDao {
     @Query("SELECT * FROM InventoryMovements ORDER BY Date DESC, rowid DESC LIMIT :limit")
     fun recentMovements(limit: Int): List<InventoryMovementEntity>
 
+    @Query("SELECT * FROM InventoryMovements WHERE Date >= :from")
+    fun movementsFrom(from: String): List<InventoryMovementEntity>
+
     /** Cuándo se ingresó por primera vez un pedido, por el motivo de sus entradas (`WhenWasSupplierOrderReceivedAsync`). */
     @Query("SELECT MIN(Date) FROM InventoryMovements WHERE Reason = :reason")
     fun firstMovementWithReason(reason: String): String?

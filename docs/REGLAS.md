@@ -180,6 +180,7 @@ Cómo difiere de la PC:
 - Un número que no se lee en el precio o los minutos lo dice al guardar; en la PC el cuadro no lo acepta.
 - «Exportar CSV» de «Negocio» se comparte (en la tablet no hay Escritorio); el aviso dice el nombre del archivo.
 - *Equipos vinculados* no tiene botones de administrar la nube, y el aviso de la PC principal no ofrece reemplazarla. «Por ahora solo este equipo usa la nube» en lugar de «solo esta computadora».
+- En «Negocio», «Por sección» va arriba de la gráfica (en la PC, lado a lado) salvo en una pantalla muy ancha: con la letra de un dedo sus cinco columnas no caben en media pantalla.
 - En la gráfica de «Negocio», lo que en la PC es el cartelito al pasar el ratón por una barra aparece abajo al tocarla.
 - «Médico y consultorio» no tiene «Letras de la receta»: en la PC son las letras instaladas en Windows y se guardan en cada computadora; la receta de Android usa las suyas. La vista previa de la receta abre el PDF de ejemplo (sin el selector de papel: el PDF elige el papel como al compartir).
 - Importar el Excel **no hace un respaldo antes** (en la tablet no hay respaldos de la base) y su hoja no lo menciona. El expediente que trae la hoja RECETA toma su folio como cualquier alta de este equipo (la PC usa el siguiente `EXP-aaaa-nnn` de su base, que en varios equipos podría repetirse). La fecha escrita de la receta se lee en sus formas numéricas (la PC, con `DateTime.TryParse`, acepta también «15 de enero de 2026»). Plantillas, dosis y catálogo se escriben en una transacción (la PC los guarda en dos pasos).

@@ -87,7 +87,7 @@ internal fun ClinicProfileSection(workspace: TabletWorkspace) {
     val pickCrest = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { c.chooseImage(LetterheadKind.Crest) { readCapped(context, it, ClinicProfileRules.MAX_IMAGE_BYTES.toLong()) } } }
     val pickHeader = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { c.chooseImage(LetterheadKind.Header) { readCapped(context, it, ClinicProfileRules.MAX_IMAGE_BYTES.toLong()) } } }
     BoxWithConstraints(Modifier.fillMaxSize().testTag(TabletTags.CLINIC)) {
-        val wide = isWide(1000.dp)
+        val wide = isWide(860.dp)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             SectionHeader("Médico y consultorio", "Aparecen en recetas, tickets y cortes de caja") {
                 TButton(c.actionText, c::toggleEditOrSave, kind = TButtonKind.Primary, icon = if (c.isEditing) TIcons.Save else TIcons.Edit, enabled = c.loaded && !c.saving, tag = TabletTags.CLINIC_ACTION)
@@ -102,11 +102,11 @@ internal fun ClinicProfileSection(workspace: TabletWorkspace) {
                     TCard(Modifier.fillMaxWidth(), padding = 20.dp) {
                         THeading("Médico", Modifier.padding(bottom = 12.dp))
                         ProfileField(c.isEditing, c.doctorName, { c.doctorName = it }, "Nombre completo", "Ej. Dra. Ana López Pérez", "doctor")
-                        FieldRows(2, content = listOf(
+                        FieldRows(2, gap = 12.dp, content = listOf(
                             { mod -> ProfileField(c.isEditing, c.professionalLicense, { c.professionalLicense = it }, "Cédula profesional", "", "cedula", mod, KeyboardType.Number) },
                             { mod -> ProfileField(c.isEditing, c.specialty, { c.specialty = it }, "Especialidad", "Medicina general", "especialidad", mod) },
                         ))
-                        ProfileField(c.isEditing, c.university, { c.university = it }, "Universidad", "Ej. Universidad Autónoma de Ejemplo", "universidad", Modifier.padding(top = 12.dp))
+                        ProfileField(c.isEditing, c.university, { c.university = it }, "Universidad", "Ej. Universidad Autónoma de Ejemplo", "universidad")
                     }
                     TCard(Modifier.fillMaxWidth(), padding = 20.dp) {
                         THeading("Membrete de la receta")
@@ -119,8 +119,8 @@ internal fun ClinicProfileSection(workspace: TabletWorkspace) {
                     TCard(Modifier.fillMaxWidth(), padding = 20.dp) {
                         THeading("Consultorio", Modifier.padding(bottom = 12.dp))
                         ProfileField(c.isEditing, c.clinicName, { c.clinicName = it }, "Nombre del consultorio", "", "consultorio")
-                        ProfileField(c.isEditing, c.address, { c.address = it }, "Dirección", "", "direccion", Modifier.padding(top = 12.dp))
-                        FieldRows(3, Modifier.padding(top = 12.dp), content = listOf(
+                        ProfileField(c.isEditing, c.address, { c.address = it }, "Dirección", "", "direccion")
+                        FieldRows(3, gap = 12.dp, content = listOf(
                             { mod -> ProfileField(c.isEditing, c.phone, { c.phone = it }, "Teléfono", "", "telefono", mod, KeyboardType.Phone) },
                             { mod -> ProfileField(c.isEditing, c.email, { c.email = it }, "Correo", "", "correo", mod, KeyboardType.Email) },
                             { mod -> ProfileField(c.isEditing, c.taxId, { c.taxId = it }, "RFC", "", "rfc", mod, capitalization = KeyboardCapitalization.Characters) },
@@ -158,7 +158,8 @@ private fun ProfileField(
     keyboard: KeyboardType = KeyboardType.Text,
     capitalization: KeyboardCapitalization = KeyboardCapitalization.Words,
 ) {
-    TField(value, onChange, modifier.fillMaxWidth(), label = label, placeholder = placeholder, readOnly = !editing, keyboardType = keyboard, capitalization = capitalization, tag = TabletTags.field("perfil-$tag"))
+    // `ProfileField`: 12 de margen abajo, como en la PC
+    TField(value, onChange, modifier.fillMaxWidth().padding(bottom = 12.dp), label = label, placeholder = placeholder, readOnly = !editing, keyboardType = keyboard, capitalization = capitalization, tag = TabletTags.field("perfil-$tag"))
 }
 
 /** Una imagen del membrete: la muestra en papel blanco, como sale impresa, con «Elegir…» y «Quitar». */
@@ -270,7 +271,7 @@ internal fun DataSection(workspace: TabletWorkspace) {
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 18.dp).testTag(TabletTags.DATA), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SectionHeader("Respaldos y datos", "Copias de seguridad, importar el catálogo y restaurar información")
-        TCard(Modifier.fillMaxWidth().widthIn(max = 640.dp), padding = 20.dp) {
+        TCard(Modifier.widthIn(max = 640.dp).fillMaxWidth(), padding = 20.dp) {
             Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(colors.infoSubtle), contentAlignment = Alignment.Center) { Icon(TIcons.File, null, tint = colors.infoText) }
             THeading("Importar catálogo de Excel", Modifier.padding(top = 12.dp))
             TText(

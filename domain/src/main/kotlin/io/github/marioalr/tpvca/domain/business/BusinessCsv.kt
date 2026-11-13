@@ -147,7 +147,7 @@ object BusinessCsv {
     internal fun neutralize(text: String): String =
         if (text.isNotEmpty() && text[0] in "=+-@\t\r\n" && !PLAIN_NUMBER.matches(text)) "'$text" else text
 
-    private fun cell(value: Any?): String {
+    internal fun cell(value: Any?): String {
         val text = neutralize(value?.toString().orEmpty())
         return if (text.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"" + text.replace("\"", "\"\"") + "\"" else text
     }

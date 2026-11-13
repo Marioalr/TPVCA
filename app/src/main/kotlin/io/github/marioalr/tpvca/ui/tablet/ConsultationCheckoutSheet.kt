@@ -102,12 +102,15 @@ private fun NoteAndLines(workspace: TabletWorkspace, session: ConsultationChecko
 }
 
 @Composable
-private fun CartLine(session: ConsultationCheckout, item: CartItem, index: Int) {
+internal fun CartLine(session: CheckoutSession, item: CartItem, index: Int, open: Boolean = !session.charging) {
     // Tocado «Cobrar», la cuenta ya no cambia desde la pantalla
-    val open = !session.charging
+    val colors = LocalTpvcColors.current
     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Column(Modifier.weight(1f)) {
-            TText(item.name, size = TType.detail, weight = FontWeight.SemiBold)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TText(item.name, Modifier.weight(1f, fill = false), size = TType.detail, weight = FontWeight.SemiBold)
+                if (item.requiresRefrigeration) TBadge("Refrigerar", colors.infoSubtle, colors.infoText)
+            }
             TCaption("${item.code} · ${item.stockText} · ${MexicanText.currency(item.unitPrice)}")
         }
         TIconLabel("−", "Una menos: ${item.name}", TabletTags.cartLess(item.name), open) { session.change { decreaseQuantity(index) } }
@@ -139,13 +142,19 @@ private fun QuantityField(quantity: Int, enabled: Boolean, onChange: (Int) -> Un
     )
 }
 
-/** El cobro (`PaymentPanelView`): total, forma de pago, recibido y cambio. */
+@Composable
+private fun Payment(workspace: TabletWorkspace, session: ConsultationCheckout) = PaymentPanel(session, workspace.consultation::charge)
+
+/** El cobro (`PaymentPanelView`): total, forma de pago, recibido y cambio; el mismo en «Terminar consulta» y en el punto de venta, que además pide el cliente ([clientField]). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Payment(workspace: TabletWorkspace, session: ConsultationCheckout) {
+internal fun PaymentPanel(session: CheckoutSession, onCharge: () -> Unit, clientField: Boolean = false) {
     val colors = LocalTpvcColors.current
     val cart = session.observed
     val open = !session.charging
+    if (clientField) {
+        TField(cart.patientName, { text -> session.change { patientName = text } }, Modifier.fillMaxWidth(), label = "Cliente", placeholder = CheckoutCart.DEFAULT_CLIENT, readOnly = !open, capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Words, tag = TabletTags.POS_CLIENT)
+    }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             TText("Total", weight = FontWeight.SemiBold)
@@ -168,7 +177,7 @@ private fun Payment(workspace: TabletWorkspace, session: ConsultationCheckout) {
     }
     // Revisión 20: un inventario mal contado nunca impide cobrar; solo se avisa
     cart.stockWarning?.let { TNotice(it, colors.warningSubtle, colors.warningText) }
-    TButton(cart.chargeText, workspace.consultation::charge, Modifier.fillMaxWidth(), kind = TButtonKind.Primary, enabled = cart.canCharge && !session.charging, tag = TabletTags.CHECKOUT_CHARGE)
+    TButton(cart.chargeText, onCharge, Modifier.fillMaxWidth(), kind = TButtonKind.Primary, enabled = cart.canCharge && !session.charging, tag = TabletTags.CHECKOUT_CHARGE)
 }
 
 @Composable

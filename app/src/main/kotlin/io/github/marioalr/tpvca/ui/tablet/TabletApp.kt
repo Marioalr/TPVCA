@@ -94,6 +94,7 @@ fun TabletApp(workspace: TabletWorkspace, chrome: TabletChrome) {
                     TabletPage.Form -> PatientFormScreen(workspace)
                     TabletPage.Sync -> SyncScreen(workspace, chrome)
                     TabletPage.Consultation -> ConsultationScreen(workspace)
+                    TabletPage.Pos -> PosScreen(workspace, chrome)
                 }
             }
             // Con el teclado abierto, ese renglón es para el formulario

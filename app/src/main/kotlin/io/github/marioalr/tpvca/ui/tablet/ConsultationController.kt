@@ -126,6 +126,13 @@ class ConsultationStep internal constructor(draft: ConsultationDraft, val catalo
     private val rowEdits = LinkedHashMap<String, MutableList<(List<PatientSheets.SheetRow>) -> List<JsonObject>>>()
     private var newPrescriptions: List<JsonObject>? = null
     internal val toasts = ArrayList<Pair<String, Boolean>>()
+
+    /** Otros borradores que se van en la misma transacción que este paso (la venta del punto de venta que se pasó a la cuenta). */
+    internal val draftsRemoved = LinkedHashSet<String>()
+
+    fun removeDraftWithStep(key: String) {
+        draftsRemoved += key
+    }
     internal var infoText: String? = null
 
     /** Lo del borrador que no son renglones ni la cuenta. */
@@ -198,8 +205,8 @@ class ConsultationStep internal constructor(draft: ConsultationDraft, val catalo
     internal fun finalDraft(savedAt: String): ConsultationDraft = draft.copy(items = account.lines, savedAt = savedAt)
 }
 
-/** «Terminar consulta» abierta: la cuenta, que no se observa sola; [tick] le dice a la pantalla que la vuelva a leer. */
-class ConsultationCheckout internal constructor(val cart: CheckoutCart, val startedAt: LocalDateTime) {
+/** Una cuenta en pantalla (el cobro de «Terminar consulta» y la venta del punto de venta), que no se observa sola; [tick] le dice a la pantalla que la vuelva a leer. */
+open class CheckoutSession(val cart: CheckoutCart) {
     var tick by mutableIntStateOf(0)
         private set
 
@@ -219,11 +226,14 @@ class ConsultationCheckout internal constructor(val cart: CheckoutCart, val star
         }
 
     /** Toda acción sobre la cuenta pasa por aquí. */
-    fun change(action: CheckoutCart.() -> Unit) {
+    open fun change(action: CheckoutCart.() -> Unit) {
         cart.action()
         tick++
     }
 }
+
+/** «Terminar consulta» abierta: la cuenta de la consulta y cuándo empezó. */
+class ConsultationCheckout internal constructor(cart: CheckoutCart, val startedAt: LocalDateTime) : CheckoutSession(cart)
 
 /** El texto de la nota como se guarda (`SaveActiveConsultationToDbAsync`). */
 internal fun consultationNote(draft: ConsultationDraft, startedAt: LocalDateTime): ConsultationNote {
@@ -877,7 +887,7 @@ class ConsultationController internal constructor(private val workspace: TabletW
                     step.change()
                     if (!step.changed) return@withContext StepDone(step, null, null, ApplyResult.NoChange)
                     val committed = step.finalDraft(nowText())
-                    if (!engine.saveConsultation(committed, step.sheetEdits(start.patientSyncId))) return@withContext StepDone(step, null, null, ApplyResult.Refused)
+                    if (!engine.saveConsultation(committed, step.sheetEdits(start.patientSyncId), step.draftsRemoved)) return@withContext StepDone(step, null, null, ApplyResult.Refused)
                     StepDone(step, committed, readState(committed), ApplyResult.Applied)
                 }
             } catch (e: CancellationException) {

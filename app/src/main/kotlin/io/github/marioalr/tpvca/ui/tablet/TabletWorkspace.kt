@@ -75,6 +75,9 @@ sealed interface TabletPage {
 
     /** La consulta en curso. Solo hay una: su paciente viene en el borrador. */
     data object Consultation : TabletPage
+
+    /** El punto de venta (K9). */
+    data object Pos : TabletPage
 }
 
 /** Una pregunta de Sí o No, con los textos de la PC. */
@@ -120,13 +123,15 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         private set(value) {
             val entering = !isPatientsSection(currentPage) && isPatientsSection(value)
             if (value != currentPage) detail = null
+            // Lo abierto en el punto de venta es de esa pantalla: nunca se queda encima de otra
+            if (currentPage == TabletPage.Pos && value != TabletPage.Pos) pos.left()
             currentPage = value
             labResults.leftChart(value)
             if (entering) handoff.onEnterPatients()
         }
 
-    /** Pacientes, como la cadencia lo cuenta: todo menos el inicio y Sincronización. */
-    internal fun isPatientsSection(page: TabletPage = this.page): Boolean = page != TabletPage.Hub && page != TabletPage.Sync
+    /** Pacientes, como la cadencia lo cuenta: todo menos el inicio, Sincronización y el punto de venta. */
+    internal fun isPatientsSection(page: TabletPage = this.page): Boolean = page != TabletPage.Hub && page != TabletPage.Sync && page != TabletPage.Pos
     var homeQuery by mutableStateOf("")
         private set
     var agendaOpen by mutableStateOf(false)
@@ -163,6 +168,9 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
 
     /** La consulta entre equipos (K8): «Enviar a…», «Recuperar», «Liberar este equipo» y «Continuar aquí». */
     val handoff = HandoffController(this, scope, io)
+
+    /** El punto de venta (K9). */
+    val pos = PosController(this, scope, io)
 
     init {
         env.handoff?.let { link -> scope.launch { link.checks.collect { check -> if (check != null) handoff.onCheck(check) } } }
@@ -228,6 +236,14 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
     fun enterPatients() {
         if (returnToOpenForm()) return
         page = if (consultation.hasConsultation) TabletPage.Consultation else TabletPage.PatientsHome
+    }
+
+    /** «Nueva Venta» del inicio (`OpenPos`). Con un formulario abierto, a él: es el único camino para regresar a lo escrito. */
+    fun enterPointOfSale() {
+        if (returnToOpenForm()) return
+        closeAgenda()
+        homeQuery = ""
+        page = TabletPage.Pos
     }
 
     /** «Volver a la consulta». Si hay un formulario abierto, la consulta queda detrás de él. */
@@ -328,6 +344,8 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
             page == TabletPage.Consultation -> page = TabletPage.PatientsHome
             page is TabletPage.Chart -> page = if (consultation.isConsultationFor((page as TabletPage.Chart).syncId)) TabletPage.Consultation else TabletPage.PatientsHome
             page == TabletPage.Sync -> leaveSync()
+            // Lo de encima primero; la cuenta se queda para cuando vuelva
+            page == TabletPage.Pos -> if (!pos.back()) page = TabletPage.Hub
             homeQuery.isNotEmpty() -> homeQuery = ""
             page == TabletPage.PatientsHome -> page = TabletPage.Hub
             else -> return false
@@ -558,6 +576,7 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
             saveAppointmentDraft()
         }
         consultation.flush()
+        pos.flush()
     }
 
     /** Al abrir, y cada vez que baja algo mientras falte: si quedó un alta, una edición o una cita sin guardar, se reabre tal cual (`TryRestorePatientFormDraftAsync`). Si no se pudo leer la base, se intenta la siguiente vez. */
@@ -573,6 +592,7 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
             try {
                 // Primero la consulta, como en la PC: un formulario recuperado queda encima de ella
                 consultation.restore()
+                pos.restore()
                 val waiting = restoreForm()
                 restoreAppointment()
                 restored = !waiting
@@ -852,6 +872,7 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         labResults.clearMemory()
         consultation.clearMemory()
         handoff.clearMemory()
+        pos.clearMemory()
         page = TabletPage.Hub
         restored = false
     }

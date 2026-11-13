@@ -133,6 +133,16 @@ Cómo difiere de la PC:
 - **Sin Id locales al recibir:** un cargo que se encontró queda con el `SyncId` del producto o servicio de este equipo (si cambió, los renglones de las hojas que cargó esa consulta lo siguen: `WriteEngine.adoptReceivedConsultation`); el que no, con `LineKind` `libre` y sin `CatalogSyncId`. El vector pide el Id local de la PC: la prueba lo toma del renglón del catálogo que se encontró.
 - **`ChargeSaleSyncId`** (el ticket de esta app) no viaja; al recibir se toma uno nuevo.
 
+## Portados en K9 (el punto de venta)
+
+Sin vector nuevo: usa `rank-products.json` (`parseQuantityPrefix`, `rankProducts`, `posCatalog`), `checkout.json`, `cash-cut.json` y `alerts.json`, ya portados. Lo que no trae vector, con pruebas propias:
+
+- `CheckoutCart.addService` (`AddServiceToCartInternal`): el honorario y los insumos por defecto (`CheckoutCartTest`).
+- `CashCutCsv` (`InventoryService.ExportDailyCashCutToCsv`): las mismas filas y celdas (`CashCutCsvTest`).
+- `ConsultationAccount.addPointOfSaleLine` (`AddCartItemToActiveConsultation`) y `WriteEngine.registerSale` con su `SyncId` (`PointOfSaleWritesTest`).
+
+Cómo difiere de la PC: «Pasar a la cuenta de la consulta» conserva las piezas sueltas de un renglón (la PC llama a `AddCartItemToActiveConsultation` sin `isIndividualUnits` y ese renglón quedaría como paquetes al precio de una pieza); la búsqueda por folio trae todos los tickets de ese folio; el aviso de existencias al cobrar va dentro del ticket.
+
 ## Pendientes (con el paso que los porta)
 
 | Vector | Paso | Qué es |

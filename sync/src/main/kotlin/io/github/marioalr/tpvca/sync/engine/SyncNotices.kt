@@ -1,6 +1,7 @@
 package io.github.marioalr.tpvca.sync.engine
 
 import io.github.marioalr.tpvca.domain.agenda.AppointmentRules
+import io.github.marioalr.tpvca.domain.business.CatalogDuplicateRules
 import io.github.marioalr.tpvca.domain.model.Appointment
 import io.github.marioalr.tpvca.domain.patients.DuplicateCandidate
 import io.github.marioalr.tpvca.domain.patients.DuplicatePatientRules
@@ -20,6 +21,36 @@ data class SyncNotice(val kind: String, val first: String, val second: String)
 /** Lo que llegó contra lo de aquí (paso 8.23). Nunca une, borra ni renombra nada. */
 object SyncNotices {
     const val OVERLAP = "empalme"
+
+    /** El catálogo (K9b): `catalogo:<tipo>`, con el tipo de `CatalogDuplicateRules.kindKey`. */
+    const val CATALOG_PREFIX = "catalogo:"
+
+    fun catalogKind(kind: CatalogDuplicateRules.Kind): String = CATALOG_PREFIX + CatalogDuplicateRules.kindKey(kind)
+
+    private fun catalogKindOf(notice: SyncNotice): CatalogDuplicateRules.Kind? =
+        if (notice.kind.startsWith(CATALOG_PREFIX)) CatalogDuplicateRules.kindOfKey(notice.kind.removePrefix(CATALOG_PREFIX)) else null
+
+    private val CATALOG_TABLES = mapOf(
+        CatalogDuplicateRules.Kind.Product to "Products",
+        CatalogDuplicateRules.Kind.Service to "ClinicalServices",
+        CatalogDuplicateRules.Kind.Category to "Categories",
+    )
+
+    /** El registro del catálogo como lo ve la regla; `null` si ya no existe. */
+    private fun catalogItem(store: SyncStore, kind: CatalogDuplicateRules.Kind, syncId: String): CatalogDuplicateRules.Item? {
+        val table = CATALOG_TABLES.getValue(kind)
+        val columns = when (kind) {
+            CatalogDuplicateRules.Kind.Product -> listOf("SyncId", "Code", "Name", "Presentation", "IsActive")
+            CatalogDuplicateRules.Kind.Service -> listOf("SyncId", "Code", "Name", "IsActive")
+            CatalogDuplicateRules.Kind.Category -> listOf("SyncId", "Name")
+        }
+        val row = store.select(table, columns, "SyncId", listOf(syncId)).firstOrNull() ?: return null
+        return CatalogDuplicateRules.Item(
+            kind, syncId, row["Code"] as String?, row["Name"] as String?, row["Presentation"] as String?,
+            // Las categorías no tienen baja: siempre activas
+            kind == CatalogDuplicateRules.Kind.Category || row["IsActive"] == 1L,
+        )
+    }
 
     /** Una fila de «Volver a aplicar» cuyo principal obligatorio se borró: sigue guardada, sin marca, y no se aplicará sola. [SyncNotice.first] es su `EntityType`. */
     const val REAPPLY_DEAD_PRINCIPAL = "reaplicar-principal-borrado"
@@ -67,6 +98,7 @@ object SyncNotices {
     }
 
     private fun keyOf(store: SyncStore, notice: SyncNotice): String? {
+        catalogKindOf(notice)?.let { return CatalogDuplicateRules.noticeKey(it, notice.first, notice.second) }
         if (notice.kind != OVERLAP) return duplicateKey(notice.first, notice.second)
         val rows = store.select("Appointments", NOTICE_APPOINTMENT_COLUMNS, "SyncId", listOf(notice.first, notice.second)).mapNotNull(::appointmentOfRow)
         return if (rows.size == 2) overlapKey(rows[0], rows[1]) else null
@@ -79,10 +111,21 @@ object SyncNotices {
         val dismissed = dismissedBefore.toSet()
         val overlaps = ArrayList<Pair<Appointment, Appointment>>()
         val duplicates = ArrayList<String>()
+        val catalog = ArrayList<CatalogDuplicateRules.Duplicate>()
         val keep = LinkedHashSet<SyncNotice>()
         for (notice in all) {
+            val catalogKind = catalogKindOf(notice)
             when {
                 notice.kind in REAPPLY_KINDS -> keep += notice
+                notice.kind.startsWith(CATALOG_PREFIX) -> {
+                    // Los dos existen, activos, y se siguen pareciendo; si no, se quita
+                    val a = catalogKind?.let { catalogItem(store, it, notice.first) }
+                    val b = catalogKind?.let { catalogItem(store, it, notice.second) }
+                    val match = if (a != null && b != null) CatalogDuplicateRules.compare(a, b) else CatalogDuplicateRules.Match.None
+                    if (match == CatalogDuplicateRules.Match.None || CatalogDuplicateRules.noticeKey(catalogKind!!, notice.first, notice.second) in dismissed) continue
+                    keep += notice
+                    catalog += CatalogDuplicateRules.Duplicate(a!!, b!!, match)
+                }
                 notice.kind == OVERLAP -> {
                     val rows = store.select("Appointments", NOTICE_APPOINTMENT_COLUMNS, "SyncId", listOf(notice.first, notice.second)).mapNotNull(::appointmentOfRow)
                     val a = rows.firstOrNull { it.syncId.toString() == notice.first }
@@ -109,13 +152,19 @@ object SyncNotices {
         if (keep != all) meta[SyncEngine.NOTICES] = write(keep)
         if (dismissedNow != dismissedBefore) meta[DISMISSED] = writeKeys(dismissedNow)
         if (meta.isNotEmpty()) store.apply(StoreChanges(meta = meta))
-        return ArrivalNotices(overlaps, duplicates)
+        return ArrivalNotices(overlaps, duplicates, catalog)
     }
 
     /** «Entendido»: guarda las llaves de lo que se veía y lo quita. */
     fun dismiss(store: SyncStore, kind: NoticeKind) {
         val all = read(store.meta(SyncEngine.NOTICES))
-        val gone = all.filter { it.kind !in REAPPLY_KINDS && (it.kind == OVERLAP) == (kind == NoticeKind.Overlaps) }
+        val gone = all.filter { notice ->
+            notice.kind !in REAPPLY_KINDS && when (kind) {
+                NoticeKind.Overlaps -> notice.kind == OVERLAP
+                NoticeKind.DuplicatePatients -> notice.kind != OVERLAP && !notice.kind.startsWith(CATALOG_PREFIX)
+                NoticeKind.DuplicateCatalog -> notice.kind.startsWith(CATALOG_PREFIX)
+            }
+        }
         if (gone.isEmpty()) return
         val keys = readKeys(store.meta(DISMISSED)).toMutableList()
         for (notice in gone) {

@@ -284,3 +284,48 @@ class InventoryWritesTest {
         assertEquals(0, store.outbox().size)
     }
 }
+
+/** El aviso del catálogo repetido (K9b): se lee con los datos de ahora, se depura y «Entendido» lo descarta para siempre en este equipo. */
+class CatalogNoticeTest {
+    private val store = InMemorySyncStore()
+    private val writer = io.github.marioalr.tpvca.sync.engine.LocalWriter(store, { "device-b" })
+    private val category = "10000000-0000-4000-8000-000000000003"
+    private val a = "10000000-0000-4000-8000-0000000000a1"
+    private val b = "10000000-0000-4000-8000-0000000000b2"
+
+    private fun product(id: String, code: String, name: String) =
+        writer.create("Products", id, mapOf("Code" to code, "Name" to name, "IsActive" to true, "CategorySyncId" to category))
+
+    private fun notices() = io.github.marioalr.tpvca.sync.engine.LocalSide(store).notices(LocalDate.of(2026, 11, 13))
+
+    @Test
+    fun seMuestraSeDepuraYSeDescarta() {
+        writer.create("Categories", category, mapOf("Name" to "Medicamentos"))
+        product(a, "MED-010", "Paracetamol")
+        product(b, "med-010 ", "Paracetamol 500")
+        val notice = io.github.marioalr.tpvca.sync.engine.SyncNotice(io.github.marioalr.tpvca.sync.engine.SyncNotices.catalogKind(io.github.marioalr.tpvca.domain.business.CatalogDuplicateRules.Kind.Product), a, b)
+        store.apply(StoreChanges(meta = mapOf(SyncEngine.NOTICES to io.github.marioalr.tpvca.sync.engine.SyncNotices.write(setOf(notice)))))
+        val shown = notices()
+        assertEquals(1, shown.catalog.size)
+        assertEquals(
+            "Posible registro repetido en el catálogo con lo que llegó de otro equipo: producto «Paracetamol» (MED-010) y «Paracetamol 500» (med-010), mismo código. " +
+                "Si son lo mismo, desactive uno (sus ventas y lotes se conservan) o cámbiele el código. TPVC no los une solo.",
+            shown.catalogText,
+        )
+        assertTrue("No es un expediente duplicado", shown.duplicates.isEmpty())
+        // «Entendido» de los expedientes no lo toca
+        io.github.marioalr.tpvca.sync.engine.LocalSide(store).dismiss(io.github.marioalr.tpvca.sync.engine.NoticeKind.DuplicatePatients)
+        assertEquals(1, notices().catalog.size)
+        // Se le cambió el código: ya no se parecen y se quita
+        writer.edit("Products", b, mapOf("Code" to "MED-011"))
+        assertTrue(notices().catalog.isEmpty())
+        assertTrue(io.github.marioalr.tpvca.sync.engine.SyncNotices.read(store.meta(SyncEngine.NOTICES)).isEmpty())
+        // Otra vez repetido y descartado: el mismo par no vuelve aunque vuelva a llegar
+        writer.edit("Products", b, mapOf("Code" to "MED-010"))
+        store.apply(StoreChanges(meta = mapOf(SyncEngine.NOTICES to io.github.marioalr.tpvca.sync.engine.SyncNotices.write(setOf(notice)))))
+        io.github.marioalr.tpvca.sync.engine.LocalSide(store).dismiss(io.github.marioalr.tpvca.sync.engine.NoticeKind.DuplicateCatalog)
+        assertTrue(notices().catalog.isEmpty())
+        val again = io.github.marioalr.tpvca.sync.engine.SyncNotices.merged(store, emptySet(), setOf(notice))
+        assertTrue(again.isEmpty())
+    }
+}

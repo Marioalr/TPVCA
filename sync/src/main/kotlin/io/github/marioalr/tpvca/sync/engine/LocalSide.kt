@@ -1,5 +1,6 @@
 package io.github.marioalr.tpvca.sync.engine
 
+import io.github.marioalr.tpvca.domain.business.CatalogDuplicateRules
 import io.github.marioalr.tpvca.domain.agenda.AgendaTexts
 import io.github.marioalr.tpvca.domain.agenda.AppointmentRules
 import io.github.marioalr.tpvca.domain.model.Appointment
@@ -12,16 +13,22 @@ import java.time.LocalDate
 import java.util.UUID
 
 /** Los dos avisos del inicio de Pacientes, ya con los datos de ahora. */
-data class ArrivalNotices(val overlaps: List<Pair<Appointment, Appointment>>, val duplicates: List<String>) {
+data class ArrivalNotices(
+    val overlaps: List<Pair<Appointment, Appointment>>,
+    val duplicates: List<String>,
+    /** Productos, servicios o categorías que pueden estar dados de alta dos veces (K9b; en la PC, arriba de Productos). */
+    val catalog: List<CatalogDuplicateRules.Duplicate> = emptyList(),
+) {
     val overlapText: String get() = AgendaTexts.overlapNotice(overlaps.map { AgendaTexts.overlapPair(it.first, it.second) })
     val duplicateText: String get() = AgendaTexts.duplicateNotice(duplicates)
+    val catalogText: String get() = CatalogDuplicateRules.notice(catalog)
 
     companion object {
         val NONE = ArrivalNotices(emptyList(), emptyList())
     }
 }
 
-enum class NoticeKind { Overlaps, DuplicatePatients }
+enum class NoticeKind { Overlaps, DuplicatePatients, DuplicateCatalog }
 
 /** «Volver a aplicar»: cuántos hay y de qué, para preguntar antes (`GetSavedChangesSummaryAsync`). */
 data class SavedSummary(val total: Int, val lines: List<String>)

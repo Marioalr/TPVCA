@@ -75,7 +75,22 @@ fun tabletDemoExtras(store: SyncStore) {
     )
 }
 
-/** La tablet con datos inventados y sin nube, sobre SQLCipher. Solo en depuración. Girar no la vuelve a armar; que Android cierre el proceso sí. `--es pagina hub|pacientes|ficha|alta|editar|agenda|sync|consulta|enviada|venta`. */
+/** Solo en la demostración: una jeringa dada de alta otra vez en «otro equipo» con el mismo código, y su aviso arriba de Productos (K9b). Inventado. */
+fun catalogDuplicateDemo(store: SyncStore) {
+    val products = store.select("Products", listOf("SyncId", "Code", "CategorySyncId"))
+    val jeringa = products.first { it["Code"] == "INS-002" }
+    val twin = "10000000-0000-4000-8000-00000000c0de"
+    io.github.marioalr.tpvca.sync.engine.LocalWriter(store, { "otro-equipo" }).create(
+        "Products", twin,
+        mapOf("Code" to "INS-002", "Name" to "Jeringa 5 ml", "Presentation" to "Pieza estéril", "CategorySyncId" to jeringa["CategorySyncId"], "Price" to "12.00", "IsActive" to true, "CurrentStock" to 10L, "MinStock" to 10L),
+    )
+    store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))
+    val ids = listOf(jeringa["SyncId"] as String, twin).sorted()
+    val notices = SyncNotices.read(store.meta(SyncEngine.NOTICES)) + SyncNotice(SyncNotices.catalogKind(io.github.marioalr.tpvca.domain.business.CatalogDuplicateRules.Kind.Product), ids[0], ids[1])
+    store.apply(StoreChanges(meta = mapOf(SyncEngine.NOTICES to SyncNotices.write(notices))))
+}
+
+/** La tablet con datos inventados y sin nube, sobre SQLCipher. Solo en depuración. Girar no la vuelve a armar; que Android cierre el proceso sí. `--es pagina hub|pacientes|ficha|alta|editar|agenda|sync|consulta|enviada|venta|productos|lotes|kardex|sugerida`. */
 class TabletDemoActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -96,6 +111,11 @@ class TabletDemoActivity : FragmentActivity() {
             // La consulta de Ana enviada a la PC (K8): para ver la solo lectura sin otro equipo
             "enviada" -> demo.sendAnaToPc()
             "venta" -> demo.workspace.enterPointOfSale()
+            // Configuración (K9b)
+            "productos" -> demo.workspace.enterConfig(io.github.marioalr.tpvca.ui.tablet.ConfigSection.Inventory)
+            "lotes" -> demo.workspace.enterConfig(io.github.marioalr.tpvca.ui.tablet.ConfigSection.Batches)
+            "kardex" -> demo.workspace.enterConfig(io.github.marioalr.tpvca.ui.tablet.ConfigSection.Movements)
+            "sugerida" -> demo.workspace.inventory.openSuggested()
         }
         setContent {
             TpvcTheme(TpvcThemes.claro) {
@@ -117,6 +137,7 @@ class TabletDemoActivity : FragmentActivity() {
             if (fresh) {
                 PhoneDemoSeed(store, Clinic.today(Instant.now())).fill()
                 tabletDemoExtras(store)
+                catalogDuplicateDemo(store)
             }
             val folios = MemoryFolioNumbers()
             val env = TabletEnv(

@@ -4,6 +4,10 @@ import io.github.marioalr.tpvca.domain.Clinic
 import io.github.marioalr.tpvca.domain.business.BusinessReportRules
 import io.github.marioalr.tpvca.domain.business.StockReviewRules
 import io.github.marioalr.tpvca.domain.business.StockShortage
+import io.github.marioalr.tpvca.domain.business.SupplierOrderMatching
+import io.github.marioalr.tpvca.domain.business.SupplierOrderParser
+import io.github.marioalr.tpvca.domain.business.SupplierReceipt
+import io.github.marioalr.tpvca.domain.business.SupplierReceiptResult
 import io.github.marioalr.tpvca.domain.patients.VitalSignsRules
 import io.github.marioalr.tpvca.domain.devices.DevicePermissions
 import io.github.marioalr.tpvca.domain.devices.DeviceRole
@@ -27,6 +31,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import java.math.BigDecimal
 import java.time.Clock
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.util.Locale
@@ -69,6 +74,27 @@ data class SaleLine(
     val code: String? = null,
     val description: String? = null,
     val individualUnits: Boolean = false,
+)
+
+/** Lo que el formulario del producto guarda (`ProductDialogViewModel.SaveAsync`), ya validado. Los importes como `BigDecimal`; [categorySyncId] es la categoría elegida. */
+data class ProductValues(
+    val code: String,
+    val name: String,
+    val genericName: String?,
+    val presentation: String?,
+    val categorySyncId: String,
+    val unit: String,
+    val price: BigDecimal,
+    val unitCost: BigDecimal,
+    val costExcludesVat: Boolean,
+    val currentStock: Int,
+    val minStock: Int,
+    val optimalStock: Int,
+    val unitsPerPackage: Int,
+    val location: String?,
+    val supplierCode: String?,
+    val requiresRefrigeration: Boolean,
+    val notes: String?,
 )
 
 /** [repeated]: ese ticket ya estaba registrado (un segundo toque, o volver a intentar después de morir el proceso): no se cobró otra vez. */
@@ -736,6 +762,7 @@ class WriteEngine(
         responsible: String,
         writes: MutableList<RowWrite>,
         marks: MutableList<OutboxMark>,
+        unitCost: String? = null,
     ) {
         var remaining = quantity
         val batches = state.openBatches(productId)
@@ -745,10 +772,10 @@ class WriteEngine(
             batch["Quantity"] = (batch.int("Quantity") - taken).toLong()
             if (batch.int("Quantity") == 0) batch["IsDepleted"] = 1L
             state.touchBatch(batch["SyncId"] as String)
-            addMovement(product, productId, batch["SyncId"] as String, saleItemId, type, taken, -taken, date, reason, responsible, SyncIds.random(), writes, marks)
+            addMovement(product, productId, batch["SyncId"] as String, saleItemId, type, taken, -taken, date, reason, responsible, SyncIds.random(), writes, marks, unitCost)
             remaining -= taken
         }
-        if (remaining > 0) addMovement(product, productId, null, saleItemId, type, remaining, -remaining, date, reason, responsible, SyncIds.random(), writes, marks)
+        if (remaining > 0) addMovement(product, productId, null, saleItemId, type, remaining, -remaining, date, reason, responsible, SyncIds.random(), writes, marks, unitCost)
     }
 
     private fun addMovement(
@@ -1025,6 +1052,299 @@ class WriteEngine(
         }
     }
 
+    // ---------------------------------------------------------------------------------------------------------------------------
+    // Productos, lotes y movimientos (K9b): `InventoryService` de la PC, con `CurrentStock` como valor hasta el 8.20
+    // ---------------------------------------------------------------------------------------------------------------------------
+
+    private fun requireInventory(what: String) {
+        if (!WritePolicy.canWrite(requireWritable(), "Products", creating = true)) refuse(what)
+    }
+
+    /**
+     * El código ya lo usa otro producto activo (`IsProductCodeTakenAsync`): sin espacios a los lados y en mayúsculas. Editar uno **sin cambiarle el código** no se revisa (regla «Catálogo con varios equipos»):
+     * un par repetido que llegó de otro equipo se sigue pudiendo editar.
+     */
+    fun isProductCodeTaken(code: String, excludeSyncId: String? = null): Boolean = guarded { codeTaken(code, excludeSyncId) }
+
+    private fun codeTaken(code: String, excludeSyncId: String?): Boolean {
+        if (code.isBlank()) return false
+        val wanted = code.trim().uppercase(Locale.ROOT)
+        val rows = store.select("Products", listOf("SyncId", "Code", "IsActive"))
+        if (excludeSyncId != null) {
+            val stored = rows.firstOrNull { it["SyncId"] == excludeSyncId }?.get("Code") as String?
+            if (stored != null && stored.trim().equals(code.trim(), ignoreCase = true)) return false
+        }
+        return rows.any { it["IsActive"] == 1L && it["SyncId"] != excludeSyncId && (it["Code"] as String?).orEmpty().trim().uppercase(Locale.ROOT) == wanted }
+    }
+
+    /**
+     * Guardar un producto (`SaveProductAsync`). Un alta lleva [syncId] tomado al abrir el formulario: un segundo toque encuentra el producto ya guardado y no crea otro. Con existencias, su movimiento de
+     * inventario inicial. En una edición, [originalStock] es la existencia que mostró el formulario: **solo si el médico la cambió** se escribe un ajuste (un conteo); si no, se queda la guardada, con lo que se
+     * vendió mientras tanto. Todo en una transacción con su entrada en la cola.
+     *
+     * @return `true` si se escribió; `false` si ese alta ya estaba guardada.
+     */
+    fun saveProduct(product: ProductValues, syncId: String, isNew: Boolean, originalStock: Int?): Boolean = guarded {
+        requireInventory("editar el inventario")
+        store.transaction {
+            val id = syncId.lowercase(Locale.ROOT)
+            val table = writer.table("Products")
+            val existing = writer.find(table, id)
+            if (isNew && existing != null) return@transaction false
+            if (!isNew && existing == null) throw WriteRefused(WriteRefused.Reason.CONFLICT, "El producto ya no existe en la base de datos.")
+            if (codeTaken(product.code, if (isNew) null else id)) {
+                throw WriteRefused(WriteRefused.Reason.CONFLICT, "El código '${product.code.trim()}' ya está registrado en el inventario. Debe ser único.")
+            }
+            if (store.select("Categories", listOf("SyncId"), "SyncId", listOf(product.categorySyncId)).isEmpty()) {
+                throw WriteRefused(WriteRefused.Reason.CONFLICT, "La categoría ya no existe en este equipo.")
+            }
+            val now = protocolLocalNow()
+            val units = if (product.unitsPerPackage > 1) product.unitsPerPackage else 1
+            val values = mapOf<String, Any?>(
+                "Code" to product.code.trim(),
+                "Name" to product.name.trim(),
+                "GenericName" to product.genericName?.trim()?.ifEmpty { null },
+                "Presentation" to product.presentation?.trim()?.ifEmpty { null },
+                "CategorySyncId" to product.categorySyncId,
+                "Unit" to product.unit,
+                "Price" to product.price.toPlainString(),
+                "UnitCost" to product.unitCost.toPlainString(),
+                "CostExcludesVat" to product.costExcludesVat,
+                "MinStock" to product.minStock.toLong(),
+                "OptimalStock" to product.optimalStock.toLong(),
+                "UnitsPerPackage" to units.toLong(),
+                "Location" to product.location?.trim()?.ifEmpty { null },
+                "SupplierCode" to product.supplierCode?.trim()?.ifEmpty { null },
+                "RequiresRefrigeration" to product.requiresRefrigeration,
+                "Notes" to product.notes?.trim()?.ifEmpty { null },
+                "UpdatedAt" to now,
+                // El formulario arma un producto nuevo, activo: guardarlo lo deja activo (`existing.IsActive = product.IsActive`)
+                "IsActive" to true,
+            )
+            val writes = ArrayList<RowWrite>()
+            val marks = ArrayList<OutboxMark>()
+            if (existing == null) {
+                val stock = product.currentStock
+                // El producto antes que su movimiento de inventario inicial, que lo nombra
+                writer.create("Products", id, values + mapOf("CurrentStock" to stock.toLong(), "OpenedUnitsRemaining" to 0L, "CreatedAt" to now))
+                if (stock != 0) {
+                    val row = mutableMapOf<String, Any?>("CurrentStock" to 0L)
+                    addMovement(row, id, null, null, if (stock > 0) "EntradaAjuste" else "AjusteInventario", kotlin.math.abs(stock), stock, now, "Inventario inicial de alta de producto", "Dr. Consulta", SyncIds.random(), writes, marks)
+                }
+            } else {
+                val row = existing.toMutableMap()
+                val stored = row.int("CurrentStock")
+                // Un cambio de existencias a mano es un ajuste en el Kardex, sin lote; solo si el campo cambió
+                val typed = product.currentStock != (originalStock ?: stored)
+                val delta = product.currentStock - stored
+                if (typed && delta != 0) {
+                    addMovement(row, id, null, null, "AjusteInventario", kotlin.math.abs(delta), delta, now, "Ajuste manual de existencias desde la ficha del producto", "Dr. Consulta", SyncIds.random(), writes, marks)
+                }
+                val opened = if (units > 1) row.int("OpenedUnitsRemaining").coerceIn(0, units - 1) else 0
+                writer.edit("Products", id, values + mapOf("CurrentStock" to row["CurrentStock"], "OpenedUnitsRemaining" to opened.toLong()))
+            }
+            if (writes.isNotEmpty()) store.apply(StoreChanges(writes = writes, outbox = marks))
+            true
+        }
+    }
+
+    /** «Dar de baja del catálogo» (`DeleteProductAsync`): solo `IsActive` en falso; el historial se conserva. `false` si ya no existe. */
+    fun deactivateProduct(syncId: String): Boolean = guarded {
+        requireInventory("editar el inventario")
+        store.transaction {
+            val row = writer.find(writer.table("Products"), syncId) ?: return@transaction false
+            if (row["IsActive"] != 1L) return@transaction true
+            writer.edit("Products", syncId, mapOf("IsActive" to false, "UpdatedAt" to protocolLocalNow()))
+        }
+    }
+
+    /**
+     * «Registrar consumo (sin cobro)» (`RegisterQuickConsultationUsageAsync`): sale por FEFO como un consumo en consulta, **aunque no alcance** (revisión 20: queda en negativo y pide revisar el inventario).
+     * @return el faltante, para avisarlo; `null` si alcanzó.
+     */
+    fun registerConsumption(productSyncId: String, quantity: Int, notes: String?): StockShortage? = guarded {
+        if (!WritePolicy.canWrite(requireWritable(), "InventoryMovements", creating = true)) refuse("registrar consumos")
+        if (quantity <= 0) throw WriteRefused(WriteRefused.Reason.CONFLICT, "La cantidad debe ser mayor a cero.")
+        store.transaction {
+            val state = StockState()
+            val product = state.product(productSyncId)
+            val shortage = StockReviewRules.shortage(stockProduct(product), quantity, 0)
+            val now = protocolLocalNow()
+            val writes = ArrayList<RowWrite>()
+            val marks = ArrayList<OutboxMark>()
+            val reason = notes?.takeIf { it.isNotBlank() } ?: "Uso / aplicación durante consulta médica"
+            val cost = BusinessReportRules.costToRecord(domainProduct(product), individualUnits = false)?.toPlainString()
+            addExits(state, product, productSyncId, quantity, null, "SalidaConsulta", now, reason, "Dr. Consulta", writes, marks, cost)
+            product["UpdatedAt"] = now
+            state.touch(productSyncId)
+            state.flush(writes, marks)
+            store.apply(StoreChanges(writes = writes, outbox = marks))
+            shortage
+        }
+    }
+
+    /**
+     * «Entrada» de la lista de productos (`ConfirmQuickActionAsync`): una entrada por compra sin lote con el costo de ese momento y, si el médico lo cambió ([unitsPerPackage] no nulo), el contenido por paquete. **En una sola transacción**: la PC
+     * guarda primero el producto completo como lo tenía la lista y después el movimiento; aquí solo cambia el contenido por paquete, junto con la entrada.
+     */
+    fun registerEntry(productSyncId: String, quantity: Int, reason: String, unitsPerPackage: Int?): Boolean = guarded {
+        requireInventory("registrar entradas")
+        if (quantity <= 0) throw WriteRefused(WriteRefused.Reason.CONFLICT, "La cantidad debe ser mayor a cero.")
+        store.transaction {
+            val state = StockState()
+            val product = state.product(productSyncId)
+            val now = protocolLocalNow()
+            val writes = ArrayList<RowWrite>()
+            val marks = ArrayList<OutboxMark>()
+            if (unitsPerPackage != null && product.int("UnitsPerPackage") != unitsPerPackage) state.setUnitsPerPackage(productSyncId, unitsPerPackage)
+            val cost = BusinessReportRules.costToRecord(domainProduct(product), individualUnits = false)?.toPlainString()
+            addMovement(product, productSyncId, null, null, "EntradaCompra", quantity, quantity, now, reason, "Dr. Consulta", SyncIds.random(), writes, marks, cost)
+            product["UpdatedAt"] = now
+            state.touch(productSyncId)
+            state.flush(writes, marks)
+            store.apply(StoreChanges(writes = writes, outbox = marks))
+            true
+        }
+    }
+
+    /**
+     * «Registrar lote» (`ReceiveBatchAsync`): el lote, sus piezas a las existencias y la entrada por compra con su lote y el costo de ese momento, en una transacción. El lote lleva [batchSyncId], tomado al
+     * abrir el panel: un segundo toque no lo registra dos veces. [unitsPerPackage] es el contenido por paquete que se escribió (vacío = 1, como la PC).
+     *
+     * @return `false` si ese lote ya estaba registrado.
+     */
+    fun receiveBatch(batchSyncId: String, productSyncId: String, batchNumber: String, expiration: LocalDate, quantity: Int, notes: String?, unitsPerPackage: Int): Boolean = guarded {
+        requireInventory("registrar lotes")
+        if (quantity <= 0) throw WriteRefused(WriteRefused.Reason.CONFLICT, "La cantidad del lote debe ser mayor a cero.")
+        store.transaction {
+            val batchId = batchSyncId.lowercase(Locale.ROOT)
+            val table = writer.table("ProductBatches")
+            if (writer.find(table, batchId) != null) return@transaction false
+            val state = StockState()
+            val product = state.product(productSyncId)
+            val now = protocolLocalNow()
+            val writes = ArrayList<RowWrite>()
+            val marks = ArrayList<OutboxMark>()
+            val batch = mapOf<String, Any?>(
+                "ProductSyncId" to productSyncId, "BatchNumber" to batchNumber.trim(), "ExpirationDate" to ProtocolDate.format(expiration.atStartOfDay()), "Quantity" to quantity.toString(),
+                "ReceivedDate" to now, "Notes" to notes, "IsDepleted" to false,
+            )
+            writes += RowWrite(table.table, batchId, writer.buildRow(table, batchId, batch, writer.stamp(null)), isNew = true)
+            marks += writer.mark(table, batchId)
+            if (unitsPerPackage > 0) state.setUnitsPerPackage(productSyncId, unitsPerPackage)
+            val cost = BusinessReportRules.costToRecord(domainProduct(product), individualUnits = false)?.toPlainString()
+            addMovement(product, productSyncId, batchId, null, "EntradaCompra", quantity, quantity, now, "Entrada de lote ${batchNumber.trim()}", "Dr. Consulta", SyncIds.random(), writes, marks, cost)
+            product["UpdatedAt"] = now
+            state.touch(productSyncId)
+            state.flush(writes, marks)
+            store.apply(StoreChanges(writes = writes, outbox = marks))
+            true
+        }
+    }
+
+    /** Un lote que aquí sigue abierto pero cuyo cierre ya llegó de otro equipo (`IsBatchClosedElsewhereAsync`, revisión 23): cerrarlo no cambiará las existencias. */
+    fun isBatchClosedElsewhere(batchSyncId: String): Boolean = guarded {
+        val batch = writer.find(writer.table("ProductBatches"), batchSyncId) ?: return@guarded false
+        if (batch["ClosedAtUtc"] != null) return@guarded false
+        store.existing("InventoryMovements", listOf(SyncIds.derived("close:", batchSyncId), SyncIds.derived("close-rest:", batchSyncId))).isNotEmpty()
+    }
+
+    /**
+     * «Ingresar pedido» (`ReceiveSupplierOrderAsync`): crea los productos nuevos, guarda en cada producto el SKU del proveedor y el costo del renglón, suma existencias y deja una entrada por compra por renglón
+     * (con su lote si trae lote y caducidad). **Todo o nada**, en una transacción con sus entradas en la cola.
+     */
+    fun receiveSupplierOrder(receipt: SupplierReceipt): SupplierReceiptResult = guarded {
+        requireInventory("ingresar pedidos")
+        for (line in receipt.lines) {
+            if (line.quantity <= 0) throw WriteRefused(WriteRefused.Reason.CONFLICT, "La cantidad de «${line.description}» debe ser mayor a cero.")
+            if (line.unitCost.signum() < 0) throw WriteRefused(WriteRefused.Reason.CONFLICT, "El costo de «${line.description}» no puede ser negativo.")
+            if (line.batchNumber.isNullOrBlank() != (line.expirationDate == null)) {
+                throw WriteRefused(WriteRefused.Reason.CONFLICT, "«${line.description}»: el lote necesita su caducidad y la caducidad su lote.")
+            }
+        }
+        val reason = SupplierOrderMatching.reason(receipt.supplier, receipt.orderNumber)
+        store.transaction {
+            val state = StockState()
+            val now = protocolLocalNow()
+            val writes = ArrayList<RowWrite>()
+            val marks = ArrayList<OutboxMark>()
+            val used = store.select("Products", listOf("Code")).mapTo(HashSet()) { (it["Code"] as String?).orEmpty().uppercase(Locale.ROOT) }
+            val createdBySku = HashMap<String, String>()
+            val newRows = LinkedHashMap<String, MutableMap<String, Any?>>()
+            val created = ArrayList<String>()
+            val hasNew = receipt.lines.any { it.productSyncId == null }
+            val category = receipt.categorySyncIdForNewProducts
+            if (hasNew && (category == null || store.select("Categories", listOf("SyncId"), "SyncId", listOf(category)).isEmpty())) {
+                throw WriteRefused(WriteRefused.Reason.CONFLICT, "Elija la categoría de los productos nuevos.")
+            }
+            for (line in receipt.lines) {
+                val productId: String
+                val product: MutableMap<String, Any?>
+                val existingId = line.productSyncId
+                if (existingId != null) {
+                    productId = existingId
+                    product = state.productOrNull(existingId) ?: throw WriteRefused(WriteRefused.Reason.CONFLICT, "El producto de «${line.description}» ya no existe.")
+                } else {
+                    val again = createdBySku[line.sku.uppercase(Locale.ROOT)]
+                    if (again != null) {
+                        productId = again
+                        product = newRows.getValue(again)
+                    } else {
+                        productId = SyncIds.random()
+                        val presentation = SupplierOrderParser.presentationOf(line.description)
+                        product = mutableMapOf(
+                            "Code" to SupplierOrderMatching.uniqueCode(line.sku, used), "Name" to line.description.trim(), "Presentation" to presentation,
+                            "CategorySyncId" to receipt.categorySyncIdForNewProducts, "Unit" to (if (presentation != null) "Cajas" else "Piezas"), "Price" to "0",
+                            "CurrentStock" to 0L, "UnitsPerPackage" to (if (line.unitsPerPackage > 1) line.unitsPerPackage else 1).toLong(), "OpenedUnitsRemaining" to 0L,
+                            // Sin control de existencias hasta que se configure
+                            "MinStock" to 0L, "OptimalStock" to 0L, "CreatedAt" to now,
+                        )
+                        newRows[productId] = product
+                        createdBySku[line.sku.uppercase(Locale.ROOT)] = productId
+                        created += line.description.trim()
+                    }
+                }
+                if (line.unitsPerPackage > 0) setUnits(product, line.unitsPerPackage)
+                product["SupplierCode"] = line.sku
+                product["UnitCost"] = line.unitCost.toPlainString()
+                product["IsActive"] = 1L
+                product["UpdatedAt"] = now
+                var batchId: String? = null
+                val number = line.batchNumber?.trim()
+                if (!number.isNullOrEmpty()) {
+                    batchId = SyncIds.random()
+                    val table = writer.table("ProductBatches")
+                    val batch = mapOf<String, Any?>(
+                        "ProductSyncId" to productId, "BatchNumber" to number, "ExpirationDate" to ProtocolDate.format(line.expirationDate!!.atStartOfDay()),
+                        "Quantity" to line.quantity.toString(), "ReceivedDate" to now, "Notes" to reason, "IsDepleted" to false,
+                    )
+                    writes += RowWrite(table.table, batchId, writer.buildRow(table, batchId, batch, writer.stamp(null)), isNew = true)
+                    marks += writer.mark(table, batchId)
+                }
+                val cost = BusinessReportRules.costToRecord(domainProduct(product), individualUnits = false)?.toPlainString()
+                addMovement(product, productId, batchId, null, "EntradaCompra", line.quantity, line.quantity, now, reason, "Dr. Consulta", SyncIds.random(), writes, marks, cost)
+                if (existingId != null) state.touchProduct(productId, "SupplierCode", "UnitCost", "IsActive", "UnitsPerPackage")
+            }
+            // Los productos nuevos van primero: sus lotes y movimientos los nombran
+            val productTable = writer.table("Products")
+            val stamp = writer.stamp(null)
+            newRows.entries.reversed().forEach { (id, row) ->
+                writes.add(0, RowWrite(productTable.table, id, writer.buildRow(productTable, id, row, stamp), isNew = true))
+                marks.add(0, writer.mark(productTable, id))
+            }
+            state.flush(writes, marks)
+            store.apply(StoreChanges(writes = writes, outbox = marks))
+            SupplierReceiptResult(receipt.lines.size, created)
+        }
+    }
+
+    /** `Product.SetUnitsPerPackage`: 1 o más, y el paquete abierto entre 0 y el contenido − 1. */
+    private fun setUnits(product: MutableMap<String, Any?>, units: Int) {
+        val u = if (units > 1) units else 1
+        product["UnitsPerPackage"] = u.toLong()
+        product["OpenedUnitsRemaining"] = (if (u > 1) product.int("OpenedUnitsRemaining").coerceIn(0, u - 1) else 0).toLong()
+    }
+
     private fun MutableMap<String, Any?>.int(column: String) = (this[column] as Long? ?: 0L).toInt()
 
     private fun stockProduct(row: Map<String, Any?>) = Product(
@@ -1046,6 +1366,9 @@ class WriteEngine(
         private val batches = LinkedHashMap<String, MutableMap<String, Any?>>()
         private val touchedProducts = LinkedHashSet<String>()
         private val touchedBatches = LinkedHashSet<String>()
+
+        /** Lo que una operación cambió de un producto además de sus existencias (K9b: el contenido por paquete, la clave del proveedor, el costo). */
+        private val extraColumns = HashMap<String, MutableSet<String>>()
 
         fun product(id: String): MutableMap<String, Any?> =
             productOrNull(id) ?: throw WriteRefused(WriteRefused.Reason.CONFLICT, "El producto $id ya no existe en el inventario.")
@@ -1077,6 +1400,16 @@ class WriteEngine(
             touchedProducts += id
         }
 
+        fun touchProduct(id: String, vararg columns: String) {
+            touchedProducts += id
+            extraColumns.getOrPut(id) { LinkedHashSet() } += columns
+        }
+
+        fun setUnitsPerPackage(id: String, units: Int) {
+            setUnits(product(id), units)
+            touchProduct(id, "UnitsPerPackage")
+        }
+
         fun touchBatch(id: String) {
             touchedBatches += id
         }
@@ -1085,7 +1418,8 @@ class WriteEngine(
             for (id in touchedProducts) {
                 val row = products.getValue(id)
                 val table = writer.table("Products")
-                val values = mapOf("CurrentStock" to row["CurrentStock"], "OpenedUnitsRemaining" to row["OpenedUnitsRemaining"], "UpdatedAt" to row["UpdatedAt"])
+                val values = mapOf("CurrentStock" to row["CurrentStock"], "OpenedUnitsRemaining" to row["OpenedUnitsRemaining"], "UpdatedAt" to row["UpdatedAt"]) +
+                    extraColumns[id].orEmpty().associateWith { writer.localValue(table.column(it)!!, row[it]) }
                 writes += RowWrite(table.table, id, values + stampOf(row), isNew = false)
                 marks += writer.mark(table, id)
             }

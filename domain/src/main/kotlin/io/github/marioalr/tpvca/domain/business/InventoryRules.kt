@@ -36,6 +36,8 @@ data class SuggestedPurchaseItem(
     val estimatedUnitCost: BigDecimal,
     val isCostEstimated: Boolean,
     val reason: String,
+    /** El `SyncId` del producto: la llave del renglón en pantalla (dos equipos pueden dar de alta el mismo código y nombre). */
+    val productSyncId: String = "",
 ) {
     val estimatedTotalCost: BigDecimal get() = BigDecimal(suggestedQuantity).multiply(estimatedUnitCost)
 
@@ -82,6 +84,7 @@ object SuggestedPurchaseRules {
                 estimatedUnitCost = cost,
                 isCostEstimated = estimated,
                 reason = if (p.currentStock == 0) "Agotado en consultorio" else "Stock bajo (${p.currentStock} de ${p.minStock} mín.)",
+                productSyncId = p.syncId,
             )
         }.sortedWith(compareBy<SuggestedPurchaseItem> { it.currentStock }.thenComparing({ it.productName }, names))
     }

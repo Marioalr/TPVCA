@@ -94,12 +94,12 @@ fun HubScreen(workspace: TabletWorkspace, chrome: TabletChrome) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 TText("Consultorio Médico General", size = TType.title, weight = FontWeight.Bold)
                 TText("Seleccione una acción principal para comenzar la jornada clínica", Modifier.padding(top = 8.dp), color = LocalTpvcColors.current.textSecondary)
-                TButton("Ver Lista Sugerida de Compras y Resurtido de Stock", {}, Modifier.padding(top = 12.dp), icon = TIcons.Clipboard, nextVersion = true)
+                TButton("Ver Lista Sugerida de Compras y Resurtido de Stock", workspace.inventory::openSuggested, Modifier.padding(top = 12.dp), icon = TIcons.Clipboard, tag = TabletTags.HUB_SUGGESTED)
             }
             val cards: List<@Composable (Modifier) -> Unit> = listOf(
                 { BigCard(it, TIcons.Cart, "Nueva Venta", "Punto de Venta / Farmacia", null, "Dispensación y venta de medicamentos, curación e insumos con carrito interactivo, cálculo de totales y descuento automático por caducidad (FEFO).", "Iniciar Venta", solid = true, tag = TabletTags.HUB_POS, onClick = workspace::enterPointOfSale) },
                 { BigCard(it, TIcons.FileMedical, "Pacientes", "Consulta, expedientes y agenda", "NOM-004-SSA3", "Citas de hoy, búsqueda de pacientes, fichas NOM-004, consulta con receta y cobro en la misma pantalla.", "Abrir Pacientes", tag = TabletTags.HUB_PATIENTS, onClick = workspace::enterPatients) },
-                { BigCard(it, TIcons.Settings, "Configuración", "Gestión y Administración", null, "Panel de métricas, catálogo de inventario e insumos, control de lotes y caducidades (FEFO), kardex de movimientos y personalización de temas.", "Abrir Administración") },
+                { BigCard(it, TIcons.Settings, "Configuración", "Gestión y Administración", null, "Panel de métricas, catálogo de inventario e insumos, control de lotes y caducidades (FEFO), kardex de movimientos y personalización de temas.", "Abrir Administración", tag = TabletTags.HUB_CONFIG, onClick = { workspace.enterConfig() }) },
             )
             if (wide) {
                 Row(Modifier.fillMaxWidth().widthIn(max = 1160.dp), horizontalArrangement = Arrangement.spacedBy(22.dp, Alignment.CenterHorizontally)) {
@@ -136,11 +136,12 @@ private fun AlertsBanner(workspace: TabletWorkspace, alerts: HubAlerts) {
             if (alerts.today > 0) {
                 TButton("Citas Hoy (${alerts.today})", { workspace.goPatients(); workspace.openAgenda() }, kind = TButtonKind.Primary, icon = TIcons.Calendar)
             }
-            if (alerts.lowStock > 0) TButton("Stock Bajo (${alerts.lowStock})", {}, icon = TIcons.Alert, nextVersion = true)
-            if (alerts.expired > 0) TButton("Caducados (${alerts.expired})", {}, icon = TIcons.Alert, nextVersion = true)
-            if (alerts.review > 0) TButton("Revisar inventario (${alerts.review})", {}, icon = TIcons.Alert, nextVersion = true)
-            if (alerts.nearExpiry > 0) TButton("Por Vencer (${alerts.nearExpiry})", {}, icon = TIcons.Clock, nextVersion = true)
-            TButton("Compras Sugeridas", {}, icon = TIcons.Clipboard, nextVersion = true)
+            // Como la PC: stock bajo abre la compra sugerida; los lotes y la revisión llevan a Configuración (aquí, a su sección)
+            if (alerts.lowStock > 0) TButton("Stock Bajo (${alerts.lowStock})", workspace.inventory::openSuggested, icon = TIcons.Alert)
+            if (alerts.expired > 0) TButton("Caducados (${alerts.expired})", { workspace.enterConfig(ConfigSection.Batches) }, icon = TIcons.Alert)
+            if (alerts.review > 0) TButton("Revisar inventario (${alerts.review})", { workspace.enterConfig(ConfigSection.Inventory) }, icon = TIcons.Alert)
+            if (alerts.nearExpiry > 0) TButton("Por Vencer (${alerts.nearExpiry})", { workspace.enterConfig(ConfigSection.Batches) }, icon = TIcons.Clock)
+            TButton("Compras Sugeridas", workspace.inventory::openSuggested, icon = TIcons.Clipboard)
             TIconButton(TIcons.Refresh, "Refrescar avisos", workspace::changed)
         }
     }

@@ -80,7 +80,7 @@ fun TabletApp(workspace: TabletWorkspace, chrome: TabletChrome) {
         lifecycle.lifecycle.addObserver(observer)
         onDispose { lifecycle.lifecycle.removeObserver(observer) }
     }
-    BackHandler(enabled = workspace.preview == null && (workspace.page != TabletPage.Hub || workspace.agendaOpen || workspace.detail != null)) { workspace.back() }
+    BackHandler(enabled = workspace.preview == null && (workspace.page != TabletPage.Hub || workspace.agendaOpen || workspace.detail != null || workspace.inventory.suggested != null)) { workspace.back() }
     // La vista del PDF tapa todo: Atrás la cierra a ella, nunca la app
     BackHandler(enabled = workspace.preview != null) { workspace.preview = null }
 
@@ -95,6 +95,7 @@ fun TabletApp(workspace: TabletWorkspace, chrome: TabletChrome) {
                     TabletPage.Sync -> SyncScreen(workspace, chrome)
                     TabletPage.Consultation -> ConsultationScreen(workspace)
                     TabletPage.Pos -> PosScreen(workspace, chrome)
+                    TabletPage.Config -> ConfigScreen(workspace, chrome)
                 }
             }
             // Con el teclado abierto, ese renglón es para el formulario
@@ -102,6 +103,8 @@ fun TabletApp(workspace: TabletWorkspace, chrome: TabletChrome) {
         }
         if (workspace.agendaOpen) AgendaPanel(workspace, chrome.dataVersion)
         workspace.detail?.let { ConsultationDetailSheet(workspace, it) }
+        // La lista sugerida es del inicio: al irse de él se cierra
+        if (workspace.page == TabletPage.Hub) workspace.inventory.suggested?.let { SuggestedPurchasesSheet(workspace, it) }
         Toast(workspace)
         workspace.preview?.let { doc ->
             Box(Modifier.fillMaxSize().background(colors.background).safeDrawingPadding()) {

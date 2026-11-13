@@ -32,6 +32,11 @@ data class Product(
     val syncId: String = "",
     /** «Refrigerar» en el catálogo y la cuenta del punto de venta (`RequiresRefrigeration`). */
     val requiresRefrigeration: Boolean = false,
+    /** «Ideal» del diálogo del producto (`OptimalStock`, K9b). */
+    val optimalStock: Int = 20,
+    /** La clave del proveedor (`SupplierCode`): «Ingresar pedido» la guarda y con ella empareja el siguiente pedido (K9b). */
+    val supplierCode: String? = null,
+    val notes: String? = null,
 ) {
     /** Piezas por paquete; 1 si no se capturó o es menor. */
     val effectiveUnitsPerPackage: Int get() = if (unitsPerPackage > 1) unitsPerPackage else 1
@@ -67,6 +72,9 @@ data class Product(
     /** Lo que costó lo que hay en existencia (0 sin existencias). */
     val inventoryValue: BigDecimal
         get() = if (currentStock > 0) BigDecimal(currentStock).multiply(effectiveUnitCost) else NetDecimal.ZERO
+
+    /** "6 pzas/paq" o "1 pza" (`Product.PackageContentText`). */
+    val packageContentText: String get() = if (hasMultipleUnitsPerPackage) "$effectiveUnitsPerPackage pzas/paq" else "1 pza"
 
     /** Stock bajo de la insignia (`Product.IsLowStock`): con mínimo y en el mínimo o menos (no mira si está activo). */
     val isLowStock: Boolean get() = minStock > 0 && currentStock <= minStock

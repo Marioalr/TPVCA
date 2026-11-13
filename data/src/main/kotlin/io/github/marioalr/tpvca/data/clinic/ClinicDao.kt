@@ -140,6 +140,21 @@ interface ClinicDao {
     @Query("SELECT * FROM InventoryMovements WHERE ProductSyncId = :product ORDER BY Date DESC LIMIT :limit")
     fun productMovements(product: String, limit: Int): List<InventoryMovementEntity>
 
+    /** El Kardex (K9b): los más nuevos primero y, a la misma hora, el último que se guardó aquí (`OrderByDescending(Date).ThenByDescending(Id)`). */
+    @Query("SELECT * FROM InventoryMovements ORDER BY Date DESC, rowid DESC LIMIT :limit")
+    fun recentMovements(limit: Int): List<InventoryMovementEntity>
+
+    @Query("SELECT * FROM InventoryMovements WHERE Date >= :from")
+    fun movementsFrom(from: String): List<InventoryMovementEntity>
+
+    /** Cuándo se ingresó por primera vez un pedido, por el motivo de sus entradas (`WhenWasSupplierOrderReceivedAsync`). */
+    @Query("SELECT MIN(Date) FROM InventoryMovements WHERE Reason = :reason")
+    fun firstMovementWithReason(reason: String): String?
+
+    /** Productos, categorías y lotes abiertos de una sola foto (K9b): una sincronización a la mitad no deja un lote sin su producto. */
+    @Transaction
+    fun inventoryColumns(): Triple<List<CategoryEntity>, List<ProductEntity>, List<ProductBatchEntity>> = Triple(categories(), products(), openBatches())
+
     // ------------------------------------------------------------------ negocio
 
     @Query("SELECT * FROM ClinicalServices")

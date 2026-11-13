@@ -357,4 +357,41 @@ class ClinicReaderTest {
     private companion object {
         const val SHARED_RUNNER_SLACK = 10
     }
+
+    /** K9b: el Kardex junta las partes de una operación y lee más si la última hora quedó cortada; los productos traen sus lotes abiertos. */
+    @Test
+    fun elKardexJuntaLasPartesYLosProductosTraenSusLotes() {
+        val category = row("Categories", mapOf("Name" to "Medicamentos"))
+        val tempra = row("Products", mapOf("Name" to "Tempra", "Code" to "MED-1", "IsActive" to 1L, "CategorySyncId" to category, "CurrentStock" to 5L, "SupplierCode" to "WAN014", "OptimalStock" to 30L))
+        val gone = row("Products", mapOf("Name" to "Viejo", "Code" to "MED-2", "IsActive" to 0L, "CategorySyncId" to category))
+        val lot = row("ProductBatches", mapOf("ProductSyncId" to tempra, "BatchNumber" to "L-1", "Quantity" to 2L, "ExpirationDate" to "2027-01-31 00:00:00.0000000", "Notes" to "Factura 9"))
+        row("ProductBatches", mapOf("ProductSyncId" to tempra, "BatchNumber" to "L-0", "Quantity" to 0L, "ClosedAtUtc" to "2026-01-01 00:00:00.0000000"))
+        val at = "2026-11-04 10:00:00.0000000"
+        // Una venta de 5: 2 del lote y 3 sin lote, a la misma hora; antes, 20 entradas sueltas
+        for (i in 0 until 20) row("InventoryMovements", mapOf("ProductSyncId" to tempra, "MovementType" to 0L, "Quantity" to 1L, "Delta" to 1L, "StockBefore" to i.toLong(), "StockAfter" to (i + 1).toLong(), "Date" to "2026-11-03 %02d:00:00.0000000".format(i), "Reason" to "Entrada $i"))
+        row("InventoryMovements", mapOf("ProductSyncId" to tempra, "BatchSyncId" to lot, "SaleItemSyncId" to "item", "MovementType" to 6L, "Quantity" to 2L, "Delta" to -2L, "StockBefore" to 10L, "StockAfter" to 8L, "Date" to at, "Reason" to "Venta POS V-1"))
+        row("InventoryMovements", mapOf("ProductSyncId" to tempra, "SaleItemSyncId" to "item", "MovementType" to 6L, "Quantity" to 3L, "Delta" to -3L, "StockBefore" to 8L, "StockAfter" to 5L, "Date" to at, "Reason" to "Venta POS V-1"))
+        row("InventoryMovements", mapOf("ProductSyncId" to tempra, "MovementType" to 0L, "Quantity" to 4L, "Delta" to 4L, "StockBefore" to 1L, "StockAfter" to 5L, "Date" to "2026-11-04 09:00:00.0000000", "Reason" to "Pedido LUIN #5175"))
+        flush()
+
+        val kardex = reader.kardex(1)
+        assertEquals(1, kardex.size)
+        assertEquals(-5, kardex[0].delta)
+        assertEquals(10, kardex[0].stockBefore)
+        assertEquals("Tempra", kardex[0].productName)
+        assertEquals("MED-1", kardex[0].productCode)
+        assertEquals(2, reader.kardex(2).size)
+        assertEquals(LocalDateTime.of(2026, 11, 4, 9, 0), reader.supplierOrderReceivedAt("Pedido LUIN #5175"))
+        assertNull(reader.supplierOrderReceivedAt("Pedido LUIN #1"))
+
+        val snapshot = reader.inventorySnapshot()
+        assertEquals(listOf("Tempra", "Viejo"), snapshot.products.map { it.name }.sorted())
+        val product = snapshot.products.single { it.syncId == tempra }
+        assertEquals("WAN014", product.supplierCode)
+        assertEquals(30, product.optimalStock)
+        assertEquals(listOf("L-1"), snapshot.batchesOf(product).map { it.batchNumber })
+        assertEquals("Factura 9", snapshot.batches.single().notes)
+        assertEquals(listOf("Medicamentos"), snapshot.categories.map { it.name })
+        assertTrue(snapshot.products.single { it.syncId == gone }.isActive.not())
+    }
 }

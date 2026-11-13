@@ -193,24 +193,24 @@ class TabletAppTest {
     // ------------------------------------------------------------------ navegación
 
     @Test
-    fun elInicioTieneLasTresTarjetasYConfiguracionTodaviaNoEntra() {
+    fun elInicioTieneLasTresTarjetasYTodasEntran() {
         show()
         compose.onNodeWithText("Consultorio Médico General").assertIsDisplayed()
         compose.onNodeWithText("Nueva Venta").assertIsDisplayed()
         compose.onNodeWithText("Configuración").assertIsDisplayed()
-        assertTrue(compose.onAllNodesWithText(NEXT_VERSION_TEXT, substring = true).fetchSemanticsNodes().isNotEmpty())
-        // K9: «Nueva Venta» ya entra; Configuración es de K9b
+        // K9b: Configuración ya entra (Productos, Lotes y Kardex)
         assertTrue(compose.onAllNodesWithContentDescription("Nueva Venta, en la siguiente versión").fetchSemanticsNodes().isEmpty())
-        compose.onNodeWithContentDescription("Configuración, en la siguiente versión").assertExists()
+        assertTrue(compose.onAllNodesWithContentDescription("Configuración, en la siguiente versión").fetchSemanticsNodes().isEmpty())
         compose.onNodeWithTag(TabletTags.HUB_POS).assertHasClickAction()
+        compose.onNodeWithTag(TabletTags.HUB_CONFIG).assertHasClickAction()
         compose.onNodeWithTag(TabletTags.HUB_PATIENTS).performClick()
         waitTag(TabletTags.HOME)
     }
 
     @Test
-    fun lasTarjetasDeshabilitadasNoHacenNada() {
+    fun loDeshabilitadoNoHaceNada() {
         show()
-        val node = compose.onNodeWithContentDescription("Configuración, en la siguiente versión").fetchSemanticsNode()
+        val node = compose.onNodeWithContentDescription("Búsqueda rápida, en la siguiente versión").fetchSemanticsNode()
         assertTrue(SemanticsProperties.Disabled in node.config)
         assertFalse(SemanticsActions.OnClick in node.config)
         assertEquals(TabletPage.Hub, workspace.page)

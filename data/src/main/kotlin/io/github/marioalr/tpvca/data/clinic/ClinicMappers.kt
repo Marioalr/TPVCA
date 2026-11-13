@@ -86,6 +86,9 @@ object ClinicMappers {
         isActive = e.isActive != 0L,
         syncId = e.syncId,
         requiresRefrigeration = e.requiresRefrigeration != 0L,
+        optimalStock = e.optimalStock.toInt(),
+        supplierCode = e.supplierCode,
+        notes = e.notes,
     )
 
     fun batch(e: ProductBatchEntity, id: Int, productId: Int): ProductBatch = ProductBatch(

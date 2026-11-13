@@ -47,6 +47,7 @@ class GoldenCoverageTest {
         "pediatric-dose.json" to "consultation.ConsultationGoldenTest",
         "checkout.json" to "consultation.ConsultationGoldenTest",
         "linked-device.json" to "devices.LinkedDeviceGoldenTest",
+        "duplicate-catalog.json" to "business.CatalogGoldenTest",
     )
 
     /** Los que corren en `:sync`, que es quien los usa: archivo → su prueba, junto a `Contracts` en `sync/src/test`. */
@@ -74,9 +75,7 @@ class GoldenCoverageTest {
     )
 
     /** Los vectores pendientes: archivo → el paso que los porta. */
-    private val pending = mapOf(
-        "duplicate-catalog.json" to "K9b",
-    )
+    private val pending = mapOf<String, String>()
 
     private fun property(name: String): File =
         File(System.getProperty(name) ?: error("Falta la propiedad $name: corra las pruebas con Gradle"))

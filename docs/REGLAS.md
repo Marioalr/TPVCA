@@ -143,6 +143,25 @@ Sin vector nuevo: usa `rank-products.json` (`parseQuantityPrefix`, `rankProducts
 
 Cómo difiere de la PC: «Pasar a la cuenta de la consulta» conserva las piezas sueltas de un renglón (la PC llama a `AddCartItemToActiveConsultation` sin `isIndividualUnits` y ese renglón quedaría como paquetes al precio de una pieza); la búsqueda por folio trae todos los tickets de ese folio; el aviso de existencias al cobrar va dentro del ticket.
 
+## Portados en K9b (el inventario, primera mitad)
+
+| Vector | Kotlin | Casos | Estado |
+|---|---|---|---|
+| `duplicate-catalog.json` | `CatalogDuplicateRules.codeKey`, `nameKey`, `compare`, `pairs`; el aviso (`notice`, `pairText`, `noticeKey`, `SyncArrivals.DuplicateCatalogNotice`) | 28/28 | ✅ |
+
+Prueba: `CatalogGoldenTest`. Lo que no trae vector, con pruebas propias:
+
+- `SupplierOrderParser`, `SupplierOrderMatching`, `SupplierOrderReviewLine` y `SupplierOrderTexts` (`Services/SupplierOrderParser.cs`, `InventoryService.SupplierOrders.cs`, `SupplierOrderViewModel`): `SupplierOrderTest`, con los casos de `SupplierOrderTests.cs` de la PC.
+- `InventoryTexts` (los textos y cuentas de `ProductDialogViewModel`, `InventoryViewModel`, `BatchesViewModel`, `MovementsViewModel` y la compra sugerida de `MainHubViewModel` con `SuggestedPurchaseRules.ToCsv`) y `KardexRows`: `InventoryTextsTest`.
+- Las escrituras (`WriteEngine.saveProduct`, `deactivateProduct`, `registerConsumption`, `registerEntry`, `receiveBatch`, `isBatchClosedElsewhere`, `receiveSupplierOrder`) y el aviso del catálogo en `SyncNotices`: `InventoryWritesTest` y `CatalogNoticeTest` (`:sync`). Las pantallas: `InventoryTabletTest`.
+
+Cómo difiere de la PC:
+
+- El «IVA» del correo que no va después de «Total +» se busca con el `+` a 20 espacios como mucho: Java no acepta `\s*` en un lookbehind. Los grupos de un renglón van por número (los grupos con nombre no están en todas las versiones de Android que se usan).
+- Un número del formulario del producto que no se lee lo dice al guardar («Escriba el precio de venta como número.»); en la PC el cuadro no lo acepta. Una cantidad en 0 al registrar una entrada o un consumo lo dice; en la PC no hace nada.
+- El consumo sin cobro que deja las existencias en negativo **se avisa**; la PC solo lo anota en su registro.
+- La entrada cambia el contenido por paquete junto con el movimiento, en una transacción, y no vuelve a guardar el resto del producto como estaba en la lista.
+
 ## Pendientes (con el paso que los porta)
 
 | Vector | Paso | Qué es |
@@ -157,7 +176,7 @@ Cómo difiere de la PC: «Pasar a la cuenta de la consulta» conserva las piezas
 | `handoff-payload.json` | K8, hecho | `rules/consultation/HandoffPayload` (en `:sync`): la copia que viaja (`prepareForSending`), su traducción al recibir (`receive`), la búsqueda de cada cargo (`findCatalogRef`) y qué versión se entiende (`canRead`). `HandoffGoldenTest`. |
 | `handoff-accept.json` | K8, hecho | `HandoffPayload.checkArrival`: qué le falta a este equipo para tomar una consulta recibida (la versión del expediente, sus marcas por campo contando el piso de aquí, la nota). `HandoffGoldenTest`. |
 | `linked-device.json` | K8, hecho | `devices/LinkedDevices` (en `:domain`): los equipos vinculados vistos desde un equipo, a quién se le ofrece «Enviar a…» y los textos de cada uno. `LinkedDeviceGoldenTest`. |
-| `duplicate-catalog.json` | K9b | Productos y servicios duplicados entre equipos |
+| `duplicate-catalog.json` | K9b, hecho | `CatalogDuplicateRules`: productos, servicios y categorías repetidos entre equipos. `CatalogGoldenTest`. |
 
 ## Cómo se repite .NET en Kotlin
 

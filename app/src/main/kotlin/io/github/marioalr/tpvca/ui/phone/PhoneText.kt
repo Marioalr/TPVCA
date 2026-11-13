@@ -16,6 +16,14 @@ object PhoneText {
     const val SCHEDULE = "Agendar cita"
     const val STOCK_ENTRY = "Entrada de mercancía"
     const val SEARCH_PATIENT = "Buscar paciente"
+    const val CLOSE_SCHEDULE = "Cerrar sin agendar"
+    const val CHECKING = "Revisando la agenda…"
+    const val NO_PATIENT_MATCH = "Ningún paciente coincide con la búsqueda. El celular solo agenda a pacientes que ya existen: se dan de alta en la PC o en la tablet."
+    const val NO_FREE_SLOTS = "Sin huecos libres este día. Elija otro."
+    const val PAST_DAY = "Este día ya pasó."
+
+    /** El hueco elegido de hoy ya empezó. */
+    fun slotPast(time: String) = "El hueco de las $time ya pasó. Elija otro: se conservan el paciente, el motivo y la duración."
     const val QUICK_ACTIONS = "Acciones rápidas"
     const val CLOSE_QUICK_ACTIONS = "Cerrar acciones rápidas"
 

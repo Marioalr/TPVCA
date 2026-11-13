@@ -95,6 +95,7 @@ class WriteEngineTest {
     fun elCelularNoAnotaExpedientesNotasRecetasNiVentas() {
         cloudPatient()
         linked(DeviceRole.AndroidMobileAdmin, "C1")
+        activePatient()
         val before = store.rowCounts()
         refused(WriteRefused.Reason.FORBIDDEN) { writes.create("Patients", mapOf("FullName" to "X")) }
         refused(WriteRefused.Reason.FORBIDDEN) { writes.edit("Patients", patient, mapOf("Phone" to "1")) }
@@ -128,11 +129,18 @@ class WriteEngineTest {
         assertEquals(0, store.pendingChanges())
     }
 
+    /** El expediente de la nube, activo aquí (la tabla de prueba no lo trae así). Sin entrada en la cola. */
+    private fun activePatient() {
+        localWriter.edit("Patients", patient, mapOf("IsActive" to true))
+        store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))
+    }
+
     /** K4b: el celular agenda, confirma, cambia de horario y cancela; cada cita con su entrada en la cola, y sube. */
     @Test
     fun elCelularAgendaConfirmaCambiaYCancelaYSube() {
         cloudPatient()
         linked(DeviceRole.AndroidMobileAdmin, "C1")
+        activePatient()
         val id = writes.createAppointment(patient, { row -> appointment() + mapOf("PatientName" to row["FullName"], "PatientRecordNumber" to row["RecordNumber"]) })!!
         assertEquals(1, store.pendingChanges())
         assertEquals("Ana", store.rows("Appointments").getValue(id)["PatientName"])
@@ -152,6 +160,7 @@ class WriteEngineTest {
     fun agendarAUnExpedienteDadoDeBajaOUnidoNoEscribeNada() {
         cloudPatient()
         linked(DeviceRole.AndroidMobileAdmin, "C1")
+        activePatient()
         val before = store.rowCounts()
         localWriter.edit("Patients", patient, mapOf("IsActive" to false))
         store.apply(StoreChanges(outboxClearedUpTo = Long.MAX_VALUE))

@@ -5,7 +5,9 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -61,6 +63,7 @@ class PhoneAppTest {
 
     private lateinit var database: TpvcaDatabase
     private lateinit var env: PhoneEnv
+    private lateinit var workspace: PhoneWorkspace
     private val context: Context = ApplicationProvider.getApplicationContext()
     private var synced = 0
 
@@ -69,6 +72,12 @@ class PhoneAppTest {
         database = Room.inMemoryDatabaseBuilder(context, TpvcaDatabase::class.java).build()
         val assets = File(context.cacheDir, "membrete-phone")
         env = PhoneEnv(ClinicReader({ database.clinic() }, { assets }), SharedDocuments(context), labFiles = null)
+        val store = RoomSyncStore(database, assets)
+        workspace = PhoneWorkspace(
+            env,
+            PhoneWrites({ io.github.marioalr.tpvca.sync.engine.WriteEngine(store, { "celular" }, io.github.marioalr.tpvca.sync.link.MemoryFolioNumbers(), { null }) }, { io.github.marioalr.tpvca.sync.engine.LocalSide(store) }, { true }, {}),
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate),
+        )
     }
 
     @After
@@ -77,7 +86,7 @@ class PhoneAppTest {
     private fun seed() = PhoneDemoSeed(RoomSyncStore(database, File(context.cacheDir, "membrete-phone")), Clinic.today(Instant.now())).fill()
 
     private fun show(status: PhoneStatus = PhoneStatus(null, false, Instant.now().minusSeconds(120), false, "")) {
-        compose.setContent { TpvcTheme(TpvcThemes.claro) { PhoneApp(env, status, 0L, onSync = { synced++ }, onResumeBrake = {}) } }
+        compose.setContent { TpvcTheme(TpvcThemes.claro) { PhoneApp(env, workspace, status, 0L, onSync = { synced++ }, onResumeBrake = {}) } }
         compose.waitForIdle()
     }
 
@@ -171,11 +180,14 @@ class PhoneAppTest {
         show()
         compose.onNodeWithTag(PhoneTags.FAB).performClick()
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("Agendar cita, en la siguiente versión").assert(disabled)
+        // K4b: agendar ya se puede; la entrada de mercancía espera al 8.20 de la PC
+        compose.onNodeWithTag(PhoneTags.QUICK_SCHEDULE).assertHasClickAction()
+        assertEquals(0, compose.onAllNodesWithContentDescription("Agendar cita, en la siguiente versión").fetchSemanticsNodes().size)
         compose.onNodeWithContentDescription("Entrada de mercancía, en la siguiente versión").assert(disabled)
         compose.onNodeWithTag(PhoneTags.FAB).performClick()
         tab(PhoneTab.Agenda)
-        compose.onNodeWithContentDescription("Agendar cita, en la siguiente versión").assert(disabled)
+        compose.onNodeWithTag(PhoneTags.SCHEDULE).assertHasClickAction()
+        assertEquals(0, compose.onAllNodesWithContentDescription("Agendar cita, en la siguiente versión").fetchSemanticsNodes().size)
         tab(PhoneTab.Inventario)
         compose.onNodeWithContentDescription("Entrada de mercancía, en la siguiente versión").assert(disabled)
     }
@@ -323,7 +335,7 @@ class PhoneAppTest {
     @Test
     fun unaPestanaCierraLaVistaYBorraElArchivo() {
         val file = previewFile()
-        compose.setContent { TpvcTheme(TpvcThemes.claro) { PhoneApp(env, PhoneStatus(null, false, null, false, ""), 0L, {}, {}, initialPreview = PreviewDoc("Resultado", file, "image/jpeg")) } }
+        compose.setContent { TpvcTheme(TpvcThemes.claro) { PhoneApp(env, workspace, PhoneStatus(null, false, null, false, ""), 0L, {}, {}, initialPreview = PreviewDoc("Resultado", file, "image/jpeg")) } }
         compose.waitForIdle()
         compose.onNodeWithTag(PhoneTags.PREVIEW).assertExists()
         assertTrue(file.exists())
@@ -417,7 +429,7 @@ class PhoneAppTest {
         compose.setContent {
             AppRoot(
                 state, gate, true, "0.1.0", 21, layout, Actions, { _, _ -> },
-                phone = { PhoneApp(env, PhoneStatus(null, false, null, false, ""), 0L, {}, {}) },
+                phone = { PhoneApp(env, workspace, PhoneStatus(null, false, null, false, ""), 0L, {}, {}) },
                 designedLinkScreen = true,
             )
         }

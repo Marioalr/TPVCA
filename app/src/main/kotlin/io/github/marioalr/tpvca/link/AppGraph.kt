@@ -29,6 +29,8 @@ import io.github.marioalr.tpvca.sync.link.LinkNotices
 import io.github.marioalr.tpvca.sync.link.LinkState
 import io.github.marioalr.tpvca.sync.link.Revocation
 import io.github.marioalr.tpvca.ui.phone.PhoneEnv
+import io.github.marioalr.tpvca.ui.phone.PhoneWorkspace
+import io.github.marioalr.tpvca.ui.phone.PhoneWrites
 import io.github.marioalr.tpvca.ui.tablet.TabletEnv
 import io.github.marioalr.tpvca.ui.tablet.TabletWorkspace
 import kotlinx.coroutines.CoroutineScope
@@ -85,6 +87,7 @@ class AppGraph(context: Context) {
             states.value = state
             // Sin vinculación no se queda nada de pacientes en la memoria. La base ya se borró con sus borradores
             if ((state is LinkState.NotLinked || state is LinkState.Revoked) && tabletLazy.isInitialized()) tabletScope.launch { tabletLazy.value.clearMemory() }
+            if ((state is LinkState.NotLinked || state is LinkState.Revoked) && phoneLazy.isInitialized()) tabletScope.launch { phoneLazy.value.clearMemory() }
             follower.onState(state, currentRole())
         },
         elapsedMillis = SystemClock::elapsedRealtime,
@@ -156,6 +159,22 @@ class AppGraph(context: Context) {
                     val connectivity = app.getSystemService(android.net.ConnectivityManager::class.java)
                     connectivity?.getNetworkCapabilities(connectivity.activeNetwork)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
                 },
+            ),
+            tabletScope,
+        )
+    }
+
+    /** Lo que escribe el celular (K4b, solo citas): vive con la app, no con la pantalla. Se crea hasta que hace falta. */
+    val phoneWorkspace: PhoneWorkspace get() = phoneLazy.value
+
+    private val phoneLazy = lazy {
+        PhoneWorkspace(
+            phone,
+            PhoneWrites(
+                writes = { controller.writes() },
+                local = { controller.localSide() },
+                quickSync = { controller.quickSync() },
+                noteLocalWrite = { controller.noteLocalWrite() },
             ),
             tabletScope,
         )

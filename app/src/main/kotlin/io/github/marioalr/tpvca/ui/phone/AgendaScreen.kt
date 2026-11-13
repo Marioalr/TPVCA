@@ -1,6 +1,9 @@
 package io.github.marioalr.tpvca.ui.phone
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,13 +23,19 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.net.toUri
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
@@ -42,6 +51,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.marioalr.tpvca.data.clinic.AppointmentRow
 import io.github.marioalr.tpvca.domain.agenda.AgendaRules
+import io.github.marioalr.tpvca.domain.agenda.AgendaTexts
+import io.github.marioalr.tpvca.sync.engine.ArrivalNotices
 import io.github.marioalr.tpvca.domain.agenda.MarkedAppointment
 import io.github.marioalr.tpvca.domain.model.Appointment
 import io.github.marioalr.tpvca.domain.agenda.AppointmentRules
@@ -50,32 +61,56 @@ import io.github.marioalr.tpvca.ui.link.PatientDataWindow
 import java.time.LocalDate
 
 private const val STRIP_DAYS = 6L
+private const val CONFIRMED = "Confirmada"
+
+/** Una cita del día: con su marca de empalme, el expediente que abre (`null` si su `SyncId` no se puede abrir) y su renglón, para cambiarla de horario. */
+class DayAppointment(val marked: MarkedAppointment, val patient: String?, val row: AppointmentRow)
 
 /** Cada cita con el expediente que abre. Por la cita misma, no por su `SyncId`: uno dañado se lee como vacío y abriría a otro paciente. */
-fun agendaOfDay(rows: List<AppointmentRow>): List<Pair<MarkedAppointment, String?>> {
-    val patients = java.util.IdentityHashMap<Appointment, String>().apply { rows.forEach { put(it.appointment, it.patientSyncId) } }
-    return AgendaRules.todayAppointments(rows.map { it.appointment }).map { it to patients[it.appointment]?.takeIf(::isOpenableSyncId) }
+fun agendaOfDayRows(rows: List<AppointmentRow>): List<DayAppointment> {
+    val byAppointment = java.util.IdentityHashMap<Appointment, AppointmentRow>().apply { rows.forEach { put(it.appointment, it) } }
+    return AgendaRules.todayAppointments(rows.map { it.appointment }).map {
+        val row = byAppointment.getValue(it.appointment)
+        DayAppointment(it, row.patientSyncId.takeIf(::isOpenableSyncId), row)
+    }
 }
 
+fun agendaOfDay(rows: List<AppointmentRow>): List<Pair<MarkedAppointment, String?>> = agendaOfDayRows(rows).map { it.marked to it.patient }
+
+/** Lo que la Agenda lee de un día: sus citas y el aviso de los empalmes que llegaron de otro equipo. */
+private class AgendaDay(val rows: List<DayAppointment>, val arrivals: ArrivalNotices)
+
 /**
- * La agenda de solo lectura: seis días desde hoy, como el diseño, y con ‹ › se recorre de seis en seis. Las citas salen de [AgendaRules.todayAppointments] (sin canceladas,
- * por hora y con la marca de empalme de `appointment-overlap.json`). La fecha de una cita es solo una fecha: nunca se convierte de zona.
+ * La agenda: seis días desde hoy, como el diseño, y con ‹ › se recorre de seis en seis. Las citas salen de [AgendaRules.todayAppointments] (sin canceladas, por hora y con la marca de empalme de
+ * `appointment-overlap.json`). La fecha de una cita es solo una fecha: nunca se convierte de zona. Desde K4b, «Agendar cita» abre el formulario en el día elegido y cada cita tiene sus acciones (confirmar, cambiar de
+ * horario, cancelar), con [PhoneWorkspace]. Arriba, el aviso de los empalmes con lo que llegó de otro equipo, hasta «Entendido».
  */
 @Composable
-fun AgendaScreen(env: PhoneEnv, dataVersion: Long, nav: PhoneNav) {
+fun AgendaScreen(env: PhoneEnv, workspace: PhoneWorkspace, dataVersion: Long, nav: PhoneNav) {
     PatientDataWindow()
     val today = env.today()
     var startText by rememberSaveable { mutableStateOf(today.toString()) }
     var dayText by rememberSaveable { mutableStateOf(today.toString()) }
     val start = LocalDate.parse(startText)
     val day = LocalDate.parse(dayText)
+    // Las acciones de una cita, por su `SyncId`: lo que baja no deja abiertas las de otra
+    var actionsFor by remember { mutableStateOf<String?>(null) }
 
-    val state by load(day, refresh = dataVersion) { agendaOfDay(env.reader.appointmentsBetween(day, day.plusDays(1))) }
+    val state by load(day, refresh = dataVersion) {
+        AgendaDay(agendaOfDayRows(env.reader.appointmentsBetween(day, day.plusDays(1))), runCatching { workspace.arrivalOverlaps(today) }.getOrNull() ?: ArrivalNotices.NONE)
+    }
 
     fun moveStrip(days: Long) {
         val next = start.plusDays(days)
         startText = next.toString()
         dayText = next.toString()
+        actionsFor = null
+    }
+
+    fun showDay(date: LocalDate) {
+        if (date < start || date >= start.plusDays(STRIP_DAYS)) startText = date.toString()
+        dayText = date.toString()
+        actionsFor = null
     }
 
     Box(Modifier.fillMaxSize().testTag(PhoneTags.AGENDA)) {
@@ -88,39 +123,180 @@ fun AgendaScreen(env: PhoneEnv, dataVersion: Long, nav: PhoneNav) {
                         StripArrow(PhoneIcons.Forward, "Seis días después") { moveStrip(STRIP_DAYS) }
                     }
                 }
-                DayStrip(start, day) { dayText = it.toString() }
+                DayStrip(start, day) { showDay(it) }
             }
             Column(
                 Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                (state as? Loaded.Ready)?.value?.arrivals?.takeIf { it.overlapText.isNotEmpty() }?.let { arrivals ->
+                    NoteBox(PhoneColors.NotePage, PhoneColors.NoteBorder, Modifier.testTag(PhoneTags.OVERLAP_NOTICE)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            PText(arrivals.overlapText, size = 12.sp, color = PhoneColors.NoteText, lineHeight = 17.sp)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                arrivals.overlaps.firstOrNull()?.first?.date?.let { first -> PButton("Ver el día") { showDay(first) } }
+                                PButton("Entendido", onClick = workspace::dismissOverlaps)
+                            }
+                        }
+                    }
+                }
                 Heading(AgendaRules.panelTitle(day), Modifier.padding(horizontal = 4.dp), size = 13.sp, color = PhoneColors.Muted)
-                Loads(state) { rows ->
-                    if (rows.isEmpty()) PCard { Message("Sin citas este día") }
-                    for ((marked, patient) in rows) {
-                        AppointmentCard(marked, patient, nav)
+                Loads(state) { data ->
+                    if (data.rows.isEmpty()) PCard { Message("Sin citas este día") }
+                    // Por su `SyncId`, no por su lugar: lo que baja no cambia de lugar lo que se está tocando
+                    for (item in data.rows) key(item.marked.appointment.syncId) {
+                        AppointmentCard(item, nav) { actionsFor = item.marked.appointment.syncId.toString() }
                     }
                 }
             }
         }
-        Column(Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 16.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 16.dp), horizontalAlignment = Alignment.End) {
             Row(
-                Modifier.heightIn(min = 52.dp).clip(RoundedCornerShape(26.dp)).background(PhoneColors.DisabledFill).disabledUntilNextVersion(PhoneText.SCHEDULE).padding(horizontal = 20.dp, vertical = 8.dp),
+                Modifier
+                    .heightIn(min = 52.dp)
+                    .shadow(8.dp, RoundedCornerShape(26.dp))
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(PhoneColors.Accent)
+                    .semantics(mergeDescendants = true) { role = Role.Button }
+                    .clickable { workspace.openSchedule(day) }
+                    .testTag(PhoneTags.SCHEDULE)
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Icon(PhoneIcons.CalendarAdd, null, Modifier.size(18.dp), tint = PhoneColors.Soft)
-                PText(PhoneText.SCHEDULE, size = 15.sp, weight = FontWeight.SemiBold, color = PhoneColors.Soft)
+                Icon(PhoneIcons.Plus, null, Modifier.size(18.dp), tint = Color.White)
+                PText(PhoneText.SCHEDULE, size = 15.sp, weight = FontWeight.SemiBold, color = Color.White)
             }
-            Box(Modifier.clip(RoundedCornerShape(8.dp)).background(PhoneColors.Surface).border(1.dp, PhoneColors.Border, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 3.dp)) {
-                PText(PhoneText.NEXT_VERSION, size = 11.sp, weight = FontWeight.Medium, color = PhoneColors.Soft)
+        }
+        // Solo las de una cita que sigue en este día: si se fue (se canceló en otro equipo, cambió de día), se cierran
+        val current = (state as? Loaded.Ready)?.value?.rows?.firstOrNull { it.marked.appointment.syncId.toString() == actionsFor }
+        val gone = actionsFor != null && current == null && state is Loaded.Ready
+        LaunchedEffect(gone) { if (gone) actionsFor = null }
+        current?.let { item -> AppointmentActions(item, workspace, nav) { actionsFor = null } }
+    }
+}
+
+@Composable
+private fun AppointmentCard(item: DayAppointment, nav: PhoneNav, onActions: () -> Unit) {
+    val marked = item.marked
+    val patient = item.patient
+    val a = marked.appointment
+    val attended = a.status == PatientSummaryRules.ATTENDED
+    val confirmed = a.status == CONFIRMED
+    val big = isBigText()
+    val status: @Composable (Modifier) -> Unit = {
+        Pill(a.status, if (attended) PhoneColors.Success else PhoneColors.Accent, if (attended) PhoneColors.SuccessSoft else PhoneColors.AccentSoft, it)
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(PhoneColors.Surface)
+            .border(if (confirmed) 2.dp else 1.dp, if (confirmed) PhoneColors.Accent else PhoneColors.Border, RoundedCornerShape(14.dp))
+            .heightIn(min = 48.dp)
+            .clickable(enabled = patient != null) { patient?.let { nav.open(PhoneDetail.Ficha(it)) } }
+            .padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.widthIn(min = 50.dp)) {
+            PText(AppointmentRules.timeText(a.time), size = 15.sp, weight = FontWeight.Bold, tabular = true)
+            PText("${AppointmentRules.minutes(a.durationMinutes)} min", size = 11.sp, color = PhoneColors.Muted)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            PText(a.patientName, size = 15.sp, weight = FontWeight.Medium)
+            if (a.reason.isNotBlank()) PText(a.reason, size = 12.sp, color = PhoneColors.Muted)
+            if (marked.isOverlapping) Pill(marked.overlapText, PhoneColors.AmberDark, PhoneColors.AmberSoft, Modifier.padding(top = 4.dp))
+            if (big) status(Modifier.padding(top = 4.dp))
+        }
+        if (!big) status(Modifier.align(Alignment.CenterVertically))
+        // Una cita sin `SyncId` que se pueda usar no se puede cambiar: no hay menú
+        if (isOpenableSyncId(a.syncId.toString())) {
+            Box(
+                Modifier.size(48.dp).align(Alignment.CenterVertically).clip(CircleShape)
+                    .semantics { role = Role.Button; contentDescription = "Acciones de la cita de ${a.patientName}" }
+                    .clickable(onClick = onActions).testTag(PhoneTags.appointmentActions(AppointmentRules.timeText(a.time))),
+                contentAlignment = Alignment.Center,
+            ) { Icon(PhoneIcons.More, null, Modifier.size(20.dp), tint = PhoneColors.Soft) }
+        } else {
+            Box(Modifier.size(12.dp))
+        }
+    }
+}
+
+/**
+ * Las acciones de una cita, como el menú de la agenda de la PC, en una hoja abajo: confirmar, cambiar de horario y cancelar (las tres escriben), y recordar por WhatsApp o agregar a Google Calendar.
+ * «Atender ahora» no: el celular no lleva consultas. Cada acción lleva la cita de ahora, no la de cuando se abrió la hoja.
+ */
+@Composable
+private fun AppointmentActions(item: DayAppointment, workspace: PhoneWorkspace, nav: PhoneNav, onClose: () -> Unit) {
+    val a = item.marked.appointment
+    val context = LocalContext.current
+    val clinic by load("perfil") { workspace.env.reader.profile() }
+    BackHandler(onBack = onClose)
+    Box(
+        Modifier.fillMaxSize().background(PhoneColors.Scrim)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose),
+    ) {
+        Column(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                .background(PhoneColors.Surface)
+                // Lo que se toca en la hoja no pasa a lo de atrás
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                .testTag(PhoneTags.APPOINTMENT_SHEET)
+                .padding(top = 8.dp, bottom = 12.dp),
+        ) {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Heading(a.patientName, size = 17.sp)
+                PText("${AgendaTexts.dayMonth(a.date)} · ${AppointmentRules.timeText(a.time)} · ${AppointmentRules.minutes(a.durationMinutes)} min · ${a.status}", size = 13.sp, color = PhoneColors.Muted)
             }
+            fun run(action: () -> Unit) {
+                onClose()
+                action()
+            }
+            SheetAction(PhoneIcons.Check, "Marcar como confirmada") { run { workspace.agenda.confirm(a) } }
+            SheetAction(PhoneIcons.Calendar, "Cambiar fecha u hora") { run { workspace.agenda.startMoving(item.row) } }
+            SheetAction(PhoneIcons.Close, "Cancelar la cita", danger = true) { run { workspace.agenda.cancel(a) } }
+            Box(Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(PhoneColors.Border))
+            SheetAction(PhoneIcons.Message, "Recordar por WhatsApp") {
+                run {
+                    val url = AgendaTexts.whatsAppUrl(a, (clinic as? Loaded.Ready)?.value?.clinicName.orEmpty())
+                    if (url == null) workspace.info = AgendaTexts.noPhone(a) else openUrl(context, url) { workspace.info = "No se pudo abrir el navegador." }
+                }
+            }
+            SheetAction(PhoneIcons.CalendarAdd, "Agregar a Google Calendar") {
+                run {
+                    val profile = (clinic as? Loaded.Ready)?.value
+                    openUrl(context, AgendaTexts.googleCalendarUrl(a, profile?.clinicName.orEmpty(), profile?.address.orEmpty())) { workspace.info = "No se pudo abrir el navegador." }
+                }
+            }
+            item.patient?.let { patient -> SheetAction(PhoneIcons.People, "Ver ficha") { run { nav.open(PhoneDetail.Ficha(patient)) } } }
         }
     }
 }
 
 @Composable
-private fun StripArrow(icon: ImageVector, description: String, onClick: () -> Unit) {
+private fun SheetAction(icon: ImageVector, label: String, danger: Boolean = false, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 52.dp).semantics(mergeDescendants = true) { role = Role.Button }.clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Icon(icon, null, Modifier.size(20.dp), tint = if (danger) PhoneColors.Danger else PhoneColors.Accent)
+        PText(label, size = 15.sp, weight = FontWeight.Medium, color = if (danger) PhoneColors.Danger else PhoneColors.Text)
+    }
+}
+
+private fun openUrl(context: android.content.Context, url: String, onFailed: () -> Unit) {
+    try {
+        context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, url.toUri()))
+    } catch (_: android.content.ActivityNotFoundException) {
+        onFailed()
+    }
+}
+
+@Composable
+internal fun StripArrow(icon: ImageVector, description: String, onClick: () -> Unit) {
     Box(
         Modifier.size(48.dp).clip(CircleShape).semantics {
             role = Role.Button
@@ -131,7 +307,7 @@ private fun StripArrow(icon: ImageVector, description: String, onClick: () -> Un
 }
 
 @Composable
-private fun DayStrip(start: LocalDate, selected: LocalDate, onPick: (LocalDate) -> Unit) {
+internal fun DayStrip(start: LocalDate, selected: LocalDate, onPick: (LocalDate) -> Unit) {
     val density = LocalDensity.current
     // Seis columnas en 360 dp: la letra crece hasta 130 %; TalkBack lee el día completo
     CompositionLocalProvider(LocalDensity provides Density(density.density, density.fontScale.coerceAtMost(1.3f))) {
@@ -161,38 +337,5 @@ private fun DayStrip(start: LocalDate, selected: LocalDate, onPick: (LocalDate) 
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun AppointmentCard(marked: io.github.marioalr.tpvca.domain.agenda.MarkedAppointment, patient: String?, nav: PhoneNav) {
-    val a = marked.appointment
-    val attended = a.status == PatientSummaryRules.ATTENDED
-    val big = isBigText()
-    val status: @Composable (Modifier) -> Unit = {
-        Pill(a.status, if (attended) PhoneColors.Success else PhoneColors.Accent, if (attended) PhoneColors.SuccessSoft else PhoneColors.AccentSoft, it)
-    }
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(PhoneColors.Surface)
-            .border(1.dp, PhoneColors.Border, RoundedCornerShape(14.dp))
-            .heightIn(min = 48.dp)
-            .clickable(enabled = patient != null) { patient?.let { nav.open(PhoneDetail.Ficha(it)) } }
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Column(Modifier.widthIn(min = 50.dp)) {
-            PText(AppointmentRules.timeText(a.time), size = 15.sp, weight = FontWeight.Bold, tabular = true)
-            PText("${AppointmentRules.minutes(a.durationMinutes)} min", size = 11.sp, color = PhoneColors.Muted)
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            PText(a.patientName, size = 15.sp, weight = FontWeight.Medium)
-            if (a.reason.isNotBlank()) PText(a.reason, size = 12.sp, color = PhoneColors.Muted)
-            if (marked.isOverlapping) Pill(marked.overlapText, PhoneColors.AmberDark, PhoneColors.AmberSoft, Modifier.padding(top = 4.dp))
-            if (big) status(Modifier.padding(top = 4.dp))
-        }
-        if (!big) status(Modifier.align(Alignment.CenterVertically))
     }
 }

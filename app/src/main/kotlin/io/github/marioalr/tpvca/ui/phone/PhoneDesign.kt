@@ -119,6 +119,9 @@ object PhoneIcons {
     val People by lazy { icon("M9 4a4 4 0 1 0 0 8a4 4 0 1 0 0-8z", "M2 21a7 7 0 0 1 14 0M17 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3") }
     val Download by lazy { icon("M12 3v12M7 10l5 5 5-5M5 21h14") }
     val Info by lazy { icon("M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z", "M12 8v5M12 16h.01") }
+    val More by lazy { icon("M12 4.5a1 1 0 1 0 0 2a1 1 0 1 0 0-2z", "M12 11a1 1 0 1 0 0 2a1 1 0 1 0 0-2z", "M12 17.5a1 1 0 1 0 0 2a1 1 0 1 0 0-2z") }
+    val Check by lazy { icon("M20 6 9 17l-5-5") }
+    val Message by lazy { icon("M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z") }
     val Lock by lazy { icon("M7 11h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z", "M8 11V7a4 4 0 0 1 8 0v4") }
 }
 

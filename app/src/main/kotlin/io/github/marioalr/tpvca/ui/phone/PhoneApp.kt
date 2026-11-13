@@ -30,6 +30,10 @@ import androidx.compose.foundation.border
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -104,7 +108,24 @@ object PhoneTags {
     const val PACIENTES = "phone-pacientes"
     const val CORTE = "phone-corte"
     const val PREVIEW = "phone-preview"
+
+    // K4b: agendar
+    const val SCHEDULE = "phone-schedule"
+    const val QUICK_SCHEDULE = "phone-quick-schedule"
+    const val SCHEDULE_FORM = "phone-schedule-form"
+    const val SCHEDULE_PATIENT = "phone-schedule-patient"
+    const val SCHEDULE_REASON = "phone-schedule-reason"
+    const val SCHEDULE_SAVE = "phone-schedule-save"
+    const val SCHEDULE_CLOSE = "phone-schedule-close"
+    const val MOVE = "phone-move"
+    const val APPOINTMENT_SHEET = "phone-appointment-sheet"
+    const val OVERLAP_NOTICE = "phone-overlap-notice"
+    const val CONFIRM_YES = "phone-confirm-yes"
+    const val CONFIRM_NO = "phone-confirm-no"
+    const val TOAST = "phone-toast"
     fun tab(tab: PhoneTab) = "phone-tab-${tab.name}"
+    fun slot(time: String) = "phone-slot-$time"
+    fun appointmentActions(time: String) = "phone-appointment-actions-$time"
 }
 
 /** A dónde se navega dentro de una pestaña. Solo el `SyncId`, sin datos: esto sí sobrevive a girar la pantalla. */
@@ -148,11 +169,24 @@ class PhoneNav(
 )
 
 /**
- * Las pantallas del celular (K4, diseño aprobado en `docs/diseno-celular/`). Solo baja datos y escribe su latido: aquí no hay ninguna escritura. El bloqueo de la app de K3
- * está antes que esto: mientras esté bloqueada, nada de aquí se compone, y al desbloquear regresa a Inicio.
+ * Las pantallas del celular (K4, diseño aprobado en `docs/diseno-celular/`). Baja datos, escribe su latido y, desde K4b, **solo citas** ([PhoneWorkspace]): los expedientes siguen «Solo consulta». El bloqueo de la app de K3
+ * está antes que esto: mientras esté bloqueada, nada de aquí se compone, y al desbloquear regresa a Inicio (con el formulario de una cita encima, si había uno: vive con la app).
  */
 @Composable
-fun PhoneApp(env: PhoneEnv, status: PhoneStatus, dataVersion: Long, onSync: () -> Unit, onResumeBrake: () -> Unit, initialPreview: PreviewDoc? = null) {
+fun PhoneApp(env: PhoneEnv, workspace: PhoneWorkspace, status: PhoneStatus, dataVersion: Long, onSync: () -> Unit, onResumeBrake: () -> Unit, initialPreview: PreviewDoc? = null) {
+    // Lo que bajó y lo escrito aquí: las dos solo crecen, así que su suma cambia con cualquiera de ellas
+    val version = dataVersion + workspace.localVersion
+    val lifecycle = LocalLifecycleOwner.current
+    // Si quedó una cita sin guardar, se reabre; otra vez cada que baja algo mientras la base no estaba lista
+    LaunchedEffect(dataVersion) { workspace.restoreDrafts() }
+    // Al irse: lo que se estaba escribiendo ya no espera la pausa
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) workspace.flushDrafts()
+        }
+        lifecycle.lifecycle.addObserver(observer)
+        onDispose { lifecycle.lifecycle.removeObserver(observer) }
+    }
     // Tema claro también en un equipo en modo oscuro: los iconos de la barra de estado van oscuros
     val view = LocalView.current
     val context = LocalContext.current
@@ -203,14 +237,15 @@ fun PhoneApp(env: PhoneEnv, status: PhoneStatus, dataVersion: Long, onSync: () -
         }
     }
 
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(PhoneColors.Page)) {
         Box(Modifier.weight(1f).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
             val doc = previewDoc
             when {
                 doc != null -> PreviewScreen(env, doc) { previewDoc = null }
-                detail is PhoneDetail.Ficha -> FichaScreen(env, detail.syncId, tab, dataVersion, nav)
-                detail is PhoneDetail.Producto -> ProductoScreen(env, detail.syncId, dataVersion, nav)
-                detail is PhoneDetail.Corte -> CorteScreen(env, dataVersion, nav)
+                detail is PhoneDetail.Ficha -> FichaScreen(env, detail.syncId, tab, version, nav)
+                detail is PhoneDetail.Producto -> ProductoScreen(env, detail.syncId, version, nav)
+                detail is PhoneDetail.Corte -> CorteScreen(env, version, nav)
                 detail is PhoneDetail.Ticket -> TicketScreen(env, detail.syncId, nav)
                 tab == PhoneTab.Inicio -> AnimatedContent(
                     negocio,
@@ -224,17 +259,21 @@ fun PhoneApp(env: PhoneEnv, status: PhoneStatus, dataVersion: Long, onSync: () -
                     label = "negocio",
                 ) { showNegocio ->
                     if (showNegocio) {
-                        NegocioScreen(env, filters, dataVersion, nav, onClose = { negocio = false })
+                        NegocioScreen(env, filters, version, nav, onClose = { negocio = false })
                     } else {
-                        InicioScreen(env, status, dataVersion, nav, onSync, onResumeBrake, onOpenNegocio = { negocio = true })
+                        InicioScreen(env, workspace, status, version, nav, onSync, onResumeBrake, onOpenNegocio = { negocio = true })
                     }
                 }
-                tab == PhoneTab.Pacientes -> PacientesScreen(env, dataVersion, nav)
-                tab == PhoneTab.Agenda -> AgendaScreen(env, dataVersion, nav)
-                else -> InventarioScreen(env, dataVersion, inventoryNotices, nav)
+                tab == PhoneTab.Pacientes -> PacientesScreen(env, version, nav)
+                tab == PhoneTab.Agenda -> AgendaScreen(env, workspace, version, nav)
+                else -> InventarioScreen(env, version, inventoryNotices, nav)
             }
         }
         BottomBar(tab, nav)
+    }
+    // Agendar y cambiar de horario tapan todo, también la barra de secciones
+    AgendaOverlay(workspace, version)
+    PhoneDialogs(workspace)
     }
 }
 

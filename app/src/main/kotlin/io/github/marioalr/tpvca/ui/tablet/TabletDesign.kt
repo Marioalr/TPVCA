@@ -59,6 +59,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
@@ -115,6 +116,10 @@ object TIcons {
     val Refresh by lazy { stroke("M21 12 A9 9 0 1 1 18.4 5.6 M21 3 V9 H15") }
     val Search by lazy { stroke("M11 18 A7 7 0 1 1 11 4 A7 7 0 1 1 11 18 Z M20 20 L16 16") }
     val History by lazy { stroke("M3 12 A9 9 0 1 0 6 5.3 L3 8 M3 3 V8 H8 M12 7 V12 L16 14") }
+    val Pill by lazy { stroke("M10.5 20.5 L20.5 10.5 A4.95 4.95 0 1 0 13.5 3.5 L3.5 13.5 A4.95 4.95 0 1 0 10.5 20.5 Z M8.5 8.5 L15.5 15.5") }
+    val Syringe by lazy { stroke("M18 2 L22 6 M17 7 L20 4 M19 9 L8.7 19.3 A1 1 0 0 1 7.3 19.3 L4.7 16.7 A1 1 0 0 1 4.7 15.3 L15 5 M9 11 L13 15 M5 19 L2 22") }
+    val Print by lazy { stroke("M6 9 V2 H18 V9 M6 18 H4 A2 2 0 0 1 2 16 V11 A2 2 0 0 1 4 9 H20 A2 2 0 0 1 22 11 V16 A2 2 0 0 1 20 18 H18 M6 14 H18 V22 H6 Z") }
+    val CartLine by lazy { stroke("M9 21 A1 1 0 1 1 9 19 A1 1 0 1 1 9 21 Z M20 21 A1 1 0 1 1 20 19 A1 1 0 1 1 20 21 Z M1 1 H5 L7.7 14.4 A2 2 0 0 0 9.7 16 H19.4 A2 2 0 0 0 21.4 14.4 L23 6 H6") }
     val File by lazy { stroke("M14 2 H6 A2 2 0 0 0 4 4 V20 A2 2 0 0 0 6 22 H18 A2 2 0 0 0 20 20 V8 Z M14 2 V8 H20 M16 13 H8 M16 17 H8") }
     val Cart by lazy { fill("M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z") }
     val FileMedical by lazy { fill("M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z") }
@@ -130,11 +135,13 @@ fun TText(
     color: Color = LocalTpvcColors.current.text,
     maxLines: Int = Int.MAX_VALUE,
     mono: Boolean = false,
+    align: TextAlign? = null,
 ) {
     Text(
         text,
         modifier,
         color = color,
+        textAlign = align,
         fontSize = size,
         fontWeight = weight,
         maxLines = maxLines,
@@ -171,7 +178,7 @@ fun TDivider() {
     Box(Modifier.fillMaxWidth().heightIn(min = 1.dp).background(LocalTpvcColors.current["ThemeBorder"]))
 }
 
-enum class TButtonKind { Primary, Secondary, Ghost, DangerGhost }
+enum class TButtonKind { Primary, Secondary, Ghost, DangerGhost, Danger }
 
 private class ButtonLook(val fill: Color, val content: Color, val border: Color?)
 
@@ -180,6 +187,7 @@ private fun look(kind: TButtonKind, colors: TpvcColors) = when (kind) {
     TButtonKind.Secondary -> ButtonLook(colors.surface, colors.text, colors["ThemeControlBorder"])
     TButtonKind.Ghost -> ButtonLook(Color.Transparent, colors.accentForeground, null)
     TButtonKind.DangerGhost -> ButtonLook(Color.Transparent, colors.dangerText, null)
+    TButtonKind.Danger -> ButtonLook(colors["ThemeDanger"], colors["ThemeAccentText"], null)
 }
 
 /**
@@ -202,9 +210,10 @@ fun TButton(
     val base = look(kind, colors)
     val shape = RoundedCornerShape(8.dp)
     val off = nextVersion || !enabled
-    val fill = if (off && kind == TButtonKind.Primary) colors.surfaceSubtle else base.fill
+    val solid = kind == TButtonKind.Primary || kind == TButtonKind.Danger
+    val fill = if (off && solid) colors.surfaceSubtle else base.fill
     val content = if (off) colors.textSecondary else (color ?: base.content)
-    val border = if (off && kind == TButtonKind.Primary) colors["ThemeBorder"] else base.border
+    val border = if (off && solid) colors["ThemeBorder"] else base.border
     var m = modifier.heightIn(min = TOUCH_MIN).clip(shape).background(fill)
     if (border != null) m = m.border(1.dp, border, shape)
     m = if (nextVersion) {
@@ -488,6 +497,48 @@ object TabletTags {
     const val HANDOFF_INCOMING = "tablet-handoff-incoming"
     const val HANDOFF_ACCEPT = "tablet-handoff-accept"
     const val HANDOFF_LATER = "tablet-handoff-later"
+    const val HUB_POS = "tablet-hub-venta"
+    const val POS = "tablet-pos"
+    const val POS_SEARCH = "tablet-pos-search"
+    const val POS_CLIENT = "tablet-pos-client"
+    const val POS_CATALOG = "tablet-pos-catalog"
+    const val POS_SERVICES = "tablet-pos-services"
+    const val POS_TICKETS = "tablet-pos-tickets"
+    const val POS_CASH_CUT = "tablet-pos-cash-cut"
+    const val POS_CLEAR = "tablet-pos-clear"
+    const val POS_UNDO = "tablet-pos-undo"
+    const val POS_TRANSFER = "tablet-pos-transfer"
+    const val POS_OPEN_CONSULTATION = "tablet-pos-open-consultation"
+    const val POS_SHEET = "tablet-pos-sheet"
+    const val POS_SHEET_CLOSE = "tablet-pos-sheet-close"
+    const val POS_CATALOG_SEARCH = "tablet-pos-catalog-search"
+    const val POS_SERVICE_SEARCH = "tablet-pos-service-search"
+    const val POS_SERVICE_ADD = "tablet-pos-service-add"
+    const val POS_SERVICES_STATE = "tablet-pos-services-state"
+    const val POS_SERVICE_FEE_ONLY = "tablet-pos-service-fee-only"
+    const val POS_SERVICE_TO_CONSULTATION = "tablet-pos-service-consultation"
+    const val POS_TICKET_SEARCH = "tablet-pos-ticket-search"
+    const val POS_TICKET_FIND = "tablet-pos-ticket-find"
+    const val POS_TICKET_STATUS = "tablet-pos-ticket-status"
+    const val POS_TICKET_DETAIL = "tablet-pos-ticket-detail"
+    const val POS_REPRINT = "tablet-pos-reprint"
+    const val POS_CANCEL = "tablet-pos-cancel"
+    const val POS_CANCEL_REASON = "tablet-pos-cancel-reason"
+    const val POS_CANCEL_CONFIRM = "tablet-pos-cancel-confirm"
+    const val POS_CANCEL_BACK = "tablet-pos-cancel-back"
+    const val POS_RECEIPT = "tablet-pos-receipt"
+    const val POS_RECEIPT_DONE = "tablet-pos-receipt-done"
+    const val POS_RECEIPT_SHARE = "tablet-pos-receipt-share"
+    const val POS_RECEIPT_NOTICE = "tablet-pos-receipt-notice"
+    const val POS_CUT_PREVIOUS = "tablet-pos-cut-previous"
+    const val POS_CUT_TODAY = "tablet-pos-cut-today"
+    const val POS_CUT_NEXT = "tablet-pos-cut-next"
+    const val POS_CUT_EXPORT = "tablet-pos-cut-export"
+    const val POS_CUT_TOTAL = "tablet-pos-cut-total"
+    fun posSuggestion(index: Int) = "tablet-pos-suggestion-$index"
+    fun posCatalogAdd(code: String) = "tablet-pos-catalog-add-$code"
+    fun posService(code: String) = "tablet-pos-service-$code"
+    fun posTicket(syncId: String) = "tablet-pos-ticket-$syncId"
     fun handoffDevice(id: String) = "tablet-handoff-device-$id"
     fun field(name: String) = "tablet-field-$name"
     fun slot(time: String) = "tablet-slot-$time"

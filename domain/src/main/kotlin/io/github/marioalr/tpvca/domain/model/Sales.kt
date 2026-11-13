@@ -54,6 +54,8 @@ data class ClinicProfile(
     val university: String? = null,
     val phone: String? = null,
     val address: String? = null,
+    /** La especialidad del médico (`Specialty`): el ticket del punto de venta la muestra. */
+    val specialty: String? = null,
 ) {
     /** Quien firma la venta (`ClinicProfile.DoctorNameWithTitle`). */
     val doctorNameWithTitle: String

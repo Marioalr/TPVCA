@@ -105,4 +105,36 @@ class CheckoutCartTest {
         assertEquals("", counter.cashReceivedText)
         assertFalse(counter.hasItems)
     }
+
+    /** «Agregar a la venta» de un servicio (`AddServiceToCartInternal`): el honorario, sus insumos en piezas sueltas y el aviso que no bloquea. */
+    @Test
+    fun unServicioConSusInsumosAunqueNoAlcancen() {
+        val jeringa = Product(id = 3, code = "J-1", name = "Jeringa", currentStock = 0, unitsPerPackage = 10, openedUnitsRemaining = 1, price = BigDecimal("50.00"), syncId = "j")
+        val torunda = Product(id = 4, code = "T-1", name = "Torunda", currentStock = 3, price = BigDecimal("2.00"), syncId = "t")
+        val service = io.github.marioalr.tpvca.domain.model.ClinicalService(
+            id = 7, code = "SERV-002", name = "Inyección", category = "Procedimientos", price = BigDecimal("80.00"), syncId = "s", estimatedDurationMinutes = 10,
+            defaultProducts = listOf(io.github.marioalr.tpvca.domain.model.ServiceDefaultProduct(jeringa.copy(currentStock = 99), 2), io.github.marioalr.tpvca.domain.model.ServiceDefaultProduct(torunda, 1), io.github.marioalr.tpvca.domain.model.ServiceDefaultProduct(null, 1)),
+        )
+        val cart = CheckoutCart()
+        val added = cart.addService(service, listOf(jeringa, torunda), includeDefaultSupplies = true)
+        assertTrue(added.warning)
+        assertEquals("Inyección y 2 insumo(s) agregados a la venta. Existencias insuficientes: Jeringa (quedan 1 pzas, se cobran 2 pzas). Revise el inventario.", added.message)
+        assertEquals(listOf("Inyección", "Jeringa", "Torunda"), cart.items.map { it.name })
+        val fee = cart.items[0]
+        assertEquals(-7, fee.productId)
+        assertEquals("Servicio Clínico • Procedimientos", fee.genericName)
+        assertEquals("Honorario • 10 min", fee.presentation)
+        val syringe = cart.items[1]
+        assertTrue("Piezas sueltas de un paquete de 10", syringe.isIndividualUnits)
+        assertEquals("Piezas ind.", syringe.unit)
+        assertEquals(BigDecimal("5.00"), syringe.unitPrice)
+        assertEquals("Las existencias de ahora, no las del servicio", 1, syringe.availableStock)
+        // Otra vez: el honorario y los insumos suman a sus renglones
+        val again = cart.addService(service, listOf(jeringa, torunda), includeDefaultSupplies = false)
+        assertEquals("Inyección agregado a la venta", again.message)
+        assertFalse(again.warning)
+        assertEquals(listOf(2, 2, 1), cart.items.map { it.quantity })
+        cart.addService(service, listOf(jeringa, torunda), includeDefaultSupplies = true)
+        assertEquals(listOf(3, 4, 2), cart.items.map { it.quantity })
+    }
 }

@@ -49,7 +49,7 @@ Pila: Jetpack Compose con Material 3, Room + SQLCipher, OkHttp, kotlinx.serializ
 | **K6** | Tablet: inicio, ficha, agenda con aviso de empalme, alta y edición con aviso de duplicado, avisos y «Volver a aplicar» (`ui/tablet`). La consulta y lo demás se ven deshabilitados | ✅ Hecho |
 | **K7** | Consulta completa: receta, insumos, servicios, cuenta, terminar y cobrar, también sin conexión; la orden de laboratorio y los resultados desde la tablet, con su subida ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)) | ✅ Hecho |
 | **K8** | Consulta entre equipos: «Enviar a…», «Recuperar», «Liberar este equipo» y «Continuar aquí», con la revisión de la cadencia del paso 8.24 ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)). **Con K5–K8, primera versión de la tablet** | ✅ Hecho |
-| K9 | Punto de venta en la tablet | Pendiente |
+| **K9** | Punto de venta en la tablet: buscador con `RankProducts` y `3*`, cuenta y cobro, catálogo, servicios, tickets (también por el folio sin conexión), cancelar por `SyncId` y corte de caja, también sin conexión ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)) | ✅ Hecho |
 | K9b | El resto de la copia de la PC: panel, negocio, productos, lotes, kardex, servicios, médico y consultorio | Pendiente |
 | K10 | Accesibilidad, tema oscuro, revisión de textos y, después, impresión ESC/POS por Bluetooth | Pendiente |
 

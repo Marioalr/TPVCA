@@ -2,6 +2,7 @@ package io.github.marioalr.tpvca.domain.consultation
 
 import io.github.marioalr.tpvca.domain.business.StockReviewRules
 import io.github.marioalr.tpvca.domain.business.StockShortage
+import io.github.marioalr.tpvca.domain.model.ClinicalService
 import io.github.marioalr.tpvca.domain.model.Product
 import io.github.marioalr.tpvca.domain.text.NetDecimal
 import java.math.BigDecimal
@@ -23,6 +24,7 @@ data class CartItem(
     val isService: Boolean = false,
     val isIndividualUnits: Boolean = false,
     val quantity: Int = 1,
+    val requiresRefrigeration: Boolean = false,
 ) {
     val subtotal: BigDecimal get() = BigDecimal(quantity).multiply(unitPrice)
 
@@ -34,6 +36,9 @@ data class CartItem(
     /** Es un producto del inventario: entra al aviso de existencias. */
     val isCatalogProduct: Boolean get() = !isService && (productId > 0 || catalogSyncId != null)
 }
+
+/** Lo que dice agregar un servicio a la venta del punto de venta: el aviso de la PC y si es de advertencia (faltan existencias). */
+data class ServiceAdded(val message: String, val warning: Boolean)
 
 /** Un aviso para quien usa el cobro: el texto y si es de éxito. */
 data class CartNotice(val text: String, val ok: Boolean)
@@ -134,6 +139,7 @@ class CheckoutCart(
             availableStock = product.currentStock,
             unitPrice = product.price,
             quantity = requested,
+            requiresRefrigeration = product.requiresRefrigeration,
         )
         append(line)
         notifyAdded(line, "${product.name} agregado (${line.quantity})")
@@ -155,6 +161,62 @@ class CheckoutCart(
             return
         }
         append(line.copy(quantity = CheckoutRules.clampQuantity(line.quantity)))
+    }
+
+    /**
+     * «Agregar a la venta» y «Solo el honorario (sin insumos)» del punto de venta (`AddServiceToCartInternal`): el honorario del servicio y, con [includeDefaultSupplies], sus insumos por defecto, en piezas
+     * sueltas si el paquete trae varias y **aunque no alcancen las existencias** (revisión 20: se avisa sin bloquear). [products] es el catálogo de ahora: de él salen las existencias de cada insumo.
+     */
+    fun addService(service: ClinicalService, products: List<Product>, includeDefaultSupplies: Boolean): ServiceAdded {
+        addLine(
+            CartItem(
+                productId = -service.id,
+                catalogSyncId = service.syncId.ifEmpty { null },
+                code = service.code,
+                name = service.name,
+                genericName = "Servicio Clínico • ${service.category}",
+                presentation = "Honorario • ${service.estimatedDurationMinutes} min",
+                unit = "Servicio",
+                availableStock = 999,
+                unitPrice = service.price,
+                quantity = 1,
+                isService = true,
+            ),
+        )
+        var added = 0
+        val shortages = ArrayList<StockShortage>()
+        if (includeDefaultSupplies) {
+            for (supply in service.defaultProducts) {
+                val known = supply.product ?: continue
+                val product = products.firstOrNull { known.syncId.isNotEmpty() && it.syncId.equals(known.syncId, ignoreCase = true) } ?: known
+                val individual = product.hasMultipleUnitsPerPackage
+                val available = if (individual) product.availableIndividualUnits else product.currentStock
+                val index = items.indexOfFirst { isSameProduct(it, product) && it.isIndividualUnits == individual }
+                val line = if (index >= 0) {
+                    items[index].copy(availableStock = available, quantity = items[index].quantity + supply.quantity).also { replace(index, it) }
+                } else {
+                    CartItem(
+                        productId = product.id,
+                        catalogSyncId = product.syncId.ifEmpty { null },
+                        code = product.code,
+                        name = product.name,
+                        genericName = product.genericName,
+                        presentation = product.presentation,
+                        unit = if (individual) "Piezas ind." else product.unit,
+                        availableStock = available,
+                        unitPrice = product.individualUnitPrice,
+                        requiresRefrigeration = product.requiresRefrigeration,
+                        isIndividualUnits = individual,
+                        quantity = maxOf(1, supply.quantity),
+                    ).also(::append)
+                }
+                if (line.isShortOfStock) shortages += StockShortage(line.name, line.availableStock, line.quantity, line.isIndividualUnits)
+                added++
+            }
+        }
+        val message = if (added > 0) "${service.name} y $added insumo(s) agregados a la venta" else "${service.name} agregado a la venta"
+        val warning = StockReviewRules.warningText(shortages)
+        return if (warning != null) ServiceAdded("$message. $warning", warning = true) else ServiceAdded(message, warning = false)
     }
 
     /** "+": sin tope; pasar de las existencias se avisa sin bloquear. */

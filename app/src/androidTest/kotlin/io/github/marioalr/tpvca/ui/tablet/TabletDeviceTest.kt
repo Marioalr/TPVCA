@@ -149,6 +149,42 @@ class TabletDeviceTest {
         waitFor { store.meta(LocalSide.DRAFT_PREFIX + LocalSide.PATIENT_FORM) == null }
     }
 
+    /** K9: el prefijo `3*` y `RankProducts` en ICU, una venta sin conexión con toques sobre SQLCipher (Tempra en −3 queda en −4) y su cancelación por `SyncId`. */
+    @Test
+    fun unaVentaSinConexionEnNegativoYSuCancelacion() {
+        assertEquals(3 to "para", io.github.marioalr.tpvca.domain.search.CatalogSearchRules.parseQuantityPrefix(" 3 * para"))
+        assertEquals(1 to "٣*para", io.github.marioalr.tpvca.domain.search.CatalogSearchRules.parseQuantityPrefix("٣*para"))
+        show()
+        compose.onNodeWithTag(TabletTags.HUB_POS).performClick()
+        waitFor { workspace.pos.catalog != null }
+        compose.onNodeWithTag(TabletTags.POS_SEARCH).performTextInput("2*tempra")
+        waitTag(TabletTags.posSuggestion(0))
+        compose.onNodeWithText("Enter agrega 2").assertIsDisplayed()
+        compose.onNodeWithTag(TabletTags.posSuggestion(0)).performClick()
+        waitFor { workspace.pos.session.cart.hasItems }
+        compose.onNodeWithTag(TabletTags.CHECKOUT_CHARGE).performScrollTo().performClick()
+        waitTag(TabletTags.POS_RECEIPT)
+        val sale = store.select("Sales", listOf("SyncId", "Folio", "LedgerVersion")).single { (it["Folio"] as String).contains("-T1-") }
+        fun tempra() = store.select("Products", listOf("Code", "CurrentStock")).first { it["Code"] == "MED-014" }["CurrentStock"]
+        assertEquals(-5L, tempra())
+        compose.onNodeWithTag(TabletTags.POS_RECEIPT_NOTICE).assertIsDisplayed()
+        compose.onNodeWithTag(TabletTags.POS_RECEIPT_DONE).performClick()
+        waitFor { workspace.pos.receipt == null }
+        compose.onNodeWithTag(TabletTags.POS_TICKETS).performClick()
+        waitTag(TabletTags.posTicket(sale["SyncId"] as String))
+        compose.onNodeWithTag(TabletTags.posTicket(sale["SyncId"] as String)).performClick()
+        compose.onNodeWithTag(TabletTags.POS_CANCEL).performClick()
+        waitTag(TabletTags.POS_CANCEL_CONFIRM)
+        compose.onNodeWithTag(TabletTags.POS_CANCEL_CONFIRM).performScrollTo().performClick()
+        try {
+            waitFor { store.select("Sales", listOf("SyncId", "IsCancelled")).first { it["SyncId"] == sale["SyncId"] }["IsCancelled"] == 1L }
+        } catch (e: Throwable) {
+            val pos = workspace.pos
+            throw AssertionError("No se canceló: estado=${pos.ticketStatus} confirmar=${pos.cancelTarget?.folio} cancelando=${pos.cancelling} elegido=${pos.selectedTicket?.folio} aviso=${workspace.toast?.text} info=${workspace.info}", e)
+        }
+        assertEquals(-3L, tempra())
+    }
+
     @Test
     fun laBaseCifradaSeVuelveAAbrirConElBorrador() {
         val local = LocalSide(store)

@@ -59,6 +59,34 @@ data class MovementRow(val type: MovementType?, val date: LocalDateTime, val del
 
 data class SaleRow(val syncId: String, val folio: String, val date: LocalDateTime, val patientName: String, val paymentMethod: String, val total: BigDecimal, val cancelled: Boolean)
 
+/** Un ticket del punto de venta (`Sale` con sus renglones, como lo muestra «Tickets» de la PC). */
+data class TicketRow(
+    val syncId: String,
+    val folio: String,
+    val originalFolio: String?,
+    val date: LocalDateTime,
+    val patientName: String,
+    val customerName: String,
+    val paymentMethod: String,
+    val cashier: String,
+    val total: BigDecimal,
+    val cancelled: Boolean,
+    val cancelledAt: LocalDateTime?,
+    val cancellationReason: String?,
+    val items: List<TicketItem>,
+)
+
+data class TicketItem(val name: String, val quantity: Int, val unitPrice: BigDecimal, val subtotal: BigDecimal, val isService: Boolean)
+
+/** Un producto del punto de venta con su insignia de existencias (`StockBadgeText`, con sus lotes). */
+data class PosProduct(val product: Product, val badge: String, val tone: io.github.marioalr.tpvca.domain.business.StockTone)
+
+/** Una categoría con el número que llevan sus productos en [Product.categoryId]. */
+data class PosCategory(val id: Int, val name: String)
+
+/** Lo que usa el punto de venta, de una sola foto: productos activos por nombre, categorías por nombre y servicios activos por categoría y nombre con sus insumos. */
+class PosCatalog(val products: List<PosProduct>, val categories: List<PosCategory>, val services: List<io.github.marioalr.tpvca.domain.model.ClinicalService>)
+
 /** El catálogo para la consulta, **leído en el momento de cada acción**: [account] es lo que trabaja la cuenta, y lo demás son las plantillas de la receta y la calculadora pediátrica, ya en su orden. */
 class ConsultationCatalog(
     val account: AccountCatalog,
@@ -257,9 +285,75 @@ class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -
         } to sales.map(::saleRow)
     }
 
+    /** El corte de caja del punto de venta: lo de [CashCutRules] y los tickets del día con sus renglones (el detalle del CSV), de la misma foto. */
+    fun cashCutDay(day: LocalDate): Pair<List<Sale>, List<TicketRow>> = gate.read {
+        val rows = dao().salesWithItems(ClinicMappers.protocol(day), ClinicMappers.protocol(day.plusDays(1)))
+        val tickets = tickets(rows)
+        tickets.map { t ->
+            Sale(date = t.date, total = t.total, paymentMethod = t.paymentMethod, isCancelled = t.cancelled, items = t.items.map { SaleItem(it.isService, it.quantity, it.unitPrice, it.subtotal) })
+        } to tickets
+    }
+
     private fun saleRow(s: SaleEntity) = SaleRow(
         s.syncId, s.folio, ClinicMappers.dateTime(s.date), s.patientName.ifBlank { s.customerName }, s.paymentMethod, ClinicMappers.decimal(s.total), s.isCancelled != 0L,
     )
+
+    /** El catálogo del punto de venta (`LoadCatalogAsync` y `LoadServicesAsync`), con los mismos números de producto y categoría en toda la lectura. */
+    fun posCatalog(today: LocalDate): PosCatalog = gate.read {
+        val c = dao().catalogColumns()
+        val categoryIds = c.categories.withIndex().associate { (i, category) -> category.syncId to i + 1 }
+        val categoryNames = c.categories.associate { it.syncId to it.name }
+        val productIds = c.products.withIndex().associate { (i, p) -> p.syncId to i + 1 }
+        val products = c.products.map { ClinicMappers.product(it, productIds.getValue(it.syncId), categoryIds[it.categorySyncId] ?: 0, categoryNames[it.categorySyncId]) }
+        val batches = dao().openBatches().mapIndexedNotNull { i, b -> productIds[b.productSyncId]?.let { ClinicMappers.batch(b, i + 1, it) } }
+        val rows = InventoryListRules.rows(products.sortedBy { it.name }, batches, today).map { PosProduct(it.product, it.badge, it.tone) }
+        val byId = products.associateBy { it.syncId }
+        val defaults = c.serviceDefaults.groupBy { it.clinicalServiceSyncId }
+        val services = c.services.withIndex().map { (i, e) ->
+            ClinicMappers.service(e, i + 1, defaults[e.syncId].orEmpty().map { ServiceDefaultProduct(byId[it.productSyncId], it.quantity.toInt()) })
+        }.filter { it.isActive }.sortedWith(compareBy({ it.category }, { it.name }))
+        val categories = c.categories.map { PosCategory(categoryIds.getValue(it.syncId), it.name) }.sortedBy { it.name }
+        PosCatalog(rows, categories, services)
+    }
+
+    /** «Tickets»: los últimos [limit] (`GetSalesHistoryAsync(limit: 50)`), con sus renglones. */
+    fun recentTickets(limit: Int = RECENT_TICKETS): List<TicketRow> = gate.read { tickets(dao().recentSalesWithItems(limit)) }
+
+    /**
+     * Los tickets con ese folio, **también el que se cobró sin conexión** (`OriginalFolio`, paso 8.17), sin distinguir mayúsculas, como `GetSaleByFolioAsync`. Todos y no solo el primero:
+     * un folio se puede repetir, y cada uno se cancela por su `SyncId`.
+     */
+    fun ticketsByFolio(folio: String): List<TicketRow> {
+        val wanted = folio.trim().lowercase(java.util.Locale.ROOT)
+        if (wanted.isEmpty()) return emptyList()
+        return gate.read { tickets(dao().salesByFolioWithItems(wanted)) }
+    }
+
+    fun ticket(saleSyncId: String): TicketRow? = gate.read {
+        val (sale, items) = dao().saleWithItems(saleSyncId)
+        sale?.let { tickets(listOf(it) to items).single() }
+    }
+
+    private fun tickets(rows: Pair<List<SaleEntity>, List<io.github.marioalr.tpvca.data.entity.SaleItemEntity>>): List<TicketRow> {
+        val items = rows.second.groupBy { it.saleSyncId }
+        return rows.first.map { s ->
+            TicketRow(
+                syncId = s.syncId,
+                folio = s.folio,
+                originalFolio = s.originalFolio?.takeIf { it.isNotBlank() },
+                date = ClinicMappers.dateTime(s.date),
+                patientName = s.patientName.ifBlank { s.customerName },
+                customerName = s.customerName,
+                paymentMethod = s.paymentMethod,
+                cashier = s.cashier,
+                total = ClinicMappers.decimal(s.total),
+                cancelled = s.isCancelled != 0L,
+                cancelledAt = ClinicMappers.dateTimeOrNull(s.cancelledAt),
+                cancellationReason = s.cancellationReason,
+                items = items[s.syncId].orEmpty().map { i -> TicketItem(i.productName, i.quantity.toInt(), ClinicMappers.decimal(i.unitPrice), ClinicMappers.decimal(i.subtotal), i.isService != 0L) },
+            )
+        }
+    }
 
     /** El ticket de una venta, como lo reimprime la PC (`PosViewModel.Records`): cada renglón con `ProductName`. */
     fun receipt(saleSyncId: String): SaleReceipt? = gate.read {
@@ -295,6 +389,7 @@ class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -
         const val RECENT_PATIENTS = 50
         const val CONSULTATIONS_PAGE = 20
         const val PRODUCT_MOVEMENTS = 20
+        const val RECENT_TICKETS = 50
     }
 }
 

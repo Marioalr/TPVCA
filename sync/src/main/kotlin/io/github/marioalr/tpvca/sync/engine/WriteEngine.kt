@@ -71,7 +71,8 @@ data class SaleLine(
     val individualUnits: Boolean = false,
 )
 
-data class SaleResult(val syncId: String, val folio: String, val shortages: List<StockShortage> = emptyList())
+/** [repeated]: ese ticket ya estaba registrado (un segundo toque, o volver a intentar después de morir el proceso): no se cobró otra vez. */
+data class SaleResult(val syncId: String, val folio: String, val shortages: List<StockShortage> = emptyList(), val repeated: Boolean = false)
 
 /** La nota de la consulta (`PatientConsultation`), con el texto ya como se guarda. */
 data class ConsultationNote(
@@ -345,7 +346,12 @@ class WriteEngine(
      * Un paso de la consulta: lo que cambió en las hojas (renglón por renglón, sobre la hoja que está en la base) y el borrador, **juntos**: si el proceso muere nunca queda un renglón sin su cargo en la cuenta. Sin [sheets]
      * solo guarda lo que se lleva escrito. `false` si la consulta de ese folio ya no es la de este equipo (ya se terminó o se descartó): un guardado tarde no la revive ni pisa a otra.
      */
-    fun saveConsultation(draft: ConsultationDraft, sheets: Map<String, (List<PatientSheets.SheetRow>) -> List<JsonObject>> = emptyMap()): Boolean = guarded {
+    fun saveConsultation(
+        draft: ConsultationDraft,
+        sheets: Map<String, (List<PatientSheets.SheetRow>) -> List<JsonObject>> = emptyMap(),
+        /** Otros borradores que este paso se lleva, en la misma transacción: «Pasar a la cuenta de la consulta» vacía la venta del punto de venta ([SALE_DRAFT]). */
+        draftsRemoved: Set<String> = emptySet(),
+    ): Boolean = guarded {
         if (draft.isHandedOff) throw WriteRefused(WriteRefused.Reason.CONFLICT, "La consulta se envió a otro equipo: aquí está en solo lectura.")
         if (sheets.isNotEmpty() && !WritePolicy.canWrite(requireWritable(), "Patients", creating = false)) refuse("escribir en Patients")
         store.transaction {
@@ -360,7 +366,7 @@ class WriteEngine(
                     writer.edit("Patients", draft.patientSyncId, mapOf(column to JsonArray(change(rows)).toString()))
                 }
             }
-            store.apply(StoreChanges(meta = mapOf(CONSULTATION_DRAFT to draft.encode())))
+            store.apply(StoreChanges(meta = mapOf(CONSULTATION_DRAFT to draft.encode()), metaRemoved = draftsRemoved))
             true
         }
     }
@@ -406,8 +412,10 @@ class WriteEngine(
         }
     }
 
-    private fun soldBefore(saleSyncId: String): SaleResult? =
-        guarded { writer.find(writer.table("Sales"), saleSyncId)?.let { SaleResult(saleSyncId, it["Folio"] as String) } }
+    private fun soldBefore(saleSyncId: String): SaleResult? = guarded { findSold(saleSyncId) }
+
+    /** Sin tomar la puerta: para quien ya la tiene. */
+    private fun findSold(saleSyncId: String): SaleResult? = writer.find(writer.table("Sales"), saleSyncId)?.let { SaleResult(saleSyncId, it["Folio"] as String) }
 
     /** La nota se busca dentro del mismo paciente: un folio repetido en otro expediente nunca sobrescribe la consulta de otra persona (`AddConsultationNoteAsync`). */
     private fun noteOf(patientSyncId: String, folio: String): LocalRow? =
@@ -587,22 +595,48 @@ class WriteEngine(
     /**
      * Cobrar (`RegisterSaleAsync`). **Un inventario mal contado nunca impide cobrar** (revisión 20): FEFO toma los lotes abiertos con piezas y lo que no alcanza sale sin lote, dejando
      * `CurrentStock` en negativo; solo un producto que ya no existe detiene la venta. El folio se pide antes de la transacción, sin dejar la base tomada mientras espera la red.
+     *
+     * **El ticket lleva [saleSyncId]**, que la pantalla toma al empezar la cuenta: un segundo toque, o volver a intentar después de morir el proceso, encuentra el ticket ya registrado y lo regresa con
+     * [SaleResult.repeated] sin cobrar otra vez ni gastar otro folio. [draftRemoved] (la cuenta guardada del punto de venta, [SALE_DRAFT]) se borra en la misma transacción que la venta: o quedan las dos cosas o ninguna.
      */
-    fun registerSale(lines: List<SaleLine>, patientName: String? = null, paymentMethod: String? = null, responsible: String = "Dr. / Farmacia"): SaleResult? {
+    fun registerSale(
+        lines: List<SaleLine>,
+        patientName: String? = null,
+        paymentMethod: String? = null,
+        responsible: String = "Dr. / Farmacia",
+        saleSyncId: String = SyncIds.random(),
+        draftRemoved: String? = null,
+    ): SaleResult? {
+        val saleId = saleSyncId.lowercase(Locale.ROOT)
         val valid = lines.filter { it.quantity > 0 }
         val existing = guarded {
             if (!WritePolicy.canWrite(requireWritable(), "Sales", creating = true)) refuse("cobrar")
+            findSold(saleId)?.let { return@guarded null }
             if (valid.isEmpty()) return@guarded emptyList()
             val products = valid.mapNotNull { it.productSyncId }.distinct().associateWith { store.select("Products", listOf("IsActive"), "SyncId", listOf(it)).firstOrNull() }
             for ((id, product) in products) {
-                if (product == null || product["IsActive"] != 1L) throw WriteRefused(WriteRefused.Reason.CONFLICT, "El producto $id ya no existe en el inventario.")
+                if (product == null || product["IsActive"] != 1L) {
+                    val name = valid.firstOrNull { it.productSyncId == id }?.description ?: id
+                    throw WriteRefused(WriteRefused.Reason.CONFLICT, "El producto '$name' ya no existe en el inventario.")
+                }
             }
             store.select("Sales", listOf("Folio")).map { it["Folio"] as String? }
-        }
+        } ?: return soldBefore(saleId)!!.copy(repeated = true)
         if (valid.isEmpty()) return null
         val folio = nextFolio(FolioKind.Sale, existing)
-        return guarded { store.transaction { writeSale(valid, folio, patientName, paymentMethod, responsible, SyncIds.random()) } }
+        return guarded {
+            store.transaction {
+                // Mientras se esperaba el folio pudo registrarse con el otro toque
+                findSold(saleId)?.let { return@transaction it.copy(repeated = true) }
+                val sale = writeSale(valid, folio, patientName, paymentMethod, responsible, saleId)
+                if (draftRemoved != null) store.apply(StoreChanges(metaRemoved = setOf(draftRemoved)))
+                sale
+            }
+        }
     }
+
+    /** Ese ticket ya está registrado aquí: la cuenta guardada que lo iba a cobrar sobra. */
+    fun saleExists(saleSyncId: String): Boolean = soldBefore(saleSyncId.lowercase(Locale.ROOT)) != null
 
     private fun writeSale(lines: List<SaleLine>, folio: String, patientName: String?, paymentMethod: String?, responsible: String, saleId: String): SaleResult {
         val client = patientName?.trim()?.takeIf { it.isNotEmpty() } ?: "Público General"
@@ -1072,6 +1106,9 @@ class WriteEngine(
 
         /** El borrador de la consulta en curso, con el prefijo de `LocalSide.DRAFT_PREFIX`. */
         const val CONSULTATION_DRAFT = "Draft:Consultation"
+
+        /** La cuenta del punto de venta que se está armando (K9), con el `SyncId` de su ticket: cobrarla o pasarla a la consulta la borra en la misma transacción. */
+        const val SALE_DRAFT = "Draft:Sale"
 
         /** «Liberar este equipo»: la copia de la consulta enviada que se soltó sin confirmar, apartada para revisión. */
         const val ARCHIVED_CONSULTATION = "Draft:ConsultationArchived"

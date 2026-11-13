@@ -126,6 +126,13 @@ class ConsultationStep internal constructor(draft: ConsultationDraft, val catalo
     private val rowEdits = LinkedHashMap<String, MutableList<(List<PatientSheets.SheetRow>) -> List<JsonObject>>>()
     private var newPrescriptions: List<JsonObject>? = null
     internal val toasts = ArrayList<Pair<String, Boolean>>()
+
+    /** Otros borradores que se van en la misma transacción que este paso (la venta del punto de venta que se pasó a la cuenta). */
+    internal val draftsRemoved = LinkedHashSet<String>()
+
+    fun removeDraftWithStep(key: String) {
+        draftsRemoved += key
+    }
     internal var infoText: String? = null
 
     /** Lo del borrador que no son renglones ni la cuenta. */
@@ -198,8 +205,8 @@ class ConsultationStep internal constructor(draft: ConsultationDraft, val catalo
     internal fun finalDraft(savedAt: String): ConsultationDraft = draft.copy(items = account.lines, savedAt = savedAt)
 }
 
-/** «Terminar consulta» abierta: la cuenta, que no se observa sola; [tick] le dice a la pantalla que la vuelva a leer. */
-class ConsultationCheckout internal constructor(val cart: CheckoutCart, val startedAt: LocalDateTime) {
+/** Una cuenta en pantalla (el cobro de «Terminar consulta» y la venta del punto de venta), que no se observa sola; [tick] le dice a la pantalla que la vuelva a leer. */
+open class CheckoutSession(val cart: CheckoutCart) {
     var tick by mutableIntStateOf(0)
         private set
 
@@ -219,11 +226,14 @@ class ConsultationCheckout internal constructor(val cart: CheckoutCart, val star
         }
 
     /** Toda acción sobre la cuenta pasa por aquí. */
-    fun change(action: CheckoutCart.() -> Unit) {
+    open fun change(action: CheckoutCart.() -> Unit) {
         cart.action()
         tick++
     }
 }
+
+/** «Terminar consulta» abierta: la cuenta de la consulta y cuándo empezó. */
+class ConsultationCheckout internal constructor(cart: CheckoutCart, val startedAt: LocalDateTime) : CheckoutSession(cart)
 
 /** El texto de la nota como se guarda (`SaveActiveConsultationToDbAsync`). */
 internal fun consultationNote(draft: ConsultationDraft, startedAt: LocalDateTime): ConsultationNote {
@@ -441,7 +451,10 @@ class ConsultationController internal constructor(private val workspace: TabletW
     private val tapKeys = HashSet<Any>()
     private var starting = false
     private var discarding = false
-    private var finalizing = false
+    private var finalizing by mutableStateOf(false)
+
+    /** «Terminar consulta» abierta, o armándose: la cuenta ya no recibe nada de fuera. */
+    val checkingOut: Boolean get() = finalizing || checkout != null
     private var timerLoaded = false
 
     private fun engine(): WriteEngine = env.writes() ?: throw WriteRefused(WriteRefused.Reason.NOT_APPROVED, AgendaController.NOT_READY)
@@ -698,7 +711,8 @@ class ConsultationController internal constructor(private val workspace: TabletW
         if (draft != null) return
         adopt(stored, state)
         autosaveStatus = if (stored.isHandedOff) "Enviada a ${stored.handoffTargetName}" else "Consulta recuperada · iniciada ${startedOf(stored).format(RECOVERED)}"
-        workspace.showConsultation()
+        // Una venta a la mitad no se deja por esto: el punto de venta ya dice que hay consulta en curso y lleva a ella
+        if (workspace.page != TabletPage.Pos) workspace.showConsultation()
     }
 
     // ------------------------------------------------------------------ lo que se teclea
@@ -831,10 +845,18 @@ class ConsultationController internal constructor(private val workspace: TabletW
      *
      * @param tapKey identifica el botón y su renglón: el mismo otra vez mientras sigue el primero, o en los [DOUBLE_TAP_MILLIS] siguientes, no hace nada ([ApplyResult.Ignored]). `null` en lo que sí se repite, como «+».
      */
-    suspend fun apply(tapKey: Any? = null, change: ConsultationStep.() -> Unit): ApplyResult {
+    suspend fun apply(tapKey: Any? = null, change: ConsultationStep.() -> Unit): ApplyResult = apply(tapKey, refuseWhileCheckingOut = false, change)
+
+    /**
+     * [refuseWhileCheckingOut]: lo que llega del punto de venta no se agrega con «Terminar consulta» abierta (ni mientras se arma): el cobro trabaja sobre la cuenta de cuando se abrió y lo agregado
+     * se quedaría sin cobrar. Se revisa con el candado tomado: si «Terminar consulta» empieza después, espera a que este paso se escriba y ya lo ve.
+     */
+    suspend fun apply(tapKey: Any?, refuseWhileCheckingOut: Boolean, change: ConsultationStep.() -> Unit): ApplyResult {
         if (tapKey != null && !tapKeys.add(tapKey)) return ApplyResult.Ignored
         try {
-            return lock.withLock { applyLocked(change) }
+            return lock.withLock {
+                if (refuseWhileCheckingOut && checkingOut) ApplyResult.Refused else applyLocked(change)
+            }
         } finally {
             if (tapKey != null) {
                 scope.launch {
@@ -877,7 +899,7 @@ class ConsultationController internal constructor(private val workspace: TabletW
                     step.change()
                     if (!step.changed) return@withContext StepDone(step, null, null, ApplyResult.NoChange)
                     val committed = step.finalDraft(nowText())
-                    if (!engine.saveConsultation(committed, step.sheetEdits(start.patientSyncId))) return@withContext StepDone(step, null, null, ApplyResult.Refused)
+                    if (!engine.saveConsultation(committed, step.sheetEdits(start.patientSyncId), step.draftsRemoved)) return@withContext StepDone(step, null, null, ApplyResult.Refused)
                     StepDone(step, committed, readState(committed), ApplyResult.Applied)
                 }
             } catch (e: CancellationException) {

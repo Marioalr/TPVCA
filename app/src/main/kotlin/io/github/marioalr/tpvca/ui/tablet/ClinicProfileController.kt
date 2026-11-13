@@ -145,6 +145,8 @@ class ClinicProfileController internal constructor(private val workspace: Tablet
     fun toggleEditOrSave() {
         if (saving) return
         if (!isEditing) {
+            // Una lectura que iba en camino ya no deja la pantalla bloqueada ni cambia lo que se va a editar
+            request++
             isEditing = true
             actionText = "Guardar"
             status = "Modo de edición activado. Realice los cambios necesarios y presione Guardar."

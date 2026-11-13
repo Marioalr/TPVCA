@@ -170,6 +170,7 @@ Sin vectores nuevos: el panel y «Negocio» usan los de K1 (`business-summary`, 
 - `WriteEngine.saveService`, `setServiceActive`, `deleteService` y el aviso del catálogo después de cada bajada (`ServicesWritesTest`, `:sync`). `HandoffService.listedDevices` (`HandoffServiceTest`).
 - Los textos de `LinkedDevice` que no trae el vector (`CodeText`, `PendingText`, `ApprovalText`, `NewTokenText`) y el orden de la lista (`LinkedDeviceTextsTest`). `MexicanText.currency0` (`C0`, `NetTextTest`).
 - Las pantallas: `ConfigTabletTest`.
+- «Médico y consultorio» e importar el Excel: `ExcelImportTest` (`:domain`, `DataImportService` sin libro), `ImportAndProfileTest` (`:sync`: el libro inventado de cinco hojas de `TestWorkbook`, reimportarlo, el CSV, y el perfil y el membrete contra `SqlCloud` con el SQL del contrato) y `ClinicDataTabletTest`.
 
 Cómo difiere de la PC:
 
@@ -181,6 +182,10 @@ Cómo difiere de la PC:
 - *Equipos vinculados* no tiene botones de administrar la nube, y el aviso de la PC principal no ofrece reemplazarla. «Por ahora solo este equipo usa la nube» en lugar de «solo esta computadora».
 - En «Negocio», «Por sección» va arriba de la gráfica (en la PC, lado a lado) salvo en una pantalla muy ancha: con la letra de un dedo sus cinco columnas no caben en media pantalla.
 - En la gráfica de «Negocio», lo que en la PC es el cartelito al pasar el ratón por una barra aparece abajo al tocarla.
+- «Médico y consultorio» no tiene «Letras de la receta»: en la PC son las letras instaladas en Windows y se guardan en cada computadora; la receta de Android usa las suyas. La vista previa de la receta abre el PDF de ejemplo (sin el selector de papel: el PDF elige el papel como al compartir).
+- Importar el Excel **no hace un respaldo antes** (en la tablet no hay respaldos de la base). En su lugar, sincroniza (sin conexión no importa), muestra qué va a cambiar con el aviso «La tablet no hace un respaldo antes de importar…» y pide confirmar; luego escribe todo o nada en una transacción (la PC guarda en varios pasos). El expediente que trae la hoja RECETA toma su folio como cualquier alta de este equipo (la PC usa el siguiente `EXP-aaaa-nnn` de su base, que en varios equipos podría repetirse). La fecha escrita se lee como `DateTime.TryParse` con es-MX (números, «15 de enero de 2026», «15/ene/2026»); si no se lee, el resumen lo dice (la PC usa hoy sin avisar). Topes de 25 MB el archivo y 30 MB descomprimido.
+- «Respaldos y datos» solo trae «Importar catálogo de Excel»: respaldar, restaurar y el archivo de laboratorio son de la PC (`CanManageBackups`), como en la PC con otro rol. Su resumen del menú dice «Importar el catálogo de Excel» (en la PC, el último respaldo).
+- Las plantillas de receta y las dosis pediátricas solo cambian al importar el Excel, como en la PC (no tiene otra pantalla para editarlas).
 
 ## Pendientes (con el paso que los porta)
 

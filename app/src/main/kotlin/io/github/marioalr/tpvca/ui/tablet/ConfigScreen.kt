@@ -76,6 +76,11 @@ fun ConfigScreen(workspace: TabletWorkspace, chrome: TabletChrome) {
         workspace.reports.refreshDashboard()
         workspace.services.refresh()
     }
+    // «Médico y consultorio» se lee al abrirlo (`LoadFromProfile`: lo no guardado se pierde al salir, como en la PC) y, sin editar, cada que baja algo
+    LaunchedEffect(inventory.section == ConfigSection.Clinic) {
+        if (inventory.section == ConfigSection.Clinic) workspace.clinic.load(force = true) else workspace.clinic.left()
+    }
+    LaunchedEffect(chrome.dataVersion, workspace.localVersion) { workspace.clinic.load() }
     // «Negocio» lee al abrirlo (`LoadAsync`), con «Actualizar» y al cambiar el periodo; como en la PC, no cada que baja algo (las cifras no se mueven mientras se leen)
     LaunchedEffect(inventory.section == ConfigSection.Business) {
         if (inventory.section == ConfigSection.Business) workspace.reports.loadBusiness()
@@ -89,6 +94,8 @@ fun ConfigScreen(workspace: TabletWorkspace, chrome: TabletChrome) {
                     ConfigSection.Dashboard -> DashboardSection(workspace)
                     ConfigSection.Business -> BusinessSection(workspace)
                     ConfigSection.Services -> ServicesSection(workspace)
+                    ConfigSection.Clinic -> ClinicProfileSection(workspace)
+                    ConfigSection.Data -> DataSection(workspace)
                     ConfigSection.Inventory -> ProductsSection(workspace)
                     ConfigSection.Batches -> BatchesSection(workspace)
                     ConfigSection.Movements -> KardexSection(workspace)
@@ -102,6 +109,7 @@ fun ConfigScreen(workspace: TabletWorkspace, chrome: TabletChrome) {
         inventory.newBatch?.let { NewBatchPanel(workspace, it) }
         inventory.order?.let { OrderEntrySheet(workspace, it) }
         if (inventory.section == ConfigSection.Services) workspace.services.editor?.let { ServiceEditorPanel(workspace, it) }
+        if (inventory.section == ConfigSection.Data) workspace.data.file?.let { ImportSheet(workspace, it) }
     }
 }
 
@@ -137,6 +145,8 @@ private fun ConfigMenu(workspace: TabletWorkspace, modifier: Modifier) {
                                 ConfigSection.Dashboard -> workspace.reports.dashboardSummary
                                 ConfigSection.Business -> workspace.reports.businessMenuSummary
                                 ConfigSection.Services -> workspace.services.summary
+                                ConfigSection.Clinic -> workspace.clinic.summary.takeIf { workspace.clinic.loaded }
+                                ConfigSection.Data -> "Importar el catálogo de Excel"
                                 ConfigSection.Inventory -> inventory.summaries?.inventory
                                 ConfigSection.Batches -> inventory.summaries?.batches
                                 ConfigSection.Movements -> inventory.summaries?.movements

@@ -172,6 +172,23 @@ object Statements {
     /** `asset.chunk`. */
     const val ASSET_CHUNK: String = "SELECT Content FROM ClinicAssetChunks WHERE Hash = ? AND Part = ?;"
 
+    /** `asset.exists` (K9b, revisión 19): antes de subir una imagen del membrete; si ya tiene su fila, ya está completa. */
+    const val ASSET_EXISTS: String = "SELECT Hash FROM ClinicAssets WHERE Hash = ?;"
+
+    /** `asset.writeChunk`: cada trozo de 512 KiB, uno por petición; nunca se reescribe. */
+    const val ASSET_WRITE_CHUNK: String = "INSERT INTO ClinicAssetChunks (Hash, Part, Content) VALUES (?, ?, ?) ON CONFLICT(Hash, Part) DO NOTHING;"
+
+    /** `asset.writeMeta`: al final, con todos los trozos ya arriba. */
+    const val ASSET_WRITE_META: String =
+        "INSERT INTO ClinicAssets (Hash, Kind, MimeType, ByteCount, ChunkCount, UpdatedAtUtc) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f','now')) ON CONFLICT(Hash) DO NOTHING;"
+
+    /** `profile.write`: el perfil del consultorio; el upsert no compara marcas (quien llama decide si es más nuevo). */
+    const val PROFILE_WRITE: String =
+        "INSERT INTO ClinicProfiles (Id, DoctorName, ProfessionalLicense, Specialty, University, ClinicName, Address, Phone, Email, TaxId, AdditionalNotes, UpdatedAtUtc, CrestImageHash, HeaderImageHash) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(Id) DO UPDATE SET DoctorName = excluded.DoctorName, ProfessionalLicense = excluded.ProfessionalLicense, Specialty = excluded.Specialty, University = excluded.University, ClinicName = excluded.ClinicName, Address = excluded.Address, Phone = excluded.Phone, Email = excluded.Email, TaxId = excluded.TaxId, AdditionalNotes = excluded.AdditionalNotes, UpdatedAtUtc = excluded.UpdatedAtUtc, CrestImageHash = excluded.CrestImageHash, HeaderImageHash = excluded.HeaderImageHash;"
+
+    /** Los trozos de una imagen del membrete (`SyncSchema.AssetChunkBytes`). */
+    const val ASSET_CHUNK_BYTES: Int = 512 * 1024
+
     /** `page.<tabla>`, con su `LIMIT` y omitiendo lo propio salvo en una descarga completa (`PageQuery`). */
     fun pageSql(table: String, limit: Int, skipOwnRows: Boolean): String {
         val origin = if (skipOwnRows) " AND (\"OriginDeviceId\" IS NULL OR \"OriginDeviceId\" <> ?)" else ""
@@ -193,6 +210,18 @@ object Statements {
     fun assetMeta(hash: String) = Statement(ASSET_META, listOf(HranaValue.Text(hash)))
 
     fun assetChunk(hash: String, part: Int) = Statement(ASSET_CHUNK, listOf(HranaValue.Text(hash), HranaValue.Integer(part.toLong())))
+
+    fun assetExists(hash: String) = Statement(ASSET_EXISTS, listOf(HranaValue.Text(hash)))
+
+    fun assetWriteChunk(hash: String, part: Int, content: ByteArray) = Statement(ASSET_WRITE_CHUNK, listOf(HranaValue.Text(hash), HranaValue.Integer(part.toLong()), HranaValue.Blob(content)))
+
+    fun assetWriteMeta(hash: String, kind: String, mimeType: String, byteCount: Int, chunkCount: Int) = Statement(
+        ASSET_WRITE_META,
+        listOf(HranaValue.Text(hash), HranaValue.Text(kind), HranaValue.Text(mimeType), HranaValue.Integer(byteCount.toLong()), HranaValue.Integer(chunkCount.toLong())),
+    )
+
+    /** `profile.write`, con los argumentos en el orden del contrato. Un valor nulo viaja como nulo. */
+    fun profileWrite(values: List<String?>) = Statement(PROFILE_WRITE, values.map { it?.let(HranaValue::Text) ?: HranaValue.Null })
 
     val metaAll = Statement(META_ALL)
     val metaSchema = Statement(META_SCHEMA)

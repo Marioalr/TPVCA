@@ -128,6 +128,12 @@ interface SyncStore {
 
     fun saveProfile(values: LocalRow)
 
+    /** La fila del perfil del consultorio (`Id` 1) con las columnas que conoce esta versión, o `null` si no hay (K9b: la tablet lo edita y lo sube). */
+    fun profileRow(): LocalRow?
+
+    /** Los bytes de una imagen del membrete de este equipo, o `null` si no está (K9b: para subirla). */
+    fun readAsset(hash: String): ByteArray?
+
     fun hasAsset(hash: String): Boolean
 
     /** Guarda una imagen del membrete ya revisada (tamaño y SHA-256). */

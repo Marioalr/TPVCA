@@ -76,6 +76,7 @@ class TabletDeviceTest {
         noteLocalWrite = { saves++ },
         refreshNow = {},
         isOnline = { false },
+        syncBeforeImport = { null },
     )
 
     @Before
@@ -243,5 +244,97 @@ class TabletDeviceTest {
         waitText("Eliminar expediente")
         compose.onNodeWithText("Abrir expediente").assertExists()
         waitTag(TabletTags.HOME)
+    }
+
+    // ------------------------------------------------------------------ K9b, segunda mitad
+
+    /** Un .xlsx mínimo hecho a mano: MEDICAMENTOS con dos renglones (uno de cadenas compartidas) y RECETA con la imagen del encabezado recortada a la mitad. */
+    private fun workbook(header: ByteArray): ByteArray {
+        val main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+        val rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+        val pkg = "http://schemas.openxmlformats.org/package/2006/relationships"
+        val out = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use { zip ->
+            fun put(name: String, bytes: ByteArray) {
+                zip.putNextEntry(java.util.zip.ZipEntry(name))
+                zip.write(bytes)
+                zip.closeEntry()
+            }
+            fun put(name: String, text: String) = put(name, text.toByteArray())
+            put("xl/workbook.xml", """<workbook xmlns="$main" xmlns:r="$rel"><sheets><sheet name="MEDICAMENTOS" sheetId="1" r:id="rId1"/><sheet name="RECETA" sheetId="2" r:id="rId2"/></sheets></workbook>""")
+            put("xl/_rels/workbook.xml.rels", """<Relationships xmlns="$pkg"><Relationship Id="rId1" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Target="worksheets/sheet2.xml"/></Relationships>""")
+            put("xl/sharedStrings.xml", """<sst xmlns="$main"><si><t>Medicamento</t></si><si><r><t>Naproxeno </t></r><r><t>250 mg tabletas</t></r></si></sst>""")
+            put(
+                "xl/worksheets/sheet1.xml",
+                """<worksheet xmlns="$main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Clave</t></is></c><c r="B1" t="s"><v>0</v></c></row>""" +
+                    """<row r="2"><c r="A2" t="inlineStr"><is><t>NAP-1</t></is></c><c r="B2" t="s"><v>1</v></c></row><row r="4"><c r="B4" t="inlineStr"><is><t>Crema de ejemplo</t></is></c></row></sheetData></worksheet>""",
+            )
+            put("xl/worksheets/sheet2.xml", """<worksheet xmlns="$main" xmlns:r="$rel"><sheetData/><drawing r:id="rIdD"/></worksheet>""")
+            put("xl/worksheets/_rels/sheet2.xml.rels", """<Relationships xmlns="$pkg"><Relationship Id="rIdD" Target="../drawings/drawing1.xml"/></Relationships>""")
+            put(
+                "xl/drawings/drawing1.xml",
+                """<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="$rel">""" +
+                    """<xdr:twoCellAnchor><xdr:from><xdr:col>9</xdr:col><xdr:row>1</xdr:row></xdr:from><xdr:to><xdr:col>11</xdr:col><xdr:row>3</xdr:row></xdr:to>""" +
+                    """<xdr:pic><xdr:blipFill><a:blip r:embed="rIdI"/><a:srcRect l="50000"/></xdr:blipFill></xdr:pic></xdr:twoCellAnchor></xdr:wsDr>""",
+            )
+            put("xl/drawings/_rels/drawing1.xml.rels", """<Relationships xmlns="$pkg"><Relationship Id="rIdI" Target="../media/image1.png"/></Relationships>""")
+            put("xl/media/image1.png", header)
+        }
+        return out.toByteArray()
+    }
+
+    /** K9b: el Excel con el analizador XML y `BitmapFactory` de Android (no los de la JVM): cadenas compartidas, renglones que faltan, la imagen y su recorte; se importa sobre SQLCipher. */
+    @Test
+    fun elExcelSeLeeYSeImportaEnElEquipo() {
+        val png = java.io.ByteArrayOutputStream().also { android.graphics.Bitmap.createBitmap(20, 6, android.graphics.Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.GREEN) }.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        val bytes = workbook(png)
+        val plan = io.github.marioalr.tpvca.domain.imports.ExcelImport.plan(io.github.marioalr.tpvca.domain.imports.Xlsx.read(bytes))
+        assertEquals(listOf("Naproxeno 250 mg tabletas", "Crema de ejemplo"), plan.catalog!!.map { it.name })
+        val header = plan.header!!
+        assertEquals(10, header.fromColumn)
+        val cropped = DataController.displayed(header)!!
+        val decoded = android.graphics.BitmapFactory.decodeByteArray(cropped, 0, cropped.size)
+        assertEquals(10, decoded.width)
+        assertEquals(6, decoded.height)
+        show()
+        compose.runOnIdle { workspace.data.open(ImportFile("Catálogo.xlsx", "") { bytes }) }
+        waitFor { workspace.data.ready != null || workspace.data.outcome != null }
+        compose.runOnIdle { workspace.data.execute() }
+        waitFor { workspace.data.outcome != null }
+        assertTrue(workspace.data.outcome!!.message, workspace.data.outcome!!.success)
+        assertEquals("NAP-1", store.select("Products", listOf("Code", "Name")).first { it["Name"] == "Naproxeno 250 mg tabletas" }["Code"])
+    }
+
+    /** K9b: un servicio con toques sobre SQLCipher, con la sincronización rápida antes de guardarlo. */
+    @Test
+    fun unServicioSeDaDeAltaConToques() {
+        show()
+        compose.onNodeWithTag(TabletTags.HUB_CONFIG).performClick()
+        waitTag(TabletTags.DASHBOARD)
+        compose.onNodeWithTag(TabletTags.configSection("Services")).performScrollTo().performClick()
+        waitFor { workspace.services.catalog != null }
+        compose.onNodeWithTag(TabletTags.SERVICE_NEW).performClick()
+        waitTag(TabletTags.SERVICE_EDITOR)
+        compose.onNodeWithTag(TabletTags.field("servicio-nombre")).performTextInput("Toma de muestra de ejemplo")
+        compose.onNodeWithTag(TabletTags.field("servicio-precio")).performTextInput("95")
+        compose.onNodeWithTag(TabletTags.SERVICE_SAVE).performClick()
+        waitFor { store.select("ClinicalServices", listOf("Name")).any { it["Name"] == "Toma de muestra de ejemplo" } }
+        waitText("Servicio guardado: Toma de muestra de ejemplo · $95.00")
+    }
+
+    /** Revisión de #13: la «mil millones de risas» con el analizador de Android: se rechaza antes de analizar, rápido y sin agotar la memoria. */
+    @Test
+    fun unLibroConEntidadesSeRechazaEnElEquipo() {
+        val lol = "<?xml version=\"1.0\"?><!DOCTYPE lolz [<!ENTITY lol \"lol\">" + (1..9).joinToString("") { i -> "<!ENTITY lol$i \"" + "&lol${if (i == 1) "" else (i - 1).toString()};".repeat(10) + "\">" } + "]><workbook>&lol9;</workbook>"
+        val out = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry("xl/workbook.xml"))
+            zip.write(lol.toByteArray())
+            zip.closeEntry()
+        }
+        val started = System.nanoTime()
+        val error = runCatching { io.github.marioalr.tpvca.domain.imports.Xlsx.read(out.toByteArray()) }.exceptionOrNull()
+        assertTrue(error is io.github.marioalr.tpvca.domain.imports.XlsxException)
+        assertTrue("Tardó demasiado", System.nanoTime() - started < 2_000_000_000L)
     }
 }

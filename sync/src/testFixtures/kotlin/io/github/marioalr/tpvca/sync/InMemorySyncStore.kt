@@ -171,6 +171,10 @@ class InMemorySyncStore(private val schema: SyncSchema = SyncContract.bundledSch
         profile = values
     }
 
+    override fun profileRow(): LocalRow? = profile
+
+    override fun readAsset(hash: String): ByteArray? = assets[hash]
+
     override fun hasAsset(hash: String) = hash in assets
 
     override fun saveAsset(hash: String, kind: String, bytes: ByteArray) {

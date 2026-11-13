@@ -136,6 +136,8 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
                 inventory.left()
                 services.left()
                 reports.left()
+                clinic.left()
+                data.close()
             }
             if (currentPage == TabletPage.Hub && value != TabletPage.Hub) inventory.closeSuggested()
             currentPage = value
@@ -193,6 +195,12 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
 
     /** Configuración → Servicios, y «Nuevo servicio» y «Eliminar servicio» del punto de venta (K9b). */
     val services = ServicesController(this, scope, io)
+
+    /** «Médico y consultorio» con el membrete (K9b). */
+    val clinic = ClinicProfileController(this, scope, io)
+
+    /** «Respaldos y datos»: importar el Excel (K9b). */
+    val data = DataController(this, scope, io)
 
     /** *Equipos vinculados*, solo para consultar (K9b). */
     val devices = DevicesController(this, scope, io)
@@ -381,6 +389,8 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
             // Lo de encima primero; la cuenta se queda para cuando vuelva
             page == TabletPage.Pos && services.posEditor != null -> services.closePosEditor()
             page == TabletPage.Pos -> if (!pos.back()) page = TabletPage.Hub
+            // La hoja de importar no se cierra mientras importa: Atrás tampoco
+            page == TabletPage.Config && data.sheetOpen -> data.close()
             page == TabletPage.Config -> if (!services.back() && !inventory.back()) page = TabletPage.Hub
             page == TabletPage.Hub && inventory.suggested != null -> inventory.closeSuggested()
             homeQuery.isNotEmpty() -> homeQuery = ""
@@ -914,6 +924,8 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         reports.clearMemory()
         services.clearMemory()
         devices.clearMemory()
+        clinic.clearMemory()
+        data.clearMemory()
         page = TabletPage.Hub
         restored = false
     }

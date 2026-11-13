@@ -1476,28 +1476,104 @@ class SyncEngine(
     // ---------------------------------------------------------------------------------------------------------------------------
 
     private fun finish(run: Run, profile: Row?) {
-        if (profile != null) applyProfile(run, profile)
+        syncProfile(run, profile)
         recalculate(run)
     }
 
-    /** El perfil: gana el `UpdatedAtUtc` más nuevo. La imagen se baja si su hash todavía no está aquí. */
-    private fun applyProfile(run: Run, profile: Row) {
-        val hasData = !profile.text("DoctorName").isNullOrBlank() || !profile.text("ClinicName").isNullOrBlank()
-        val stamp = ProtocolDate.canonical(profile.text("UpdatedAtUtc"))
-        val local = store.profileStamp()
-        if (hasData && (local == null || stamp > local)) {
-            store.saveProfile(
-                profile.mapValues { (column, value) ->
-                    when (column) {
-                        "Id" -> ValueCodec.integerText(value).toLong()
-                        "UpdatedAtUtc" -> stamp
-                        else -> value.text
-                    }
-                },
-            )
+    /**
+     * El perfil del consultorio (`SyncClinicProfileAsync`): gana el `UpdatedAtUtc` más nuevo. Si gana el de la nube se aplica y se bajan sus imágenes; si gana el de aquí (K9b: la tablet lo edita en
+     * «Médico y consultorio»), primero se suben sus imágenes y luego se escribe con `profile.write`. La tablet nunca borra imágenes de la nube.
+     */
+    private fun syncProfile(run: Run, remote: Row?) {
+        val local = store.profileRow()
+        val localStamp = local?.get("UpdatedAtUtc") as String?
+        val localHasData = ClinicProfileRules.hasData(local)
+        if (remote != null) {
+            val remoteHasData = !remote.text("DoctorName").isNullOrBlank() || !remote.text("ClinicName").isNullOrBlank()
+            val stamp = ProtocolDate.canonical(remote.text("UpdatedAtUtc"))
+            if (remoteHasData && (localStamp == null || stamp > localStamp || !localHasData)) {
+                store.saveProfile(
+                    remote.mapValues { (column, value) ->
+                        when (column) {
+                            "Id" -> ValueCodec.integerText(value).toLong()
+                            "UpdatedAtUtc" -> stamp
+                            else -> value.text
+                        }
+                    },
+                )
+                downloadLetterhead(run, remote.text("CrestImageHash"), remote.text("HeaderImageHash"))
+                return
+            }
         }
-        downloadAsset(run, profile.text("CrestImageHash"), "crest")
-        downloadAsset(run, profile.text("HeaderImageHash"), "header")
+        val remoteStamp = remote?.let { ProtocolDate.canonical(it.text("UpdatedAtUtc")) }
+        if (local != null && localStamp != null && localHasData && canWriteProfile() && (remoteStamp == null || localStamp > remoteStamp)) {
+            pushProfile(run, local, localStamp, remote)
+            return
+        }
+        // El mismo perfil: solo las imágenes que dice la nube y no están aquí
+        if (remote != null) downloadLetterhead(run, remote.text("CrestImageHash"), remote.text("HeaderImageHash"))
+    }
+
+    private fun downloadLetterhead(run: Run, crest: String?, header: String?) {
+        downloadAsset(run, crest, LetterheadKind.Crest.cloudKind)
+        downloadAsset(run, header, LetterheadKind.Header.cloudKind)
+    }
+
+    /** Escribir el perfil en la nube es de quien configura el consultorio (la PC y la tablet), aprobado, sin quitar y con la nube en su esquema. */
+    private fun canWriteProfile(): Boolean {
+        val role = DeviceRole.fromName(store.meta(DEVICE_ROLE)) ?: return false
+        return DevicePermissions.canConfigureSystem(role) && store.meta(READ_ONLY) == null && store.meta(REVOKED_REASON) == null
+    }
+
+    /**
+     * `profile.write` (revisión 19), con las reglas de `contracts/hrana/statements.json`: cada hash es el de la imagen de este equipo, después de subirla con `asset.*` (si no se pudo leer para
+     * subirla, el de la nube); '' si se quitó aquí; sin imagen aquí y sin tocarla aquí, el de la nube (un equipo recién instalado no le quita el escudo a los demás). Después, lo que la nube nombra y
+     * aquí no está se baja, y el perfil de aquí queda con los hashes que se escribieron (su marca no cambia).
+     */
+    private fun pushProfile(run: Run, local: LocalRow, localStamp: String, remote: Row?) {
+        val hashes = LetterheadKind.entries.associateWith { kind ->
+            val mine = local[kind.column] as String?
+            val edited = store.meta(kind.editedKey) != null
+            when {
+                !mine.isNullOrEmpty() && ensureAssetUploaded(run, kind, mine) -> mine
+                mine.isNullOrEmpty() && edited -> ""
+                else -> remote?.text(kind.column)
+            }
+        }
+        val values = ProfileValues.of(local)
+        run.query(
+            listOf(
+                Statements.profileWrite(
+                    listOf(
+                        values.doctorName, values.professionalLicense, values.specialty, values.university, values.clinicName, values.address, values.phone, values.email,
+                        values.taxId, values.additionalNotes, localStamp, hashes[LetterheadKind.Crest], hashes[LetterheadKind.Header],
+                    ),
+                ),
+            ),
+        )
+        run.rowsWritten += 1
+        if (hashes.any { (kind, hash) -> hash != local[kind.column] }) {
+            store.saveProfile(local + hashes.mapKeys { it.key.column })
+        }
+        downloadLetterhead(run, hashes[LetterheadKind.Crest], hashes[LetterheadKind.Header])
+    }
+
+    /**
+     * La imagen de este equipo queda completa en la nube (`EnsureAssetUploadedAsync`): si ya tiene su fila, no se sube; si no, cada trozo de 512 KiB en su petición y al final su fila. `false` si no se
+     * pudo leer aquí (o ya no es la del hash).
+     */
+    private fun ensureAssetUploaded(run: Run, kind: LetterheadKind, hash: String): Boolean {
+        if (run.query(listOf(Statements.assetExists(hash))).single().rows.isNotEmpty()) return true
+        val content = store.readAsset(hash) ?: return false
+        if (!ClinicProfileRules.hash(content).equals(hash, ignoreCase = true) || ClinicProfileRules.imageExtension(content) == null) return false
+        val chunks = maxOf(1, (content.size + Statements.ASSET_CHUNK_BYTES - 1) / Statements.ASSET_CHUNK_BYTES)
+        for (part in 0 until chunks) {
+            val from = part * Statements.ASSET_CHUNK_BYTES
+            run.query(listOf(Statements.assetWriteChunk(hash, part, content.copyOfRange(from, minOf(content.size, from + Statements.ASSET_CHUNK_BYTES)))))
+        }
+        run.query(listOf(Statements.assetWriteMeta(hash, kind.cloudKind, ClinicProfileRules.mimeType(content), content.size, chunks)))
+        run.rowsWritten += chunks + 1
+        return true
     }
 
     /** Su fila de `ClinicAssets` y sus trozos, cuatro por petición; se revisan el tamaño y el SHA-256. Si no está completa, después. */

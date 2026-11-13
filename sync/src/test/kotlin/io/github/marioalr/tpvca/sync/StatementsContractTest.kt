@@ -26,13 +26,10 @@ class StatementsContractTest {
     private val usedByK2 = setOf(
         "meta.all", "handshake", "generation", "profile", "registry.own", "asset.meta", "asset.chunk", "heartbeat.readNonce", "heartbeat.write", "heartbeat.writeAfterPush", "meta.schema", "folio.take", "folio.raise",
         "registry.primary", "check.incoming", "check.outgoing", "check.peerPush", "check.peers.serverNow", "check.peers.devices", "check.peers.registry",
+        // K9b: la tablet sube el membrete y escribe el perfil del consultorio
+        "asset.exists", "asset.writeChunk", "asset.writeMeta", "profile.write",
     )
-    private val laterSteps = mapOf(
-        "asset.exists" to "K9b",
-        "asset.writeChunk" to "K9b",
-        "asset.writeMeta" to "K9b",
-        "profile.write" to "K9b",
-    )
+    private val laterSteps = mapOf<String, String>()
 
     @Test
     fun cadaInstruccionDelContratoTienePaso() {
@@ -65,6 +62,10 @@ class StatementsContractTest {
         assertEquals(statements["heartbeat.write"], Statements.HEARTBEAT_WRITE)
         assertEquals(statements["asset.meta"], Statements.ASSET_META)
         assertEquals(statements["asset.chunk"], Statements.ASSET_CHUNK)
+        assertEquals(statements["asset.exists"], Statements.ASSET_EXISTS)
+        assertEquals(statements["asset.writeChunk"], Statements.ASSET_WRITE_CHUNK)
+        assertEquals(statements["asset.writeMeta"], Statements.ASSET_WRITE_META)
+        assertEquals(statements["profile.write"], Statements.PROFILE_WRITE)
         // K8: la revisión de la consulta entre equipos, literal (con otro WHERE, SQLite no usa el índice parcial)
         assertEquals(statements["registry.primary"], Statements.REGISTRY_PRIMARY)
         assertEquals(statements["check.incoming"], Statements.CHECK_INCOMING)

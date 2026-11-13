@@ -247,6 +247,21 @@ class RoomSyncStore(
         db.insert("ClinicProfiles", SQLiteDatabase.CONFLICT_REPLACE, contentValues(values.filterKeys { it in PROFILE_COLUMNS }))
     }
 
+    override fun profileRow(): LocalRow? = db.query("SELECT ${PROFILE_COLUMNS.joinToString()} FROM ClinicProfiles WHERE Id = 1").use { cursor ->
+        if (!cursor.moveToFirst()) return@use null
+        PROFILE_COLUMNS.associateWith { column ->
+            val i = cursor.getColumnIndexOrThrow(column)
+            when {
+                cursor.isNull(i) -> null
+                column == "Id" -> cursor.getLong(i)
+                else -> cursor.getString(i)
+            }
+        }
+    }
+
+    /** Solo un nombre de archivo de hexadecimal: el hash viene de la base. */
+    override fun readAsset(hash: String): ByteArray? = hash.takeIf { HEX.matches(it) }?.let { File(assetsDir, it.lowercase(java.util.Locale.ROOT)) }?.takeIf { it.isFile }?.readBytes()
+
     override fun hasAsset(hash: String): Boolean = File(assetsDir, hash).isFile
 
     /** Las imágenes del membrete van en archivos por su hash: pueden pasar del límite de 2 MB de un `CursorWindow`. */
@@ -335,6 +350,8 @@ class RoomSyncStore(
     }
 
     private companion object {
+        val HEX = Regex("^[0-9a-fA-F]+$")
+
         /** SQLite de Android 8 acepta 999 variables por instrucción. */
         const val MAX_VARIABLES = 500
 

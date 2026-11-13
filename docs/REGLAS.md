@@ -179,6 +179,7 @@ Cómo difiere de la PC:
 - Un número que no se lee en el precio o los minutos lo dice al guardar; en la PC el cuadro no lo acepta.
 - «Exportar CSV» de «Negocio» se comparte (en la tablet no hay Escritorio); el aviso dice el nombre del archivo.
 - *Equipos vinculados* no tiene botones de administrar la nube, y el aviso de la PC principal no ofrece reemplazarla. «Por ahora solo este equipo usa la nube» en lugar de «solo esta computadora».
+- En «Negocio», «Por sección» va arriba de la gráfica (en la PC, lado a lado) salvo en una pantalla muy ancha: con la letra de un dedo sus cinco columnas no caben en media pantalla.
 - En la gráfica de «Negocio», lo que en la PC es el cartelito al pasar el ratón por una barra aparece abajo al tocarla.
 
 ## Pendientes (con el paso que los porta)

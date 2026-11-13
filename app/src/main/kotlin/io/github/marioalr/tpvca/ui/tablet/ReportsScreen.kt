@@ -58,11 +58,19 @@ import java.time.format.DateTimeFormatter
 private val DAY_TIME = DateTimeFormatter.ofPattern("dd/MM HH:mm", Clinic.LOCALE)
 
 /** Una cifra de la PC: «{0:0.0} %», o «—» sin dato. */
+/** Las columnas de «Por sección»: los importes y los porcentajes con la letra de un dedo (la PC usa 96 y 60 px con letra más chica). */
+private val AMOUNT = 110.dp
+private val SHARE = 76.dp
+
 private fun percentText(value: BigDecimal?): String = value?.let { "${NetDecimal.custom(it, 1, 1)} %" } ?: "—"
 
 /** Cuántas tarjetas caben por renglón: las de la PC (5 o 4) en una tablet en horizontal, menos en vertical. */
 @Composable
-private fun cardColumns(width: Dp, wanted: Int): Int = fieldColumns(width, wanted).coerceAtLeast(2).coerceAtMost(wanted)
+private fun cardColumns(width: Dp, wanted: Int): Int {
+    // Una cifra cabe en 170 dp: en horizontal van todas en un renglón, como el `UniformGrid` de la PC
+    val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceAtLeast(1f)
+    return ((width / scale) / 170.dp).toInt().coerceIn(2, wanted)
+}
 
 // ================================================================== Panel del consultorio
 
@@ -226,6 +234,8 @@ internal fun BusinessSection(workspace: TabletWorkspace) {
     val shown = r.business
     BoxWithConstraints(Modifier.fillMaxSize().testTag(TabletTags.BUSINESS)) {
         val wide = isWide(900.dp)
+        // «Por sección» lleva cinco columnas: con la letra de un dedo solo cabe junto a la gráfica en una pantalla muy ancha
+        val wideTable = isWide(1300.dp)
         val columns = cardColumns(maxWidth, 4)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             SectionHeader("Negocio", "Ventas, costo y utilidad por periodo y por tipo, lo más vendido, las compras y el consumo de insumos") {
@@ -266,7 +276,7 @@ internal fun BusinessSection(workspace: TabletWorkspace) {
                 { m -> Figure(m, "Compras", MexicanText.currency(shown.purchases.cost), "${shown.purchases.entries} entrada(s)") },
                 { m -> Figure(m, "Valor del inventario (hoy)", MexicanText.currency(shown.inventoryValue), InventoryValueRules.detail(shown.stockedWithoutCost)) },
             ))
-            TwoColumns(wide, { m -> ByTypeCard(m, r, shown) }, { m -> ChartCard(m, shown) })
+            TwoColumns(wideTable, { m -> ByTypeCard(m, r, shown) }, { m -> ChartCard(m, shown) })
             TwoColumns(wide, { m -> TopProductsCard(m, r, shown) }, { m -> TopServicesCard(m, shown) })
             TwoColumns(wide, { m -> PurchasesCard(m, shown) }, { m -> ConsumptionCard(m, shown) })
         }
@@ -330,10 +340,10 @@ private fun ByTypeCard(modifier: Modifier, r: ReportsController, shown: Business
         TCaption("Un toque en un tipo filtra el resto del panel; otro toque lo quita", Modifier.padding(top = 2.dp, bottom = 10.dp))
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             TText("Tipo", Modifier.weight(1f), size = TType.caption, color = colors.textSecondary)
-            HeaderCell("Ventas", 96.dp)
-            HeaderCell("Utilidad", 96.dp)
-            HeaderCell("Margen", 60.dp)
-            HeaderCell("Parte", 60.dp)
+            HeaderCell("Ventas", AMOUNT)
+            HeaderCell("Utilidad", AMOUNT)
+            HeaderCell("Margen", SHARE)
+            HeaderCell("Parte", SHARE)
         }
         for (row in shown.byType) {
             key(row.type) {
@@ -347,13 +357,13 @@ private fun ByTypeCard(modifier: Modifier, r: ReportsController, shown: Business
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Column(Modifier.weight(1f)) {
-                        TText(row.name, weight = FontWeight.SemiBold)
-                        TCaption("Costo ${MexicanText.currency(row.cost)}")
+                        TText(row.name, weight = FontWeight.SemiBold, maxLines = 1)
+                        TCaption("Costo ${MexicanText.currency(row.cost)}", maxLines = 1)
                     }
-                    AmountCell(MexicanText.currency(row.sales), 96.dp)
-                    AmountCell(MexicanText.currency(row.profit), 96.dp)
-                    AmountCell(percentText(row.marginPercent), 60.dp)
-                    AmountCell(percentText(row.sharePercent), 60.dp)
+                    AmountCell(MexicanText.currency(row.sales), AMOUNT)
+                    AmountCell(MexicanText.currency(row.profit), AMOUNT)
+                    AmountCell(percentText(row.marginPercent), SHARE)
+                    AmountCell(percentText(row.sharePercent), SHARE)
                 }
             }
         }
@@ -449,7 +459,7 @@ private fun TopServicesCard(modifier: Modifier, shown: BusinessResult) {
                         TText(x.name, maxLines = 1)
                         TCaption(BusinessReportRules.typeName(x.type))
                     }
-                    AmountCell(x.countText, 70.dp)
+                    AmountCell(x.countText, 96.dp)
                     AmountCell(MexicanText.currency(x.income), 96.dp)
                 }
             }
@@ -505,7 +515,7 @@ private fun ConsumptionCard(modifier: Modifier, shown: BusinessResult) {
                         TText(row.name, maxLines = 1)
                         TCaption("Sin cobrar: ${row.usedInConsultation} · Cobrado: ${row.chargedWithServices}")
                     }
-                    AmountCell(row.quantityText, 110.dp)
+                    AmountCell(row.quantityText, 170.dp)
                     AmountCell(MexicanText.currency(row.cost), 96.dp)
                 }
             }

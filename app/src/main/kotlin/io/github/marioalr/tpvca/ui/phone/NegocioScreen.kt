@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -228,6 +229,8 @@ private fun RangeDialog(filters: NegocioFilters, onDone: () -> Unit) {
 }
 
 /** El color de lo que sube o baja: verde, rojo o gris en lo que no es bueno ni malo (costo, compras). */
+@Composable
+@ReadOnlyComposable
 private fun tone(text: String, neutral: Boolean): Color = when {
     neutral -> PhoneColors.Muted
     text.startsWith("▲") -> PhoneColors.Success
@@ -385,15 +388,20 @@ private fun SectionRow(cells: List<String>, size: androidx.compose.ui.unit.TextU
 private fun Chart(view: BusinessPanelView) {
     val points = view.timeline
     val max = points.maxOfOrNull { it.sales.max(it.profit.abs()) } ?: BigDecimal.ZERO
+    val losses = points.count { it.profit.signum() < 0 }
     val description = "Ventas y ganancia de ${PhoneFormat.periodTitle(view.period)}" +
-        if (max.signum() > 0) ". La barra más alta: ${PhoneFormat.money(max)}" else ". Sin ventas en el periodo"
+        (if (max.signum() > 0) ". La barra más alta: ${PhoneFormat.money(max)}" else ". Sin ventas en el periodo") +
+        (if (losses > 0) ". ${if (losses == 1) "Una barra con pérdida" else "$losses barras con pérdida"}" else "")
     PCard(padding = 0.dp) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
                 Heading("En el tiempo", Modifier.weight(1f))
-                Legend(PhoneColors.BarSales, "Ventas")
-                Box(Modifier.width(12.dp))
-                Legend(PhoneColors.Accent, "Ganancia")
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Legend(PhoneColors.BarSales, "Ventas")
+                    Legend(PhoneColors.Accent, "Ganancia")
+                    // La pérdida no se distingue solo por el color: su barra va hueca, con el borde rojo
+                    if (losses > 0) Legend(PhoneColors.Danger, "Pérdida", hollow = true)
+                }
             }
             if (max.signum() <= 0) {
                 Message("Sin ventas en el periodo")
@@ -413,9 +421,10 @@ private fun Chart(view: BusinessPanelView) {
                         val profitH = fraction(p.profit.abs(), max)
                         Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.BottomCenter) {
                             Box(Modifier.fillMaxWidth().fillMaxHeight(salesH).clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)).background(PhoneColors.BarSales))
+                            val barShape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
                             Box(
-                                Modifier.fillMaxWidth().fillMaxHeight(profitH).clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
-                                    .background(if (p.profit.signum() < 0) PhoneColors.Danger else PhoneColors.Accent),
+                                Modifier.fillMaxWidth().fillMaxHeight(profitH).clip(barShape)
+                                    .then(if (p.profit.signum() < 0) Modifier.background(PhoneColors.DangerSoft).border(1.5.dp, PhoneColors.Danger, barShape) else Modifier.background(PhoneColors.Accent)),
                             )
                         }
                     }
@@ -433,9 +442,10 @@ private fun Chart(view: BusinessPanelView) {
 private fun fraction(value: BigDecimal, max: BigDecimal): Float = (value.toFloat() / max.toFloat()).coerceIn(0f, 1f)
 
 @Composable
-private fun Legend(color: Color, label: String) {
+private fun Legend(color: Color, label: String, hollow: Boolean = false) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Box(Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(color))
+        val shape = RoundedCornerShape(2.dp)
+        Box(Modifier.size(10.dp).clip(shape).then(if (hollow) Modifier.background(PhoneColors.DangerSoft).border(1.5.dp, color, shape) else Modifier.background(color)))
         PText(label, size = 11.sp, color = PhoneColors.Soft)
     }
 }

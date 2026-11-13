@@ -35,7 +35,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
@@ -380,6 +379,6 @@ fun PhoneDialogs(workspace: PhoneWorkspace) {
                 .then(if (toast.warning) Modifier.border(1.dp, PhoneColors.NoteBorder, RoundedCornerShape(12.dp)) else Modifier)
                 .semantics { liveRegion = LiveRegionMode.Polite }
                 .clickable { workspace.toast = null }.testTag(PhoneTags.TOAST).padding(horizontal = 16.dp, vertical = 12.dp),
-        ) { PText(toast.text, size = 14.sp, color = if (toast.warning) PhoneColors.AmberDark else Color.White, lineHeight = 19.sp) }
+        ) { PText(toast.text, size = 14.sp, color = if (toast.warning) PhoneColors.AmberDark else PhoneColors.Inverse, lineHeight = 19.sp) }
     }
 }

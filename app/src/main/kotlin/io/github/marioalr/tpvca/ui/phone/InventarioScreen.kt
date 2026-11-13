@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -56,6 +57,8 @@ import java.time.temporal.ChronoUnit
 
 private enum class StockFilter(val label: String) { All("Todo"), Meds("Medicamentos"), Supplies("Insumos"), Notices("Con aviso") }
 
+@Composable
+@ReadOnlyComposable
 private fun pill(tone: StockTone): Pair<Color, Color> = when (tone) {
     StockTone.Ok -> PhoneColors.Success to PhoneColors.SuccessSoft
     StockTone.Low -> PhoneColors.AmberDark to PhoneColors.AmberSoft

@@ -24,6 +24,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberUpdatedState
@@ -52,40 +54,186 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.marioalr.tpvca.ui.theme.LocalTpvcColors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Los colores del diseño aprobado (`docs/diseno-celular/`). Solo tema claro en esta primera versión. */
+/**
+ * Los colores del diseño aprobado (`docs/diseno-celular/`), en claro (el diseño, tal cual) y en oscuro (K10, con los tonos oscuros de la PC: `ThemePalette` en modo
+ * oscuro). Cada par de texto y fondo que usan las pantallas cumple 4.5:1 en los dos (`PhonePaletteTest`).
+ */
+@Immutable
+data class PhonePalette(
+    /** El fondo de la pantalla. */
+    val page: Color,
+    /** Las tarjetas. */
+    val surface: Color,
+    /** El borde de las tarjetas. */
+    val border: Color,
+    /** El borde de un botón o una opción. */
+    val controlBorder: Color,
+    /** Las líneas finas y los fondos apagados (pestañas, «Solo consulta»). */
+    val hairline: Color,
+    /** El texto principal. */
+    val text: Color,
+    /** El texto secundario. */
+    val muted: Color,
+    /** El texto de los mensajes. */
+    val soft: Color,
+    /** El texto de una pregunta. */
+    val slate: Color,
+    /** El acento como texto, icono o borde (en oscuro, más claro para leerse). */
+    val accent: Color,
+    /** El acento de fondo, con [OnAccent] encima: los botones principales y lo elegido. */
+    val accentFill: Color,
+    /** El texto sobre [AccentFill]. */
+    val onAccent: Color,
+    /** El fondo suave del acento (iniciales, estado de una cita). */
+    val accentSoft: Color,
+    /** Las barras de ventas. */
+    val barSales: Color,
+    /** Lo que va bien, como texto. */
+    val success: Color,
+    /** El punto de «sincronizado». */
+    val successDot: Color,
+    /** El fondo de lo que va bien. */
+    val successSoft: Color,
+    /** Lo que falla o falta, como texto o icono. */
+    val danger: Color,
+    /** El fondo de una insignia de peligro. */
+    val dangerSoft: Color,
+    /** El fondo del aviso de alergias. */
+    val dangerPage: Color,
+    /** El borde del aviso de alergias. */
+    val dangerBorder: Color,
+    /** El texto del aviso de alergias. */
+    val dangerText: Color,
+    /** Lo que hay que vigilar, como texto o icono. */
+    val amber: Color,
+    /** El texto sobre [AmberSoft]. */
+    val amberDark: Color,
+    /** El fondo de lo que hay que vigilar. */
+    val amberSoft: Color,
+    /** El fondo de una nota (costo estimado, sin conexión, empalmes). */
+    val notePage: Color,
+    /** El borde de una nota. */
+    val noteBorder: Color,
+    /** El texto de una nota. */
+    val noteText: Color,
+    /** Lo que oscurece la pantalla detrás de un menú o un formulario. */
+    val scrim: Color,
+    /** El fondo de lo que no se puede usar todavía. */
+    val disabledFill: Color,
+    /** El texto sobre [Text] (una opción elegida de tipo, el aviso de abajo). */
+    val inverse: Color,
+) {
+    companion object {
+        val Light = PhonePalette(
+            page = Color(0xFFF8FAFC),
+            surface = Color(0xFFFFFFFF),
+            border = Color(0xFFE2E8F0),
+            controlBorder = Color(0xFFCBD5E1),
+            hairline = Color(0xFFF1F5F9),
+            text = Color(0xFF0F172A),
+            muted = Color(0xFF64748B),
+            soft = Color(0xFF475569),
+            slate = Color(0xFF334155),
+            accent = Color(0xFF0369A1),
+            accentFill = Color(0xFF0369A1),
+            onAccent = Color(0xFFFFFFFF),
+            accentSoft = Color(0xFFE0F2FE),
+            barSales = Color(0xFFBAE6FD),
+            success = Color(0xFF047857),
+            successDot = Color(0xFF059669),
+            successSoft = Color(0xFFD1FAE5),
+            danger = Color(0xFFB91C1C),
+            dangerSoft = Color(0xFFFEE2E2),
+            dangerPage = Color(0xFFFEF2F2),
+            dangerBorder = Color(0xFFFECACA),
+            dangerText = Color(0xFF7F1D1D),
+            amber = Color(0xFFB45309),
+            amberDark = Color(0xFF92400E),
+            amberSoft = Color(0xFFFEF3C7),
+            notePage = Color(0xFFFFFBEB),
+            noteBorder = Color(0xFFFDE68A),
+            noteText = Color(0xFF78350F),
+            scrim = Color(0x520F172A),
+            disabledFill = Color(0xFFCBD5E1),
+            inverse = Color(0xFFFFFFFF),
+        )
+        val Dark = PhonePalette(
+            page = Color(0xFF0F172A),
+            surface = Color(0xFF1E293B),
+            border = Color(0xFF334155),
+            controlBorder = Color(0xFF64748B),
+            hairline = Color(0xFF273449),
+            text = Color(0xFFF8FAFC),
+            muted = Color(0xFF94A3B8),
+            soft = Color(0xFFCBD5E1),
+            slate = Color(0xFFE2E8F0),
+            accent = Color(0xFF7DD3FC),
+            accentFill = Color(0xFF0369A1),
+            onAccent = Color(0xFFFFFFFF),
+            accentSoft = Color(0xFF0C4A6E),
+            barSales = Color(0xFF0284C7),
+            success = Color(0xFF6EE7B7),
+            successDot = Color(0xFF34D399),
+            successSoft = Color(0xFF14532D),
+            danger = Color(0xFFFCA5A5),
+            dangerSoft = Color(0xFF7F1D1D),
+            dangerPage = Color(0xFF450A0A),
+            dangerBorder = Color(0xFFDC2626),
+            dangerText = Color(0xFFFEE2E2),
+            amber = Color(0xFFFCD34D),
+            amberDark = Color(0xFFFDE68A),
+            amberSoft = Color(0xFF78350F),
+            notePage = Color(0xFF422006),
+            noteBorder = Color(0xFFB45309),
+            noteText = Color(0xFFFEF3C7),
+            scrim = Color(0x99000000),
+            disabledFill = Color(0xFF475569),
+            inverse = Color(0xFF0F172A),
+        )
+    }
+}
+
+/** Los colores del tema de ahora: el oscuro si el tema de la app lo es (sigue al sistema). Se leen dentro de un `@Composable`. */
 object PhoneColors {
-    val Page = Color(0xFFF8FAFC)
-    val Surface = Color(0xFFFFFFFF)
-    val Border = Color(0xFFE2E8F0)
-    val ControlBorder = Color(0xFFCBD5E1)
-    val Hairline = Color(0xFFF1F5F9)
-    val Text = Color(0xFF0F172A)
-    val Muted = Color(0xFF64748B)
-    val Soft = Color(0xFF475569)
-    val Slate = Color(0xFF334155)
-    val Accent = Color(0xFF0369A1)
-    val AccentSoft = Color(0xFFE0F2FE)
-    val BarSales = Color(0xFFBAE6FD)
-    val Success = Color(0xFF047857)
-    val SuccessDot = Color(0xFF059669)
-    val SuccessSoft = Color(0xFFD1FAE5)
-    val Danger = Color(0xFFB91C1C)
-    val DangerSoft = Color(0xFFFEE2E2)
-    val DangerPage = Color(0xFFFEF2F2)
-    val DangerBorder = Color(0xFFFECACA)
-    val DangerText = Color(0xFF7F1D1D)
-    val Amber = Color(0xFFB45309)
-    val AmberDark = Color(0xFF92400E)
-    val AmberSoft = Color(0xFFFEF3C7)
-    val NotePage = Color(0xFFFFFBEB)
-    val NoteBorder = Color(0xFFFDE68A)
-    val NoteText = Color(0xFF78350F)
-    val Scrim = Color(0x520F172A)
-    val DisabledFill = Color(0xFFCBD5E1)
+    val current: PhonePalette
+        @Composable @ReadOnlyComposable get() = if (LocalTpvcColors.current.isDark) PhonePalette.Dark else PhonePalette.Light
+
+    val Page: Color @Composable @ReadOnlyComposable get() = current.page
+    val Surface: Color @Composable @ReadOnlyComposable get() = current.surface
+    val Border: Color @Composable @ReadOnlyComposable get() = current.border
+    val ControlBorder: Color @Composable @ReadOnlyComposable get() = current.controlBorder
+    val Hairline: Color @Composable @ReadOnlyComposable get() = current.hairline
+    val Text: Color @Composable @ReadOnlyComposable get() = current.text
+    val Muted: Color @Composable @ReadOnlyComposable get() = current.muted
+    val Soft: Color @Composable @ReadOnlyComposable get() = current.soft
+    val Slate: Color @Composable @ReadOnlyComposable get() = current.slate
+    val Accent: Color @Composable @ReadOnlyComposable get() = current.accent
+    val AccentFill: Color @Composable @ReadOnlyComposable get() = current.accentFill
+    val OnAccent: Color @Composable @ReadOnlyComposable get() = current.onAccent
+    val AccentSoft: Color @Composable @ReadOnlyComposable get() = current.accentSoft
+    val BarSales: Color @Composable @ReadOnlyComposable get() = current.barSales
+    val Success: Color @Composable @ReadOnlyComposable get() = current.success
+    val SuccessDot: Color @Composable @ReadOnlyComposable get() = current.successDot
+    val SuccessSoft: Color @Composable @ReadOnlyComposable get() = current.successSoft
+    val Danger: Color @Composable @ReadOnlyComposable get() = current.danger
+    val DangerSoft: Color @Composable @ReadOnlyComposable get() = current.dangerSoft
+    val DangerPage: Color @Composable @ReadOnlyComposable get() = current.dangerPage
+    val DangerBorder: Color @Composable @ReadOnlyComposable get() = current.dangerBorder
+    val DangerText: Color @Composable @ReadOnlyComposable get() = current.dangerText
+    val Amber: Color @Composable @ReadOnlyComposable get() = current.amber
+    val AmberDark: Color @Composable @ReadOnlyComposable get() = current.amberDark
+    val AmberSoft: Color @Composable @ReadOnlyComposable get() = current.amberSoft
+    val NotePage: Color @Composable @ReadOnlyComposable get() = current.notePage
+    val NoteBorder: Color @Composable @ReadOnlyComposable get() = current.noteBorder
+    val NoteText: Color @Composable @ReadOnlyComposable get() = current.noteText
+    val Scrim: Color @Composable @ReadOnlyComposable get() = current.scrim
+    val DisabledFill: Color @Composable @ReadOnlyComposable get() = current.disabledFill
+    val Inverse: Color @Composable @ReadOnlyComposable get() = current.inverse
 }
 
 /** Los trazos de los iconos del diseño, tal cual (24 × 24, sin relleno). */
@@ -225,10 +373,14 @@ fun ReadOnlyPill(modifier: Modifier = Modifier) {
 /** Cómo se ve un botón de opción. */
 data class ChipLook(val height: Dp, val radius: Dp, val horizontal: Dp, val fontSize: TextUnit, val onFill: Color, val onText: Color, val onBorder: Color, val offFill: Color, val offText: Color, val offBorder: Color)
 
+/** Los botones de opción del diseño, con los colores del tema de ahora. */
 object ChipLooks {
-    val Period = ChipLook(36.dp, 18.dp, 12.dp, 13.sp, PhoneColors.Accent, Color.White, PhoneColors.Accent, PhoneColors.Surface, PhoneColors.Text, PhoneColors.ControlBorder)
-    val List = Period.copy(horizontal = 14.dp)
-    val Type = ChipLook(32.dp, 8.dp, 10.dp, 12.sp, PhoneColors.Text, Color.White, PhoneColors.Text, PhoneColors.Hairline, PhoneColors.Slate, PhoneColors.Border)
+    val Period: ChipLook
+        @Composable @ReadOnlyComposable get() = ChipLook(36.dp, 18.dp, 12.dp, 13.sp, PhoneColors.AccentFill, PhoneColors.OnAccent, PhoneColors.AccentFill, PhoneColors.Surface, PhoneColors.Text, PhoneColors.ControlBorder)
+    val List: ChipLook
+        @Composable @ReadOnlyComposable get() = Period.copy(horizontal = 14.dp)
+    val Type: ChipLook
+        @Composable @ReadOnlyComposable get() = ChipLook(32.dp, 8.dp, 10.dp, 12.sp, PhoneColors.Text, PhoneColors.Inverse, PhoneColors.Text, PhoneColors.Hairline, PhoneColors.Slate, PhoneColors.Border)
 }
 
 /** Una opción con su estado. Se ve del alto del diseño, pero el toque mide al menos 48 dp. */
@@ -282,14 +434,14 @@ fun PButton(label: String, modifier: Modifier = Modifier, filled: Boolean = fals
             (if (fill) Modifier.fillMaxWidth() else Modifier)
                 .heightIn(min = height)
                 .clip(RoundedCornerShape(radius))
-                .background(if (filled) PhoneColors.Accent else PhoneColors.Surface)
+                .background(if (filled) PhoneColors.AccentFill else PhoneColors.Surface)
                 .then(if (filled) Modifier else Modifier.border(BorderStroke(1.dp, PhoneColors.ControlBorder), RoundedCornerShape(radius)))
                 .padding(horizontal = 12.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
         ) {
             val ink = when {
-                filled -> Color.White
+                filled -> PhoneColors.OnAccent
                 enabled -> PhoneColors.Text
                 else -> PhoneColors.Muted
             }

@@ -66,6 +66,47 @@ class ThemePaletteTest {
         }
     }
 
+    /**
+     * K10: los pares de texto y fondo que usa la tablet (`ui/tablet`, `ui/agenda`) y las pantallas de vincular, más allá de los de la PC: los avisos con su texto y
+     * sus botones, las insignias de alergia, los botones y el texto secundario sobre cada fondo. 4.5:1 en claro y en oscuro (el tema del sistema).
+     */
+    @Test
+    fun losParesDeLaTabletSeLeenEnClaroYOscuro() {
+        val surfaces = listOf("ThemeBackground", "ThemeSurface", "ThemeCard", "ThemeSurfaceSubtle")
+        val pairs = buildList {
+            for (surface in surfaces) {
+                for (text in listOf("ThemeText", "ThemeTextSecondary", "ThemeAccentForeground", "ThemeSuccessText", "ThemeWarningText", "ThemeDangerText", "ThemeInfoText")) add(text to surface)
+            }
+            // Los avisos (`TNotice`) y las insignias: su texto (sus botones de texto llevan el mismo color del aviso)
+            for (kind in listOf("Success", "Warning", "Danger", "Info")) {
+                add("Theme${kind}Text" to "Theme${kind}Subtle")
+                add("ThemeText" to "Theme${kind}Subtle")
+            }
+            add("ThemeText" to "ThemeSelectionBackground")
+            // Botón principal, botón de peligro, insignia «Alergia» y el aviso breve
+            add("ThemeAccentText" to "ThemeAccentStrong")
+            add("ThemeAccentText" to "ThemeDanger")
+            add("ThemeToastText" to "ThemeToastBackground")
+        }
+        val failures = buildList {
+            for ((name, settings) in mapOf("claro" to TpvcThemes.claro, "oscuro" to TpvcThemes.oscuro)) {
+                val p = ThemePalette.build(settings)
+                for ((fg, bg) in pairs) {
+                    val ratio = contrast(p, fg, bg)
+                    if (ratio < 4.5) add("$name: $fg sobre $bg = ${"%.2f".format(ratio)}:1")
+                }
+                // Las gráficas y el foco: 3:1
+                for (series in listOf("ThemeChartWeight", "ThemeChartSystolic", "ThemeChartDiastolic", "ThemeChartGlucose", "ThemeFocus", "ThemeControlBorder")) {
+                    for (surface in listOf("ThemeSurface", "ThemeSurfaceSubtle")) {
+                        val ratio = contrast(p, series, surface)
+                        if (ratio < 3.0) add("$name: $series sobre $surface = ${"%.2f".format(ratio)}:1")
+                    }
+                }
+            }
+        }
+        assertTrue(failures.joinToString("\n"), failures.isEmpty())
+    }
+
     @Test
     fun elAmbarEsElAcentoDeLaPc() {
         assertEquals("#D97706", ThemePalette.accentPresets.single { it.name == "Ámbar" }.hex)

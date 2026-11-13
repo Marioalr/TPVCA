@@ -21,9 +21,8 @@ import io.github.marioalr.tpvca.ui.home.HomeLink
 import io.github.marioalr.tpvca.ui.home.HomeScreen
 import io.github.marioalr.tpvca.ui.phone.VincularScreen
 import io.github.marioalr.tpvca.ui.theme.TpvcTheme
-import io.github.marioalr.tpvca.ui.theme.TpvcThemes
 
-/** Qué pantalla toca. Las de vincular van siempre en tema claro; el inicio de K0 sigue como estaba. */
+/** Qué pantalla toca. Todas siguen el modo claro u oscuro del sistema (K10); los documentos (receta, ticket, PDF) siempre son claros. */
 @Composable
 fun AppRoot(
     state: LinkState?,
@@ -42,9 +41,9 @@ fun AppRoot(
     designedLinkScreen: Boolean = false,
 ) {
     when (gate) {
-        Gate.Loading -> Light { Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { Box(Modifier.fillMaxSize()) } }
-        Gate.NoSecureLock -> Light { NoSecureLockScreen(actions) }
-        Gate.Locked -> Light {
+        Gate.Loading -> Themed { Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { Box(Modifier.fillMaxSize()) } }
+        Gate.NoSecureLock -> Themed { NoSecureLockScreen(actions) }
+        Gate.Locked -> Themed {
             LaunchedEffect(Unit) { actions.unlock() }
             LockedScreen(actions::unlock)
         }
@@ -52,26 +51,27 @@ fun AppRoot(
             null -> Unit
             is LinkState.NotLinked -> NotLinked(state, deviceSecure, versionName, contractRevision, layout, actions, qrReader, designedLinkScreen)
             is LinkState.Linked -> if (phone != null && state.role == DeviceRole.AndroidMobileAdmin) {
-                Light { phone(state) }
+                Themed { phone(state) }
             } else if (tablet != null && state.role == DeviceRole.AndroidTablet) {
                 TpvcTheme { tablet(state) }
             } else TpvcTheme {
                 HomeScreen(versionName, contractRevision, layout, link = HomeLink.Linked(state.role, state.code, state.clinicName, state.notice, state.braked), onResumeBrake = actions::resumeBrake)
             }
-            is LinkState.WaitingApproval -> Light { WaitingScreen(state, actions) }
-            is LinkState.Downloading -> Light { DownloadingScreen(state, actions) }
-            is LinkState.NeedsToken -> Light { NeedsToken(state, deviceSecure, actions, qrReader) }
-            is LinkState.WrongRole -> Light { WrongRoleScreen(actions) }
-            is LinkState.CloudProblem -> Light { CloudProblemScreen(state, actions) }
-            is LinkState.Revoked -> Light { RevokedScreen(state, actions) }
-            is LinkState.CredentialLost -> Light { CredentialLostScreen(state, actions) }
-            LinkState.LocalError -> Light { LocalErrorScreen(actions) }
+            is LinkState.WaitingApproval -> Themed { WaitingScreen(state, actions) }
+            is LinkState.Downloading -> Themed { DownloadingScreen(state, actions) }
+            is LinkState.NeedsToken -> Themed { NeedsToken(state, deviceSecure, actions, qrReader) }
+            is LinkState.WrongRole -> Themed { WrongRoleScreen(actions) }
+            is LinkState.CloudProblem -> Themed { CloudProblemScreen(state, actions) }
+            is LinkState.Revoked -> Themed { RevokedScreen(state, actions) }
+            is LinkState.CredentialLost -> Themed { CredentialLostScreen(state, actions) }
+            LinkState.LocalError -> Themed { LocalErrorScreen(actions) }
         }
     }
 }
 
+/** El tema claro u oscuro, como el sistema. */
 @Composable
-private fun Light(content: @Composable () -> Unit) = TpvcTheme(TpvcThemes.claro, content)
+private fun Themed(content: @Composable () -> Unit) = TpvcTheme(content = content)
 
 private enum class LinkStep { Home, Form, Scan }
 
@@ -92,7 +92,7 @@ private fun NotLinked(
     var role by remember { mutableStateOf(defaultRole) }
     when (step) {
         LinkStep.Home -> if (designedLinkScreen && layout == HomeLayout.Narrow) {
-            Light {
+            Themed {
                 VincularScreen(
                     deviceSecure,
                     actions,
@@ -106,7 +106,7 @@ private fun NotLinked(
         } else TpvcTheme {
             HomeScreen(versionName, contractRevision, layout, onLink = { step = LinkStep.Form })
         }
-        LinkStep.Form -> Light {
+        LinkStep.Form -> Themed {
             LinkFormScreen(
                 state.problem,
                 deviceSecure,
@@ -119,7 +119,7 @@ private fun NotLinked(
                 onBack = { step = LinkStep.Home },
             )
         }
-        LinkStep.Scan -> Light {
+        LinkStep.Scan -> Themed {
             QrScanScreen(
                 qrReader,
                 onData = {

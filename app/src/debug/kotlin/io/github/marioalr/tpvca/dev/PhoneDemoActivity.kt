@@ -21,7 +21,6 @@ import io.github.marioalr.tpvca.ui.phone.PhoneEnv
 import io.github.marioalr.tpvca.ui.phone.PhoneStatus
 import io.github.marioalr.tpvca.ui.phone.VincularScreen
 import io.github.marioalr.tpvca.ui.theme.TpvcTheme
-import io.github.marioalr.tpvca.ui.theme.TpvcThemes
 import io.github.marioalr.tpvca.sync.engine.LocalSide
 import io.github.marioalr.tpvca.sync.engine.WriteEngine
 import io.github.marioalr.tpvca.sync.link.MemoryFolioNumbers
@@ -46,7 +45,8 @@ class PhoneDemoActivity : FragmentActivity() {
         val (env, workspace) = demo(this, mode)
         setContent {
             var status by remember { mutableStateOf(PhoneStatus(null, false, Instant.now().minusSeconds(120), false, "Consultorio de Prueba")) }
-            TpvcTheme(TpvcThemes.claro) {
+            // Claro u oscuro, como el sistema (K10)
+            TpvcTheme {
                 if (mode == "vincular") {
                     VincularScreen(true, NoLinkActions, {}, {})
                 } else {

@@ -45,8 +45,8 @@ fun VincularScreen(deviceSecure: Boolean, actions: LinkActions, onScan: () -> Un
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(PhoneColors.Accent), contentAlignment = Alignment.Center) {
-                    PText("TPVC", size = 15.sp, weight = FontWeight.Bold, color = Color.White, maxLines = 1)
+                Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(PhoneColors.AccentFill), contentAlignment = Alignment.Center) {
+                    PText("TPVC", size = 15.sp, weight = FontWeight.Bold, color = PhoneColors.OnAccent, maxLines = 1)
                 }
                 Heading("Vincular con la PC", Modifier.padding(top = 8.dp), size = 24.sp, weight = FontWeight.Bold)
                 PText("El celular usa los mismos datos del consultorio. La PC tiene que aprobarlo antes de que baje algo.", size = 14.sp, color = PhoneColors.Soft, lineHeight = 21.sp)
@@ -60,7 +60,9 @@ fun VincularScreen(deviceSecure: Boolean, actions: LinkActions, onScan: () -> Un
                     .fillMaxWidth()
                     .heightIn(min = 220.dp)
                     .clip(RoundedCornerShape(20.dp))
-                    .background(PhoneColors.Text)
+                    // El visor de la cámara: oscuro también en el tema claro, como en el diseño
+                    .background(PhonePalette.Light.text)
+                    .border(1.dp, PhoneColors.Border, RoundedCornerShape(20.dp))
                     .semantics(mergeDescendants = true) { role = Role.Button }
                     .clickable(enabled = deviceSecure, onClick = onScan)
                     .padding(16.dp)
@@ -69,7 +71,7 @@ fun VincularScreen(deviceSecure: Boolean, actions: LinkActions, onScan: () -> Un
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Box(Modifier.size(160.dp).border(3.dp, Color.White.copy(alpha = 0.9f), RoundedCornerShape(16.dp)))
-                    PText("Toque aquí y apunte la cámara al código de la PC", size = 13.sp, color = PhoneColors.ControlBorder, align = TextAlign.Center)
+                    PText("Toque aquí y apunte la cámara al código de la PC", size = 13.sp, color = PhonePalette.Light.controlBorder, align = TextAlign.Center)
                 }
             }
             PButton("Pegar la dirección y la clave", Modifier.fillMaxWidth(), height = 48.dp, radius = 12.dp, fill = true, onClick = onPaste)

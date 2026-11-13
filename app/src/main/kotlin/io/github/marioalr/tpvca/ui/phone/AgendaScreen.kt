@@ -36,7 +36,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -160,7 +159,7 @@ fun AgendaScreen(env: PhoneEnv, workspace: PhoneWorkspace, dataVersion: Long, na
                     .heightIn(min = 52.dp)
                     .shadow(8.dp, RoundedCornerShape(26.dp))
                     .clip(RoundedCornerShape(26.dp))
-                    .background(PhoneColors.Accent)
+                    .background(PhoneColors.AccentFill)
                     .semantics(mergeDescendants = true) { role = Role.Button }
                     .clickable { workspace.openSchedule(day) }
                     .testTag(PhoneTags.SCHEDULE)
@@ -168,8 +167,8 @@ fun AgendaScreen(env: PhoneEnv, workspace: PhoneWorkspace, dataVersion: Long, na
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Icon(PhoneIcons.Plus, null, Modifier.size(18.dp), tint = Color.White)
-                PText(PhoneText.SCHEDULE, size = 15.sp, weight = FontWeight.SemiBold, color = Color.White)
+                Icon(PhoneIcons.Plus, null, Modifier.size(18.dp), tint = PhoneColors.OnAccent)
+                PText(PhoneText.SCHEDULE, size = 15.sp, weight = FontWeight.SemiBold, color = PhoneColors.OnAccent)
             }
         }
         // Solo las de una cita que sigue en este día: si se fue (se canceló en otro equipo, cambió de día), se cierran
@@ -326,8 +325,8 @@ internal fun DayStrip(start: LocalDate, selected: LocalDate, enabled: Boolean = 
                         .weight(1f)
                         .heightIn(min = 58.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(if (on) PhoneColors.Accent else PhoneColors.Surface)
-                        .border(1.dp, if (on) PhoneColors.Accent else PhoneColors.Border, RoundedCornerShape(12.dp))
+                        .background(if (on) PhoneColors.AccentFill else PhoneColors.Surface)
+                        .border(1.dp, if (on) PhoneColors.AccentFill else PhoneColors.Border, RoundedCornerShape(12.dp))
                         .semantics(mergeDescendants = true) {
                             role = Role.Button
                             this.selected = on
@@ -337,7 +336,7 @@ internal fun DayStrip(start: LocalDate, selected: LocalDate, enabled: Boolean = 
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
                 ) {
-                    val color = if (on) Color.White else PhoneColors.Text
+                    val color = if (on) PhoneColors.OnAccent else PhoneColors.Text
                     PText(PhoneFormat.weekDay(date), size = 11.sp, weight = FontWeight.Medium, color = color, maxLines = 1)
                     PText(date.dayOfMonth.toString(), size = 17.sp, weight = FontWeight.Bold, color = color, maxLines = 1)
                 }

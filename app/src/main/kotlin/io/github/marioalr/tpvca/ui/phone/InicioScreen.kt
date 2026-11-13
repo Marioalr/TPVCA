@@ -354,7 +354,7 @@ private fun Fab(open: Boolean, modifier: Modifier, onClick: () -> Unit) {
             .size(60.dp)
             .shadow(8.dp, CircleShape)
             .clip(CircleShape)
-            .background(PhoneColors.Accent)
+            .background(PhoneColors.AccentFill)
             .semantics {
                 role = Role.Button
                 contentDescription = if (open) PhoneText.CLOSE_QUICK_ACTIONS else PhoneText.QUICK_ACTIONS
@@ -363,7 +363,7 @@ private fun Fab(open: Boolean, modifier: Modifier, onClick: () -> Unit) {
             .testTag(PhoneTags.FAB),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(if (open) PhoneIcons.Close else PhoneIcons.Plus, null, Modifier.size(if (open) 26.dp else 28.dp), tint = Color.White)
+        Icon(if (open) PhoneIcons.Close else PhoneIcons.Plus, null, Modifier.size(if (open) 26.dp else 28.dp), tint = PhoneColors.OnAccent)
     }
 }
 

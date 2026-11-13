@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Solo la ventana antes de Compose: el fondo claro de la PC (ThemeBackground). Los colores salen de ThemePalette. -->
-    <!-- AppCompat por BiometricPrompt: en Android 8 dibuja su diálogo de huella con AlertDialog de AppCompat y sin este tema se cierra. -->
-    <style name="Theme.TPVCA" parent="Theme.AppCompat.Light.NoActionBar">
+    <!-- Solo la ventana antes de Compose: el fondo de la PC (ThemeBackground), claro u oscuro como el sistema (values-night). Los colores salen de ThemePalette. -->
+    <!-- AppCompat por BiometricPrompt: en Android 8 dibuja su diálogo de huella con AlertDialog de AppCompat y sin este tema se cierra. DayNight: ese diálogo también sigue al sistema (K10). -->
+    <style name="Theme.TPVCA" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:windowBackground">@color/tpvc_background</item>
     </style>
 </resources>

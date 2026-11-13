@@ -104,14 +104,21 @@ class PrescriptionCorrection internal constructor(private val workspace: TabletW
     var saving by mutableStateOf(false)
         private set
 
+    /** La consulta que se está corrigiendo. */
+    var consultationSyncId by mutableStateOf<String?>(null)
+        private set
+
     private var searchJob: Job? = null
+    private var starting = false
 
     /** La consulta en curso de este paciente se corrige en la consulta, no aquí. */
     fun canEdit(patientSyncId: String): Boolean = !workspace.consultation.isConsultationFor(patientSyncId)
 
     /** Abre la corrección con la receta guardada en la consulta, tal cual (con sus `RowId` y lo que esta versión no conoce). */
     fun start(row: ConsultationRow, patientSyncId: String) {
-        if (!canEdit(patientSyncId) || saving) return
+        // Dos toques no abren dos veces: la segunda lectura reemplazaría lo que ya se empezó a corregir
+        if (!canEdit(patientSyncId) || saving || editing || starting) return
+        starting = true
         scope.launch {
             val rows = try {
                 withContext(io) { SheetRows.prescriptions(engine().consultationPrescriptions(row.syncId), patientSyncId) }
@@ -120,7 +127,12 @@ class PrescriptionCorrection internal constructor(private val workspace: TabletW
             } catch (e: Exception) {
                 workspace.info = workspace.problem(e)
                 return@launch
+            } finally {
+                starting = false
             }
+            // Se cerró la hoja, o se abrió otra consulta, mientras se leía
+            if (workspace.detail?.syncId != row.syncId) return@launch
+            consultationSyncId = row.syncId
             lines.clear()
             lines.addAll(rows.map(EditableLine::of))
             newMedicineText = ""
@@ -132,6 +144,7 @@ class PrescriptionCorrection internal constructor(private val workspace: TabletW
     fun cancel() {
         searchJob?.cancel()
         editing = false
+        consultationSyncId = null
         lines.clear()
         newMedicineText = ""
         suggestions = emptyList()

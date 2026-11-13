@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -207,8 +209,8 @@ class LabResultsEditor internal constructor(private val workspace: TabletWorkspa
         }
     }
 
-    /** "En este equipo", "En este equipo · se sube a la nube" o "En la nube · se baja al abrirlo" (`LabResultItem.StatusText`). */
-    fun statusText(lab: LabResultRow): String {
+    /** "En este equipo", "En este equipo · se sube a la nube" o "En la nube · se baja al abrirlo" (`LabResultItem.StatusText`). Mira los archivos: fuera del hilo principal ([statusTexts]). */
+    internal fun statusText(lab: LabResultRow): String {
         val store = env.labStore ?: return "En la nube · se baja al abrirlo"
         return when {
             store.isPending(lab.sha256) -> "En este equipo · se sube a la nube"
@@ -216,6 +218,9 @@ class LabResultsEditor internal constructor(private val workspace: TabletWorkspa
             else -> "En la nube · se baja al abrirlo"
         }
     }
+
+    /** El estado de cada resultado, por su `SyncId`, leído fuera del hilo principal. */
+    internal suspend fun statusTexts(labs: List<LabResultRow>): Map<String, String> = withContext(io) { labs.associate { it.syncId to statusText(it) } }
 
     companion object {
         private val DAY_MASK = DateTimeFormatter.ofPattern("dd/MM/yyyy")
@@ -247,13 +252,15 @@ internal fun LabResultsCard(workspace: TabletWorkspace, patientSyncId: String, l
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var opening by remember { mutableStateOf<String?>(null) }
+    // Los archivos se miran fuera del hilo principal; otra vez cuando la ficha se vuelve a leer (subido, bajado) o al terminar de abrir uno
+    val statuses by produceState(emptyMap<String, String>(), labs, opening) { value = editor.statusTexts(labs) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> editor.pick(context, patientSyncId, uris, labs) }
     TCard(Modifier.fillMaxWidth().semantics { contentDescription = "Resultados de laboratorio" }) {
         Row(Modifier.padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             TLabel("RESULTADOS DE LABORATORIO", Modifier.weight(1f))
             TButton("Agregar", { picker.launch(arrayOf(LabFileRules.PDF_MIME_TYPE, "image/*")) }, icon = TIcons.Plus, enabled = editor.canAdd, description = "Agregar un resultado: el PDF del laboratorio o fotos de las hojas", tag = LabResultTags.ADD)
         }
-        for (lab in labs) {
+        for (lab in labs) key(lab.syncId) {
             Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Column(Modifier.widthIn(min = 52.dp)) {
                     TText(lab.resultDate?.format(DAY).orEmpty(), weight = FontWeight.SemiBold)
@@ -263,7 +270,7 @@ internal fun LabResultsCard(workspace: TabletWorkspace, patientSyncId: String, l
                     TText(lab.title, weight = FontWeight.SemiBold)
                     TCaption(LabResultsEditor.detail(lab))
                     if (lab.notes.isNotBlank()) TText(lab.notes, size = TType.caption)
-                    TCaption(editor.statusText(lab), Modifier.testTag(LabResultTags.status(lab.syncId)))
+                    TCaption(statuses[lab.syncId].orEmpty(), Modifier.testTag(LabResultTags.status(lab.syncId)))
                     // Abajo: en los 400 dp de la columna, al lado dejarían al título una sílaba por renglón
                     FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         TButton(

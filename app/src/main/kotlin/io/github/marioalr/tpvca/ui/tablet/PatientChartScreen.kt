@@ -491,7 +491,8 @@ fun ConsultationDetailSheet(workspace: TabletWorkspace, row: ConsultationRow) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val page = workspace.page as? TabletPage.Chart
-    val correction = remember(row.syncId) { PrescriptionCorrection(workspace, scope) }
+    val correction = workspace.correction
+    val editing = correction.editing && correction.consultationSyncId == row.syncId
     val canCorrect = page != null && correction.canEdit(page.syncId)
     Dialog({ workspace.detail = null }, DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
@@ -519,7 +520,7 @@ fun ConsultationDetailSheet(workspace: TabletWorkspace, row: ConsultationRow) {
                     TDivider()
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         THeading("Receta", Modifier.weight(1f))
-                        if (!correction.editing) {
+                        if (!editing) {
                             TButton("Corregir receta", { if (page != null) correction.start(row, page.syncId) }, icon = TIcons.Edit, enabled = canCorrect, description = "Corregir la receta de esta consulta (no cambia lo que se cobró)", tag = SheetTags.CORRECT)
                         }
                         if (c.prescriptions.isNotEmpty() && page != null) {
@@ -528,7 +529,7 @@ fun ConsultationDetailSheet(workspace: TabletWorkspace, row: ConsultationRow) {
                             }, icon = TIcons.File)
                         }
                     }
-                    if (correction.editing && page != null) {
+                    if (editing && page != null) {
                         PrescriptionCorrectionEditor(correction, row, page.syncId)
                     } else {
                         for (item in c.prescriptions) {

@@ -30,7 +30,11 @@ import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.android.apps.common.testing.accessibility.framework.AccessibilityCheckResult.AccessibilityCheckResultType
+import com.google.android.apps.common.testing.accessibility.framework.AccessibilityViewCheckResult
+import com.google.android.apps.common.testing.accessibility.framework.checks.TouchTargetSizeCheck
 import com.google.android.apps.common.testing.accessibility.framework.integrations.espresso.AccessibilityValidator
+import org.hamcrest.Description
+import org.hamcrest.TypeSafeMatcher
 import io.github.marioalr.tpvca.data.RoomSyncStore
 import io.github.marioalr.tpvca.data.SqlCipher
 import io.github.marioalr.tpvca.data.TpvcaDatabase
@@ -139,10 +143,23 @@ class AccessibilityDeviceTest {
     }
 
     /** Revisa la pantalla de ahora: lo de ATF y que todo lo que se toca diga qué es. No se detiene: lo junta para decirlo al final. */
-    private fun check(screen: String) {
+    private fun check(screen: String, besidePanel: String? = null) {
         compose.waitForIdle()
         // Solo aquí: con las revisiones siempre puestas, cada toque las corre y se detiene en la primera
-        compose.enableAccessibilityChecks(AccessibilityValidator().setRunChecksFromRootView(true).setCaptureScreenshots(true).setThrowExceptionFor(AccessibilityCheckResultType.ERROR))
+        val validator = AccessibilityValidator().setRunChecksFromRootView(true).setCaptureScreenshots(true).setThrowExceptionFor(AccessibilityCheckResultType.ERROR)
+        // Un panel al lado (la agenda de la tablet) tapa a medias lo de atrás, que sigue a la mano: ATF mide de los botones tapados solo la orilla que se ve. Eso no cuenta
+        besidePanel?.let { tag ->
+            val left = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInWindow.left
+            validator.setSuppressingResultMatcher(object : TypeSafeMatcher<AccessibilityViewCheckResult>() {
+                override fun matchesSafely(result: AccessibilityViewCheckResult): Boolean =
+                    result.sourceCheckClass == TouchTargetSizeCheck::class.java && (result.element?.boundsInScreen?.right ?: 0) > left
+
+                override fun describeTo(description: Description) {
+                    description.appendText("lo tapado por el panel $tag")
+                }
+            })
+        }
+        compose.enableAccessibilityChecks(validator)
         val roots = compose.onAllNodes(isRoot())
         for (i in 0 until roots.fetchSemanticsNodes().size) {
             try {
@@ -285,7 +302,7 @@ class AccessibilityDeviceTest {
         check("Pacientes")
         compose.runOnUiThread { workspace.openAgenda() }
         waitTag(TabletTags.AGENDA)
-        check("Agenda")
+        check("Agenda", besidePanel = TabletTags.AGENDA)
         compose.runOnUiThread { workspace.closeAgenda() }
         compose.runOnUiThread { workspace.openChart(ana) }
         waitTag(TabletTags.CHART_PRIMARY)

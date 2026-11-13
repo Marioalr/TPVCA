@@ -212,7 +212,9 @@ private fun SlotRow(workspace: TabletWorkspace, slot: AgendaSlot, rows: List<App
             } else {
                 Box(
                     Modifier.fillMaxWidth().heightIn(min = TOUCH_MIN).clip(RoundedCornerShape(8.dp)).background(colors.surface).border(1.dp, colors["ThemeBorder"], RoundedCornerShape(8.dp))
-                        .clickable(role = Role.Button) { openSlot(workspace, date, time) }.testTag(TabletTags.slot(time)).padding(horizontal = 12.dp, vertical = 6.dp),
+                        // TalkBack dice la hora: «+ Agendar aquí» se oía igual en cada hueco
+                        .clickable(role = Role.Button, onClickLabel = "Agendar") { openSlot(workspace, date, time) }.semantics { contentDescription = "Libre a las $time. Agendar aquí" }
+                        .testTag(TabletTags.slot(time)).padding(horizontal = 12.dp, vertical = 6.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) { TText(slot.subtitle, color = colors.textSecondary) }
             }
@@ -254,7 +256,7 @@ private fun AppointmentCard(workspace: TabletWorkspace, a: Appointment, overlapT
             if (overlapText.isNotEmpty()) TBadge(overlapText, colors.warningSubtle, colors.warningText, Modifier.padding(top = 4.dp))
         }
         Box {
-            TIconButton(TIcons.More, "Acciones de la cita", { menu = true }, tint = text, tag = TabletTags.appointmentMenu(a.time.orEmpty()))
+            TIconButton(TIcons.More, "Acciones de la cita de ${a.patientName}, ${a.time.orEmpty()}", { menu = true }, tint = text, tag = TabletTags.appointmentMenu(a.time.orEmpty()))
             DropdownMenu(menu, { menu = false }) {
                 DropdownMenuItem({ TText("Atender ahora") }, onClick = { menu = false; workspace.consultation.attend(a, row?.patientSyncId) })
                 DropdownMenuItem({ TText("Marcar como confirmada") }, onClick = { menu = false; workspace.confirmAppointment(a) })

@@ -618,7 +618,7 @@ fun CorteScreen(env: PhoneEnv, dataVersion: Long, nav: PhoneNav) {
                         AmountRow("Otros", PhoneFormat.money(cut.totalOtherPaymentMethods))
                         Box(Modifier.fillMaxWidth().height(1.dp).background(PhoneColors.Hairline))
                         AmountRow("Servicios (${cut.totalServicesCount})", PhoneFormat.money(cut.totalServicesAmount))
-                        AmountRow("Productos (${cut.totalProductsUnitsSold} piezas)", PhoneFormat.money(cut.totalProductsAmount))
+                        AmountRow("Productos (${cut.totalProductsUnitsSold} ${if (cut.totalProductsUnitsSold == 1) "pieza" else "piezas"})", PhoneFormat.money(cut.totalProductsAmount))
                         Box(Modifier.fillMaxWidth().height(1.dp).background(PhoneColors.Hairline))
                         AmountRow("Tickets activos", cut.activeTicketsCount.toString())
                         AmountRow("Cancelados (${cut.cancelledTicketsCount})", PhoneFormat.money(cut.totalCancelledAmount))

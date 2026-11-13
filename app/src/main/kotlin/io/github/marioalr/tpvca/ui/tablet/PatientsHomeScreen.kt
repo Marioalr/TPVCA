@@ -93,7 +93,7 @@ private fun PatientsTopBar(workspace: TabletWorkspace) {
             ) { THeading("Pacientes", size = TType.heading) }
         }
         val agenda: @Composable () -> Unit = {
-            TButton("Agenda", { if (workspace.agendaOpen) workspace.closeAgenda() else workspace.openAgenda() }, icon = TIcons.Calendar, tag = TabletTags.AGENDA_BUTTON)
+            TButton("Agenda", { if (workspace.agendaOpen) workspace.closeAgenda() else workspace.openAgenda() }, icon = TIcons.Calendar, tag = TabletTags.AGENDA_BUTTON, description = if (workspace.agendaOpen) "Cerrar la agenda" else "Abrir la agenda")
         }
         val new: @Composable () -> Unit = { TButton("Nuevo paciente", { workspace.newPatient() }, kind = TButtonKind.Primary, icon = TIcons.Plus, tag = TabletTags.NEW_PATIENT) }
         if (wide) {
@@ -188,7 +188,7 @@ private fun TodayCard(workspace: TabletWorkspace, chrome: TabletChrome, modifier
     TCard(modifier, padding = 0.dp) {
         Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             THeading(AgendaTexts.todayTitle(today), Modifier.weight(1f))
-            TButton("Agenda", { workspace.openAgenda() }, kind = TButtonKind.Ghost)
+            TButton("Agenda", { workspace.openAgenda() }, kind = TButtonKind.Ghost, description = "Ver las citas de hoy en la agenda")
         }
         TDivider()
         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {

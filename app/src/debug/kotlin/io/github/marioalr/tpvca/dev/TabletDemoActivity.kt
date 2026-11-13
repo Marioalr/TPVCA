@@ -75,7 +75,7 @@ fun tabletDemoExtras(store: SyncStore) {
     )
 }
 
-/** La tablet con datos inventados y sin nube, sobre SQLCipher. Solo en depuración. Girar no la vuelve a armar; que Android cierre el proceso sí. `--es pagina hub|pacientes|ficha|alta|editar|agenda|sync|consulta|enviada`. */
+/** La tablet con datos inventados y sin nube, sobre SQLCipher. Solo en depuración. Girar no la vuelve a armar; que Android cierre el proceso sí. `--es pagina hub|pacientes|ficha|alta|editar|agenda|sync|consulta|enviada|venta`. */
 class TabletDemoActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -95,6 +95,7 @@ class TabletDemoActivity : FragmentActivity() {
             "consulta" -> demo.workspace.consultation.chartPrimaryAction(demo.ana())
             // La consulta de Ana enviada a la PC (K8): para ver la solo lectura sin otro equipo
             "enviada" -> demo.sendAnaToPc()
+            "venta" -> demo.workspace.enterPointOfSale()
         }
         setContent {
             TpvcTheme(TpvcThemes.claro) {

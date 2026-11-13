@@ -538,7 +538,7 @@ internal fun ReceiptSheet(workspace: TabletWorkspace, shown: PosReceipt) {
 }
 
 @Composable
-private fun Paper(text: String, bold: Boolean = false, muted: Boolean = false, size: androidx.compose.ui.unit.TextUnit = TType.detail, modifier: Modifier = Modifier) {
+private fun Paper(text: String, modifier: Modifier = Modifier, bold: Boolean = false, muted: Boolean = false, size: androidx.compose.ui.unit.TextUnit = TType.detail) {
     val colors = LocalTpvcColors.current
     androidx.compose.material3.Text(
         text,

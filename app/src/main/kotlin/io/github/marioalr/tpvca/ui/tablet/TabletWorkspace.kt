@@ -136,7 +136,15 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
     /** Lo escrito aquí: las pantallas vuelven a leer sin esperar a la sincronización. */
     var localVersion by mutableLongStateOf(0L)
         private set
-    var detail by mutableStateOf<ConsultationRow?>(null)
+    private var detailShown by mutableStateOf<ConsultationRow?>(null)
+
+    /** La hoja de una consulta. Otra consulta, o cerrarla, deja la «Corregir receta» que estuviera abierta: solo es de esa hoja, como en la PC. */
+    var detail: ConsultationRow?
+        get() = detailShown
+        set(value) {
+            if (value?.syncId != detailShown?.syncId) correction.cancel()
+            detailShown = value
+        }
     var preview by mutableStateOf<PreviewDoc?>(null)
 
     val appointment = AppointmentFormState()
@@ -154,6 +162,9 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
     init {
         env.handoff?.let { link -> scope.launch { link.checks.collect { check -> if (check != null) handoff.onCheck(check) } } }
     }
+
+    /** «Corregir receta» de la hoja de una consulta (K7): aquí y no en la pantalla, para que lo corregido sobreviva a girar la tablet. Como `labResults.form`, no a que Android cierre el proceso. */
+    val correction = PrescriptionCorrection(this, scope, io)
 
     class Toast(val text: String, val warning: Boolean, val action: ToastAction? = null)
 
@@ -299,6 +310,8 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         when {
             detail != null -> detail = null
             handoff.sheetOpen -> handoff.closeSendSheet()
+            // La alerta de alergia se contesta primero, y Atrás la contesta «No recetarlo»: nunca se cierra la hoja dejándola sin respuesta
+            consultation.prescription.allergyAlert != null -> consultation.prescription.cancelAllergy()
             agendaOpen -> closeAgenda()
             consultation.checkout != null -> consultation.closeCheckout()
             consultation.sheet != null -> consultation.closeSheet()

@@ -112,6 +112,8 @@ class SuppliesEditor internal constructor(private val consultation: Consultation
         if (marked != null) add(marked) else if (searchText.isNotBlank()) add(null)
     }
 
+    private var adding = false
+
     /**
      * Agrega el insumo (`SelectAndAddSupplyProductAsync`) y lo carga a la cuenta con todas sus piezas; el renglón recuerda la consulta y las piezas que cargó. Sin producto ni precio
      * se registra sin cargarse y se dice. Se carga aunque no alcancen las existencias: solo se avisa.
@@ -121,27 +123,34 @@ class SuppliesEditor internal constructor(private val consultation: Consultation
         val typedInstructions = instructions
         val quantity = quantityText.toIntOrNull()?.takeIf { it > 0 } ?: 1
         if (product == null && typed.isEmpty()) return
+        // Dos toques en «Agregar» (o en el catálogo) agregan uno y cobran una vez, como `adding` en la receta
+        if (adding) return
+        adding = true
         scope.launch {
-            val result = consultation.apply {
-                val known = product?.let { p -> catalog.account.availableProduct(p.syncId) ?: p }
-                val name = if (known != null) SheetRows.supplyDisplayName(known) else typed
-                val row = SupplyRow(
-                    supplyName = name,
-                    instructions = if (typedInstructions.isBlank()) DEFAULT_INSTRUCTIONS else typedInstructions.trim(),
-                    quantity = quantity,
-                    unitPrice = known?.price ?: FREE_SUPPLY_PRICE,
-                )
-                val chargedProduct = known ?: catalog.account.findProduct(name)
-                val charge = account.chargeSupply(row, chargedProduct)
-                if (charge.charged) {
-                    putSupply(charge.row.copy(chargedConsultationFolio = draft.folio, chargedUnits = quantity))
-                    chargedProduct?.let { account.stockWarning(it) }?.let { toast(it, warning = true) }
-                } else {
-                    putSupply(row)
-                    charge.message?.let { toast(it, warning = true) }
+            try {
+                val result = consultation.apply("agregar-insumo") {
+                    val known = product?.let { p -> catalog.account.availableProduct(p.syncId) ?: p }
+                    val name = if (known != null) SheetRows.supplyDisplayName(known) else typed
+                    val row = SupplyRow(
+                        supplyName = name,
+                        instructions = if (typedInstructions.isBlank()) DEFAULT_INSTRUCTIONS else typedInstructions.trim(),
+                        quantity = quantity,
+                        unitPrice = known?.price ?: FREE_SUPPLY_PRICE,
+                    )
+                    val chargedProduct = known ?: catalog.account.findProduct(name)
+                    val charge = account.chargeSupply(row, chargedProduct)
+                    if (charge.charged) {
+                        putSupply(charge.row.copy(chargedConsultationFolio = draft.folio, chargedUnits = quantity))
+                        chargedProduct?.let { account.stockWarning(it) }?.let { toast(it, warning = true) }
+                    } else {
+                        putSupply(row)
+                        charge.message?.let { toast(it, warning = true) }
+                    }
                 }
+                if (result == ApplyResult.Applied) reset()
+            } finally {
+                adding = false
             }
-            if (result == ApplyResult.Applied) reset()
         }
     }
 

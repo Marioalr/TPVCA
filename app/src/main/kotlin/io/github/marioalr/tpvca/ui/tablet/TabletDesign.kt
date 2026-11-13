@@ -388,19 +388,19 @@ private fun FieldBox(empty: Boolean, placeholder: String, border: Color, readOnl
 /** La lista de opciones de la PC (`ChipList`) con el alto de un dedo. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun TChips(options: List<String>, selected: String?, onSelect: (String) -> Unit, modifier: Modifier = Modifier, tagPrefix: String? = null) {
+fun TChips(options: List<String>, selected: String?, onSelect: (String) -> Unit, modifier: Modifier = Modifier, tagPrefix: String? = null, enabled: Boolean = true) {
     FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        for (option in options) TChip(option, option == selected, { onSelect(option) }, tag = tagPrefix?.let { "$it-$option" })
+        for (option in options) TChip(option, option == selected, { onSelect(option) }, tag = tagPrefix?.let { "$it-$option" }, enabled = enabled)
     }
 }
 
 @Composable
-fun TChip(text: String, selected: Boolean, onClick: () -> Unit, tag: String? = null, icon: ImageVector? = null) {
+fun TChip(text: String, selected: Boolean, onClick: () -> Unit, tag: String? = null, icon: ImageVector? = null, enabled: Boolean = true) {
     val colors = LocalTpvcColors.current
     val shape = RoundedCornerShape(8.dp)
     var m = Modifier.heightIn(min = TOUCH_MIN).clip(shape).background(if (selected) colors["ThemeSelectionBackground"] else colors.surface)
         .border(1.dp, if (selected) colors["ThemeFocus"] else colors["ThemeControlBorder"], shape)
-        .clickable(role = Role.RadioButton, onClick = onClick)
+        .clickable(enabled = enabled, role = Role.RadioButton, onClick = onClick)
         .semantics { this.selected = selected }
     if (tag != null) m = m.testTag(tag)
     Row(m.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

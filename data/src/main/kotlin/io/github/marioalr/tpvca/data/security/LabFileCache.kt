@@ -58,6 +58,10 @@ class LabFileCache(private val dir: File, private val wrapper: SecretWrapper, pr
     @Synchronized
     fun pending(): List<String> = pendingDir.listFiles().orEmpty().filter { it.isFile && !it.name.endsWith(".tmp") }.sortedByDescending { it.lastModified() }.map { it.name }
 
+    /** Está aquí, pendiente o en la caché: solo mira si el archivo existe. No lo descifra, no lo marca como usado ni borra nada (para el estado de la lista; abrirlo sí lo revisa). */
+    @Synchronized
+    fun contains(sha256: String): Boolean = File(pendingDir, name(sha256)).isFile || File(dir, name(sha256)).isFile
+
     @Synchronized
     fun isPending(sha256: String): Boolean = File(pendingDir, name(sha256)).isFile
 

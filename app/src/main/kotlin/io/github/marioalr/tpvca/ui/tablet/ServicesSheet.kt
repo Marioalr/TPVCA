@@ -131,6 +131,8 @@ class ServicesEditor internal constructor(private val consultation: Consultation
         if (marked != null) add(marked) else if (searchText.isNotBlank()) add(null)
     }
 
+    private var adding = false
+
     /**
      * Agrega el servicio (`SelectAndAddServiceModalSuggestionAsync`) y lo carga a la cuenta con sus insumos por defecto por cada unidad; el renglón recuerda la consulta, las unidades y
      * la lista que cargó. Un cargo libre sin precio se registra sin cargarse y se dice. Los insumos se cargan aunque no alcancen las existencias: solo se avisa.
@@ -140,31 +142,38 @@ class ServicesEditor internal constructor(private val consultation: Consultation
         val typedNotes = notes
         val quantity = quantityText.toIntOrNull()?.takeIf { it > 0 } ?: 1
         if (service == null && typed.isEmpty()) return
+        // Dos toques en «Agregar» (o en el catálogo) agregan uno y cobran una vez, como `adding` en la receta
+        if (adding) return
+        adding = true
         closeSupplyEditor()
         scope.launch {
-            val result = consultation.apply {
-                val known = service?.let { s -> catalog.account.services.firstOrNull { it.syncId.isNotEmpty() && it.syncId.equals(s.syncId, ignoreCase = true) } ?: s }
-                    ?: catalog.account.services.firstOrNull { it.name.equals(typed, ignoreCase = true) }
-                val row = ServiceRow(
-                    serviceSyncId = known?.syncId?.takeIf { it.isNotEmpty() },
-                    serviceCode = known?.code ?: FREE_SERVICE_CODE,
-                    serviceName = known?.name ?: typed,
-                    category = known?.category ?: FREE_SERVICE_CATEGORY,
-                    notes = if (typedNotes.isBlank()) DEFAULT_NOTES else typedNotes.trim(),
-                    price = known?.price ?: FREE_SERVICE_PRICE,
-                    quantity = quantity,
-                )
-                val charge = account.chargeService(row)
-                if (charge.charged) {
-                    val charged = charge.row.copy(chargedConsultationFolio = draft.folio, chargedUnits = quantity)
-                    putService(charged)
-                    account.stockWarning(charged.supplies.orEmpty().mapNotNull { account.serviceSupplyLine(it).syncId })?.let { toast(it, warning = true) }
-                } else {
-                    putService(row)
-                    charge.message?.let { toast(it, warning = true) }
+            try {
+                val result = consultation.apply("agregar-servicio") {
+                    val known = service?.let { s -> catalog.account.services.firstOrNull { it.syncId.isNotEmpty() && it.syncId.equals(s.syncId, ignoreCase = true) } ?: s }
+                        ?: catalog.account.services.firstOrNull { it.name.equals(typed, ignoreCase = true) }
+                    val row = ServiceRow(
+                        serviceSyncId = known?.syncId?.takeIf { it.isNotEmpty() },
+                        serviceCode = known?.code ?: FREE_SERVICE_CODE,
+                        serviceName = known?.name ?: typed,
+                        category = known?.category ?: FREE_SERVICE_CATEGORY,
+                        notes = if (typedNotes.isBlank()) DEFAULT_NOTES else typedNotes.trim(),
+                        price = known?.price ?: FREE_SERVICE_PRICE,
+                        quantity = quantity,
+                    )
+                    val charge = account.chargeService(row)
+                    if (charge.charged) {
+                        val charged = charge.row.copy(chargedConsultationFolio = draft.folio, chargedUnits = quantity)
+                        putService(charged)
+                        account.stockWarning(charged.supplies.orEmpty().mapNotNull { account.serviceSupplyLine(it).syncId })?.let { toast(it, warning = true) }
+                    } else {
+                        putService(row)
+                        charge.message?.let { toast(it, warning = true) }
+                    }
                 }
+                if (result == ApplyResult.Applied) reset()
+            } finally {
+                adding = false
             }
-            if (result == ApplyResult.Applied) reset()
         }
     }
 

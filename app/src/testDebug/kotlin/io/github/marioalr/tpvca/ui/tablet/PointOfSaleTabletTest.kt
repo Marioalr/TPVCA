@@ -348,7 +348,7 @@ class PointOfSaleTabletTest {
 
         compose.onNodeWithTag(TabletTags.POS_CANCEL).performClick()
         waitTag(TabletTags.POS_CANCEL_CONFIRM)
-        compose.onNodeWithTag(TabletTags.POS_CANCEL_CONFIRM).performClick()
+        compose.onNodeWithTag(TabletTags.POS_CANCEL_CONFIRM).performScrollTo().performClick()
         waitFor { sales().first { it["SyncId"] == offline }["IsCancelled"] == 1L }
         assertEquals("El del mismo folio no se toca", 0L, sales().first { it["SyncId"] == twin }["IsCancelled"])
         waitText("cancelado: la mercancía volvió al inventario")
@@ -362,7 +362,7 @@ class PointOfSaleTabletTest {
         waitFor { workspace.pos.tickets.isNotEmpty() }
         compose.onNodeWithTag(TabletTags.posTicket(half)).performClick()
         compose.onNodeWithTag(TabletTags.POS_CANCEL).performClick()
-        compose.onNodeWithTag(TabletTags.POS_CANCEL_CONFIRM).performClick()
+        compose.onNodeWithTag(TabletTags.POS_CANCEL_CONFIRM).performScrollTo().performClick()
         waitTag(TabletTags.POS_TICKET_STATUS)
         waitText("Sincronice primero")
         assertEquals(0L, sales().first { it["SyncId"] == half }["IsCancelled"])

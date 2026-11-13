@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -350,15 +351,19 @@ private fun TicketDetail(pos: PosController, modifier: Modifier) {
                 }
             }
             if (t.items.isEmpty()) TCaption("Este equipo todavía no tiene los renglones de este ticket.")
+            // Dentro de lo que se desplaza: con la letra grande o la tablet en vertical, la confirmación nunca queda fuera de la hoja
+            if (confirming != null) {
+                val requester = androidx.compose.runtime.remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+                androidx.compose.runtime.LaunchedEffect(confirming.syncId) { requester.bringIntoView() }
+                Box(Modifier.padding(top = 12.dp).bringIntoViewRequester(requester)) { CancelConfirm(pos, confirming) }
+            }
         }
         Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TText("Total", Modifier.weight(1f), size = TType.section, weight = FontWeight.SemiBold)
                 TText(MexicanText.currency(t.total), size = TType.title, weight = FontWeight.Bold, mono = true)
             }
-            if (confirming != null) {
-                CancelConfirm(pos, confirming)
-            } else {
+            if (confirming == null) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (!t.cancelled) TButton("Cancelar y devolver al inventario", { pos.requestCancel(t) }, Modifier.weight(1f), kind = TButtonKind.DangerGhost, tag = TabletTags.POS_CANCEL)
                     else Box(Modifier.weight(1f))

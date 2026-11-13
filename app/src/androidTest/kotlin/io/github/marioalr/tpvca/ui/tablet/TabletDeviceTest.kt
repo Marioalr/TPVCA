@@ -175,8 +175,13 @@ class TabletDeviceTest {
         compose.onNodeWithTag(TabletTags.posTicket(sale["SyncId"] as String)).performClick()
         compose.onNodeWithTag(TabletTags.POS_CANCEL).performClick()
         waitTag(TabletTags.POS_CANCEL_CONFIRM)
-        compose.onNodeWithTag(TabletTags.POS_CANCEL_CONFIRM).performClick()
-        waitFor { store.select("Sales", listOf("SyncId", "IsCancelled")).first { it["SyncId"] == sale["SyncId"] }["IsCancelled"] == 1L }
+        compose.onNodeWithTag(TabletTags.POS_CANCEL_CONFIRM).performScrollTo().performClick()
+        try {
+            waitFor { store.select("Sales", listOf("SyncId", "IsCancelled")).first { it["SyncId"] == sale["SyncId"] }["IsCancelled"] == 1L }
+        } catch (e: Throwable) {
+            val pos = workspace.pos
+            throw AssertionError("No se canceló: estado=${pos.ticketStatus} confirmar=${pos.cancelTarget?.folio} cancelando=${pos.cancelling} elegido=${pos.selectedTicket?.folio} aviso=${workspace.toast?.text} info=${workspace.info}", e)
+        }
         assertEquals(-3L, tempra())
     }
 

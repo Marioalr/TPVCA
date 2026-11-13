@@ -64,14 +64,28 @@ object LabResultTags {
     fun status(syncId: String) = "tablet-lab-resultado-estado-$syncId"
 }
 
-/** Lo que el médico captura de un resultado nuevo (`LabResultDraft`); el archivo va aparte. */
-class LabResultForm internal constructor(internal val patientSyncId: String, internal val files: List<LabFileInput>, title: String, laboratory: String, dateText: String) {
+/**
+ * Lo que el médico captura de un resultado nuevo (`LabResultDraft`); el archivo va aparte. **Es de su paciente:** lleva su `SyncId` y su nombre, solo se dibuja en su ficha y se guarda
+ * a nombre de él, nunca del que esté abierto (en la PC, `ResetForPatientChange` lo cierra al cambiar de paciente).
+ */
+class LabResultForm internal constructor(
+    internal val patientSyncId: String,
+    val patientName: String,
+    internal val files: List<LabFileInput>,
+    title: String,
+    private val initialLaboratory: String,
+    private val initialDate: String,
+) {
     var title by mutableStateOf(title)
-    var laboratory by mutableStateOf(laboratory)
-    var dateText by mutableStateOf(dateText)
+    var laboratory by mutableStateOf(initialLaboratory)
+    var dateText by mutableStateOf(initialDate)
     var notes by mutableStateOf("")
     var error by mutableStateOf<String?>(null)
     var busy by mutableStateOf(false)
+
+    /** Ya se escribió algo: cerrarlo con Atrás lo perdería. */
+    val typed: Boolean
+        get() = title.isNotBlank() || notes.isNotBlank() || laboratory.trim() != initialLaboratory.trim() || dateText != initialDate
 
     val filesText: String
         get() = if (files.size == 1) files[0].fileName else "${files.size} archivos: ${files.take(3).joinToString(", ") { it.fileName }}${if (files.size > 3) "…" else ""}"
@@ -88,19 +102,29 @@ class LabResultsEditor internal constructor(private val workspace: TabletWorkspa
 
     private val env get() = workspace.env
 
+    /** Cambia con cada borrado de todo: lo que se estaba leyendo antes ya no abre nada. */
+    private var generation = 0
+
     /** Se puede agregar: hay dónde guardar el archivo (la caché cifrada). */
     val canAdd: Boolean get() = env.labStore != null
 
-    /** Lo que eligió el médico, ya leído: abre el formulario con la fecha de hoy y el último laboratorio del paciente. */
-    fun startAdd(patientSyncId: String, files: List<LabFileInput>, labs: List<LabResultRow>) {
-        if (!canAdd || files.isEmpty()) return
+    /** El formulario, solo si es de este paciente: el de otro nunca se dibuja en su ficha. */
+    fun formFor(patientSyncId: String): LabResultForm? = form?.takeIf { it.patientSyncId == patientSyncId }
+
+    /**
+     * Lo que eligió el médico, ya leído: abre el formulario con la fecha de hoy y el último laboratorio del paciente. Solo si su ficha sigue a la vista: un selector que tardó y regresa
+     * cuando ya está otro paciente (o nadie) no abre nada.
+     */
+    fun startAdd(patientSyncId: String, patientName: String, files: List<LabFileInput>, labs: List<LabResultRow>) {
+        if (!canAdd || files.isEmpty() || workspace.page != TabletPage.Chart(patientSyncId)) return
         val laboratory = labs.map { it.laboratory }.firstOrNull { it.isNotBlank() }.orEmpty()
-        form = LabResultForm(patientSyncId, files, "", laboratory, workspace.today().format(DAY_MASK))
+        form = LabResultForm(patientSyncId, patientName, files, "", laboratory, workspace.today().format(DAY_MASK))
     }
 
-    /** Los archivos que eligió el médico con el selector de Android: se leen fuera del hilo principal y luego abre el formulario. */
-    fun pick(context: Context, patientSyncId: String, uris: List<Uri>, labs: List<LabResultRow>) {
+    /** Los archivos que eligió el médico con el selector de Android: se leen fuera del hilo principal y luego abre el formulario, si sigue en la ficha de ese paciente ([startAdd]). */
+    fun pick(context: Context, patientSyncId: String, patientName: String, uris: List<Uri>, labs: List<LabResultRow>) {
         if (!canAdd || uris.isEmpty()) return
+        val started = generation
         scope.launch {
             val files = withContext(io) {
                 uris.mapNotNull { uri ->
@@ -110,11 +134,13 @@ class LabResultsEditor internal constructor(private val workspace: TabletWorkspa
                     }.getOrNull()
                 }
             }
+            // Se borró todo, o ya no está su ficha, mientras se leía: no se abre ni se avisa nada
+            if (started != generation || workspace.page != TabletPage.Chart(patientSyncId)) return@launch
             if (files.size != uris.size) {
                 workspace.info = "No se pudo leer el archivo. Intente elegirlo de nuevo."
                 return@launch
             }
-            startAdd(patientSyncId, files, labs)
+            startAdd(patientSyncId, patientName, files, labs)
         }
     }
 
@@ -129,6 +155,31 @@ class LabResultsEditor internal constructor(private val workspace: TabletWorkspa
 
     fun cancel() {
         if (form?.busy == true) return
+        form = null
+    }
+
+    /** La flecha de atrás: cierra el formulario, y si ya se escribió algo, primero pregunta (como «Salir del alta» de la PC). Mientras guarda no se cierra. */
+    fun back() {
+        val f = form ?: return
+        if (f.busy) return
+        if (!f.typed) {
+            form = null
+            return
+        }
+        scope.launch {
+            if (workspace.ask("Salir del resultado", "¿Salir sin guardar el resultado de laboratorio?\n\nLo capturado se perderá.") && form === f && !f.busy) form = null
+        }
+    }
+
+    /** Se fue de la ficha de su paciente: el formulario no lo sigue a otra (`ResetForPatientChange`). Un guardado que ya empezó termina, a nombre de su paciente. */
+    internal fun leftChart(page: TabletPage) {
+        val f = form ?: return
+        if (page != TabletPage.Chart(f.patientSyncId)) form = null
+    }
+
+    /** El borrado de todo: ni el formulario ni lo que se estaba leyendo sobreviven. */
+    internal fun clearMemory() {
+        generation++
         form = null
     }
 
@@ -154,26 +205,30 @@ class LabResultsEditor internal constructor(private val workspace: TabletWorkspa
                     val prepared = LabFileImporter.prepare(f.files)
                     val engine = env.writes() ?: throw WriteRefused(WriteRefused.Reason.NOT_APPROVED, AgendaController.NOT_READY)
                     engine.checkWritable()
-                    val sha = store.save(store.ticket(), prepared.content)
-                    engine.create(
-                        "LabResults",
-                        mapOf(
-                            "PatientRecordSyncId" to f.patientSyncId,
-                            "Title" to f.title.trim(),
-                            "Laboratory" to f.laboratory.trim(),
-                            "ResultDate" to ProtocolDate.format(date.atStartOfDay()),
-                            "Notes" to f.notes.trim(),
-                            "MimeType" to prepared.mimeType,
-                            "FileName" to prepared.fileName.substringAfterLast('/'),
-                            "PageCount" to prepared.pageCount.toLong(),
-                            "SizeBytes" to prepared.content.size.toLong(),
-                            "ContentSha256" to sha,
-                            "CreatedAt" to ProtocolDate.format(Clinic.localNow(env.phone.now())),
-                        ),
-                    )
+                    // Su paciente, no el que esté abierto: y solo si sigue en la base y activo (otro equipo pudo darlo de baja o unirlo a otro)
+                    env.phone.reader.activePatient(f.patientSyncId) ?: throw PatientGone()
+                    // El archivo y su fila, apartados juntos: la subida no lo toma por huérfano mientras la fila se escribe
+                    store.save(store.ticket(), prepared.content) { sha ->
+                        engine.create(
+                            "LabResults",
+                            mapOf(
+                                "PatientRecordSyncId" to f.patientSyncId,
+                                "Title" to f.title.trim(),
+                                "Laboratory" to f.laboratory.trim(),
+                                "ResultDate" to ProtocolDate.format(date.atStartOfDay()),
+                                "Notes" to f.notes.trim(),
+                                "MimeType" to prepared.mimeType,
+                                "FileName" to prepared.fileName.substringAfterLast('/'),
+                                "PageCount" to prepared.pageCount.toLong(),
+                                "SizeBytes" to prepared.content.size.toLong(),
+                                "ContentSha256" to sha,
+                                "CreatedAt" to ProtocolDate.format(Clinic.localNow(env.phone.now())),
+                            ),
+                        )
+                    }
                     prepared.warning
                 }
-                form = null
+                if (form === f) form = null
                 env.noteLocalWrite()
                 env.uploadLabFiles()
                 workspace.changed()
@@ -182,6 +237,8 @@ class LabResultsEditor internal constructor(private val workspace: TabletWorkspa
                 throw e
             } catch (e: LabFileException) {
                 f.error = e.message
+            } catch (_: PatientGone) {
+                f.error = "No se pudo agregar el resultado: el expediente de ${f.patientName} ya no existe o se dio de baja."
             } catch (e: Exception) {
                 f.error = "No se pudo agregar el resultado: ${workspace.problem(e)}"
             } finally {
@@ -222,6 +279,8 @@ class LabResultsEditor internal constructor(private val workspace: TabletWorkspa
     /** El estado de cada resultado, por su `SyncId`, leído fuera del hilo principal. */
     internal suspend fun statusTexts(labs: List<LabResultRow>): Map<String, String> = withContext(io) { labs.associate { it.syncId to statusText(it) } }
 
+    private class PatientGone : Exception()
+
     companion object {
         private val DAY_MASK = DateTimeFormatter.ofPattern("dd/MM/yyyy")
 
@@ -247,14 +306,14 @@ private val YEAR = DateTimeFormatter.ofPattern("yyyy", Clinic.LOCALE)
 /** La tarjeta de resultados de la ficha: la lista con «Abrir» y «Quitar», y «Agregar» con el selector de Android (PDF o fotos). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun LabResultsCard(workspace: TabletWorkspace, patientSyncId: String, labs: List<LabResultRow>) {
+internal fun LabResultsCard(workspace: TabletWorkspace, patientSyncId: String, patientName: String, labs: List<LabResultRow>) {
     val editor = workspace.labResults
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var opening by remember { mutableStateOf<String?>(null) }
     // Los archivos se miran fuera del hilo principal; otra vez cuando la ficha se vuelve a leer (subido, bajado) o al terminar de abrir uno
     val statuses by produceState(emptyMap<String, String>(), labs, opening) { value = editor.statusTexts(labs) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> editor.pick(context, patientSyncId, uris, labs) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> editor.pick(context, patientSyncId, patientName, uris, labs) }
     TCard(Modifier.fillMaxWidth().semantics { contentDescription = "Resultados de laboratorio" }) {
         Row(Modifier.padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             TLabel("RESULTADOS DE LABORATORIO", Modifier.weight(1f))
@@ -296,13 +355,13 @@ internal fun LabResultsCard(workspace: TabletWorkspace, patientSyncId: String, l
     }
 }
 
-/** El formulario de un resultado nuevo, encima de la ficha: qué estudio es, de qué laboratorio, de qué fecha y notas. Lo de en medio se desplaza y los botones siempre se ven. */
+/** El formulario de un resultado nuevo, encima de la ficha de su paciente (con su nombre): qué estudio es, de qué laboratorio, de qué fecha y notas. Lo de en medio se desplaza y los botones siempre se ven. */
 @Composable
 internal fun LabResultFormDialog(editor: LabResultsEditor, form: LabResultForm) {
     val colors = LocalTpvcColors.current
     SheetCard(
         title = "Agregar resultado",
-        subtitle = form.filesText,
+        subtitle = "${form.patientName} · ${form.filesText}",
         tag = LabResultTags.FORM,
         onClose = editor::cancel,
         maxWidth = 560.dp,

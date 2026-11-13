@@ -31,6 +31,9 @@ class LabFileUploaderTest {
     /** Los archivos pendientes en memoria, como la caché cifrada de la tablet. */
     private class Files(vararg files: ByteArray) : LabUploadFiles {
         val pending = LinkedHashMap<String, ByteArray>().apply { for (f in files) put(LabFileRules.sha256(f), f) }
+
+        /** Cuándo se guardó cada uno; sin decir, hace mucho. */
+        val since = HashMap<String, Instant>()
         val settled = ArrayList<String>()
         var damaged = setOf<String>()
         var alive = true
@@ -42,6 +45,8 @@ class LabFileUploaderTest {
         override fun hasPending() = pending.isNotEmpty()
 
         override fun pending(ticket: Long) = pending.keys.toList()
+
+        override fun pendingSince(ticket: Long, sha256: String): Instant? = if (sha256 in pending) since[sha256] ?: Instant.parse("2026-11-01T00:00:00Z") else null
 
         override fun read(ticket: Long, sha256: String): ByteArray? = if (sha256 in damaged) null else pending[sha256]
 
@@ -228,6 +233,45 @@ class LabFileUploaderTest {
         assertEquals(0, report.uploaded)
         assertTrue(cloud.requests.isEmpty())
         assertEquals(listOf(LabFileRules.sha256(orphan)), files.settled)
+    }
+
+    /**
+     * Revisión de K7: la tablet guarda el archivo antes que su fila. Una vuelta que cae justo entre los dos ve un pendiente sin fila: no es huérfano todavía, se queda pendiente, y
+     * en cuanto la fila existe sube. Solo pasado el margen sin fila se suelta.
+     */
+    @Test
+    fun unPendienteRecienGuardadoSinFilaEsperaASuFilaYLuegoSube() {
+        val file = content(800, seed = 9)
+        val sha = LabFileRules.sha256(file)
+        val files = Files(file)
+        files.since[sha] = clock.instant().minusSeconds(5)
+        val cloud = Cloud()
+        val store = InMemorySyncStore()
+        // 1. Archivo guardado, fila todavía no: la vuelta no lo toca
+        val between = uploader(cloud, store, files).run()
+        assertEquals(0, between.uploaded)
+        assertTrue("Sigue pendiente", files.pending.containsKey(sha))
+        assertTrue(files.settled.isEmpty())
+        assertTrue(cloud.requests.isEmpty())
+        // 2. Se escribe la fila: la siguiente vuelta lo sube
+        store.put("LabResults", "r0", "ContentSha256" to sha, "MimeType" to "application/pdf", "ResultDate" to "2026-11-08", "CreatedAt" to "2026-11-08T14:59:55", "PatientRecordSyncId" to "p1", "Title" to "BH")
+        val after = uploader(cloud, store, files).run()
+        assertEquals(1, after.uploaded)
+        assertArrayEquals(file, cloud.stored(sha))
+        assertTrue(cloud.blobs.getValue(sha).completed != null)
+    }
+
+    @Test
+    fun unPendienteSinFilaSeSueltaSoloPasadoElMargen() {
+        val file = content(700, seed = 4)
+        val sha = LabFileRules.sha256(file)
+        val files = Files(file)
+        files.since[sha] = clock.instant().minus(LabFileUploader.ORPHAN_MARGIN).plusSeconds(1)
+        uploader(Cloud(), InMemorySyncStore(), files).run()
+        assertTrue("Un segundo antes del margen sigue pendiente", files.pending.containsKey(sha))
+        files.since[sha] = clock.instant().minus(LabFileUploader.ORPHAN_MARGIN)
+        uploader(Cloud(), InMemorySyncStore(), files).run()
+        assertEquals(listOf(sha), files.settled)
     }
 
     @Test

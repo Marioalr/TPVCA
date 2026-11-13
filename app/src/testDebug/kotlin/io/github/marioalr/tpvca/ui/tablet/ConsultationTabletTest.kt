@@ -1909,6 +1909,34 @@ class ConsultationTabletTest {
         assertTrue(saved.contains("Hemoglobina glucosilada") && saved.contains("\"Area\":\"Otros\"") && saved.contains("En ayunas"))
     }
 
+    /** Revisión de K7: los avisos de un paso se ven todos, como en la PC, también cuando el paso no cambió nada («ya no está en el inventario»). */
+    @Test
+    fun losAvisosDeUnPasoSeVenTodosAunqueNoCambieNada() {
+        startAna()
+        var result: ApplyResult? = null
+        scope.launch { result = workspace.consultation.apply { toast("'Gasas' ya no está en el inventario: no se pueden cargar más piezas.", warning = true) } }
+        waitFor { result != null }
+        assertEquals(ApplyResult.NoChange, result)
+        assertEquals("'Gasas' ya no está en el inventario: no se pueden cargar más piezas.", workspace.toast?.text)
+        assertTrue(workspace.toast!!.warning)
+        // Dos en un paso que sí se escribió: los dos, uno por renglón
+        workspace.toast = null
+        result = null
+        scope.launch {
+            result = workspace.consultation.apply {
+                val charged = account.chargeSupply(SupplyRow(supplyName = "Tempra 500 mg tabletas", quantity = 1))
+                assertTrue(charged.charged)
+                putSupply(charged.row)
+                toast("Quedan 2 piezas de Tempra", warning = true)
+                toast("Insumo agregado")
+            }
+        }
+        waitFor { result != null }
+        assertEquals(ApplyResult.Applied, result)
+        assertEquals("Quedan 2 piezas de Tempra\nInsumo agregado", workspace.toast?.text)
+        assertTrue(workspace.toast!!.warning)
+    }
+
     // ------------------------------------------------------------------ resultados de laboratorio (K7, parte 3)
 
     private val samplePdf = ("%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n3 0 obj << /Type /Page /Parent 2 0 R >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n").toByteArray()
@@ -1922,7 +1950,7 @@ class ConsultationTabletTest {
         waitTag(TabletTags.CHART_PRIMARY)
         val before = labRows().size
         compose.onNodeWithTag(LabResultTags.ADD).performScrollTo().assertIsEnabled()
-        workspace.labResults.startAdd(ana, listOf(LabFileInput("bh.pdf", samplePdf)), emptyList())
+        workspace.labResults.startAdd(ana, "Ana", listOf(LabFileInput("bh.pdf", samplePdf)), emptyList())
         waitTag(LabResultTags.FORM)
         waitText("bh.pdf")
         // Sin estudio no se guarda
@@ -1983,7 +2011,7 @@ class ConsultationTabletTest {
         workspace.openChart(ana)
         show()
         waitTag(TabletTags.CHART_PRIMARY)
-        workspace.labResults.startAdd(ana, listOf(LabFileInput("a.pdf", samplePdf), LabFileInput("b.pdf", samplePdf)), emptyList())
+        workspace.labResults.startAdd(ana, "Ana", listOf(LabFileInput("a.pdf", samplePdf), LabFileInput("b.pdf", samplePdf)), emptyList())
         waitTag(LabResultTags.FORM)
         waitText("2 archivos: a.pdf, b.pdf")
         compose.onNodeWithTag(LabResultTags.TITLE).performTextReplacement("Algo")
@@ -1994,6 +2022,178 @@ class ConsultationTabletTest {
         waitFor { workspace.labResults.form?.busy == false }
         compose.onNodeWithTag(LabResultTags.CANCEL).assertIsEnabled().performClick()
         waitFor { workspace.labResults.form == null }
+    }
+
+    /** Revisión de K7: el resultado a medias es de su paciente. Atrás, irse de la ficha o un borrado lo cierran, y nunca aparece (ni se guarda) en la ficha de otro. */
+    @Test
+    fun elResultadoAMedioNuncaPasaALaFichaDeOtroPaciente() {
+        workspace.openChart(ana)
+        show()
+        waitTag(TabletTags.CHART_PRIMARY)
+        // Sin escribir nada, Atrás lo cierra y se queda en la ficha
+        workspace.labResults.startAdd(ana, "Ana", listOf(LabFileInput("bh.pdf", samplePdf)), emptyList())
+        waitTag(LabResultTags.FORM)
+        waitText("Ana · bh.pdf")
+        assertTrue(workspace.back())
+        waitFor { workspace.labResults.form == null }
+        assertEquals(TabletPage.Chart(ana), workspace.page)
+        // Con algo escrito pregunta; «No» lo deja como estaba
+        workspace.labResults.startAdd(ana, "Ana", listOf(LabFileInput("bh.pdf", samplePdf)), emptyList())
+        waitTag(LabResultTags.FORM)
+        compose.onNodeWithTag(LabResultTags.TITLE).performTextReplacement("Biometría hemática")
+        assertTrue(workspace.back())
+        waitFor { workspace.confirm != null }
+        assertEquals("Salir del resultado", workspace.confirm!!.title)
+        assertEquals("¿Salir sin guardar el resultado de laboratorio?\n\nLo capturado se perderá.", workspace.confirm!!.message)
+        workspace.answer(false)
+        compose.waitForIdle()
+        assertEquals("Biometría hemática", workspace.labResults.form?.title)
+        assertEquals(TabletPage.Chart(ana), workspace.page)
+        workspace.back()
+        waitFor { workspace.confirm != null }
+        workspace.answer(true)
+        waitFor { workspace.labResults.form == null }
+        assertEquals(TabletPage.Chart(ana), workspace.page)
+        // Irse de la ficha con el formulario abierto (la búsqueda, Sincronización) lo cierra
+        workspace.openChart(ana)
+        waitTag(TabletTags.CHART_PRIMARY)
+        workspace.labResults.startAdd(ana, "Ana", listOf(LabFileInput("bh.pdf", samplePdf)), emptyList())
+        waitTag(LabResultTags.FORM)
+        workspace.goSync()
+        compose.waitForIdle()
+        assertNull(workspace.labResults.form)
+        // Y uno que se abre para otra ficha que la que está a la vista no se abre
+        workspace.openChart(juan)
+        waitTag(TabletTags.CHART_PRIMARY)
+        workspace.labResults.startAdd(ana, "Ana", listOf(LabFileInput("bh.pdf", samplePdf)), emptyList())
+        compose.waitForIdle()
+        assertNull(workspace.labResults.form)
+        // El borrado de todo también
+        workspace.openChart(ana)
+        waitTag(TabletTags.CHART_PRIMARY)
+        workspace.labResults.startAdd(ana, "Ana", listOf(LabFileInput("bh.pdf", samplePdf)), emptyList())
+        waitTag(LabResultTags.FORM)
+        workspace.clearMemory()
+        assertNull(workspace.labResults.form)
+    }
+
+    /** El caso de la revisión de K7: el resultado de Ana a medio capturar, Atrás, y la ficha de Juan. «Guardar» ahí no escribe nada a nombre de Ana, y el formulario no aparece. */
+    @Test
+    fun atrasYLaFichaDeOtroPacienteNoGuardaElResultadoDelAnterior() {
+        workspace.openChart(ana)
+        show()
+        waitTag(TabletTags.CHART_PRIMARY)
+        val before = store.select("LabResults", listOf("SyncId")).size
+        workspace.labResults.startAdd(ana, "Ana", listOf(LabFileInput("bh.pdf", samplePdf)), emptyList())
+        waitTag(LabResultTags.FORM)
+        compose.onNodeWithTag(LabResultTags.TITLE).performTextReplacement("Biometría hemática")
+        workspace.back()
+        compose.waitForIdle()
+        workspace.confirm?.let { workspace.answer(true) }
+        compose.waitForIdle()
+        workspace.back()
+        workspace.openChart(juan)
+        waitTag(TabletTags.CHART_PRIMARY)
+        workspace.labResults.save()
+        Thread.sleep(300)
+        compose.waitForIdle()
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        compose.waitForIdle()
+        assertEquals("Nada a nombre de Ana", before, store.select("LabResults", listOf("SyncId")).size)
+        assertNull(workspace.labResults.form)
+        assertTrue(compose.onAllNodesWithTag(LabResultTags.FORM).fetchSemanticsNodes().isEmpty())
+    }
+
+    /** El selector de Android regresa tarde: si ya está la ficha de otro, no abre nada encima de ella. Si sigue la suya, sí. */
+    @Test
+    fun loQueEligioElSelectorYaNoAbreNadaSiCambioLaFicha() {
+        val file = File(context.cacheDir, "bh-${System.nanoTime()}.pdf").apply { writeBytes(samplePdf) }
+        workspace.openChart(ana)
+        show()
+        waitTag(TabletTags.CHART_PRIMARY)
+        workspace.labResults.pick(context, ana, "Ana", listOf(android.net.Uri.fromFile(file)), emptyList())
+        // Se lee fuera del hilo principal: mientras, el médico abre la ficha de Juan
+        workspace.openChart(juan)
+        waitTag(TabletTags.CHART_PRIMARY)
+        Thread.sleep(300)
+        compose.waitForIdle()
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        compose.waitForIdle()
+        assertNull(workspace.labResults.form)
+        assertNull(workspace.info)
+        assertTrue(compose.onAllNodesWithTag(LabResultTags.FORM).fetchSemanticsNodes().isEmpty())
+        // Mismo archivo, sin cambiar de ficha: abre el de Ana con su nombre
+        workspace.openChart(ana)
+        waitTag(TabletTags.CHART_PRIMARY)
+        workspace.labResults.pick(context, ana, "Ana", listOf(android.net.Uri.fromFile(file)), emptyList())
+        waitTag(LabResultTags.FORM)
+        assertEquals(ana, workspace.labResults.form?.patientSyncId)
+        // Un borrado mientras se lee tampoco deja nada
+        workspace.labResults.cancel()
+        workspace.labResults.pick(context, ana, "Ana", listOf(android.net.Uri.fromFile(file)), emptyList())
+        workspace.clearMemory()
+        workspace.openChart(ana)
+        Thread.sleep(300)
+        compose.waitForIdle()
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        compose.waitForIdle()
+        assertNull(workspace.labResults.form)
+    }
+
+    /** Guardar vuelve a mirar al paciente: dado de baja (aquí o en otro equipo) mientras el formulario estaba abierto, no se le agrega nada. */
+    @Test
+    fun guardarUnResultadoDeUnPacienteDadoDeBajaNoEscribeNada() {
+        workspace.openChart(ana)
+        show()
+        waitTag(TabletTags.CHART_PRIMARY)
+        val before = labRows().size
+        workspace.labResults.startAdd(ana, "Ana", listOf(LabFileInput("bh.pdf", samplePdf)), emptyList())
+        waitTag(LabResultTags.FORM)
+        compose.onNodeWithTag(LabResultTags.TITLE).performTextReplacement("Biometría hemática")
+        deactivate(ana)
+        compose.onNodeWithTag(LabResultTags.SAVE).performClick()
+        waitTag(LabResultTags.ERROR)
+        waitText("ya no existe o se dio de baja")
+        assertEquals(before, labRows().size)
+        assertTrue("Ni el archivo", labCache.pending().isEmpty())
+    }
+
+    /** La hoja de una consulta es de su ficha: irse a otra página la cierra (con su «Corregir receta»). */
+    @Test
+    fun laHojaDeUnaConsultaSeCierraAlIrseDeSuFicha() {
+        workspace.openChart(ana)
+        show()
+        waitTag(TabletTags.CHART_PRIMARY)
+        val row = workspace.env.phone.reader.consultations(ana).first()
+        workspace.detail = row
+        waitTag(TabletTags.DETAIL)
+        workspace.openChart(ana)
+        assertNotNull("La misma ficha no la cierra", workspace.detail)
+        workspace.openChart(juan)
+        assertNull(workspace.detail)
+        compose.waitForIdle()
+        assertTrue(compose.onAllNodesWithTag(TabletTags.DETAIL).fetchSemanticsNodes().isEmpty())
+    }
+
+    /** «Agendar» desde una ficha pone a su paciente solo en el formulario que se abrió para él: si mientras se leía se abrió otro hueco, ese se queda sin paciente. */
+    @Test
+    fun elPacienteDeUnaFichaNoLlegaAlFormularioDeOtroHueco() {
+        workspace.openChart(ana)
+        show()
+        workspace.openAgenda()
+        workspace.appointment.open(workspace.today().plusDays(1), "11:00", null)
+        workspace.preselectPatient(ana)
+        // Antes de que termine de leer: se cierra y se abre otro hueco sin paciente
+        workspace.appointment.close()
+        workspace.appointment.open(workspace.today().plusDays(1), "12:00", null)
+        Thread.sleep(300)
+        compose.waitForIdle()
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        compose.waitForIdle()
+        assertNull(workspace.appointment.patient)
+        // El que sí se abrió para ella, sí
+        workspace.preselectPatient(ana)
+        waitFor { workspace.appointment.patient?.syncId == ana }
     }
 
     @Test

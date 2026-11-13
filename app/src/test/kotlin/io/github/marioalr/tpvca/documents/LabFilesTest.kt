@@ -69,6 +69,38 @@ class LabFilesTest {
         override fun snapshot(before: List<Statement>, statements: List<Statement>): Snapshot = error("No se usa")
     }
 
+    /**
+     * Revisión de K7: el archivo de un resultado que se está agregando se guarda antes que su fila. Si la subida pasa justo entre los dos (aunque el archivo parezca viejo: el
+     * mismo archivo ya estaba pendiente), no lo suelta a la caché, donde el LRU lo tiraría sin haberlo subido. Con la fila escrita (o fallida), el apartado se suelta.
+     */
+    @Test
+    fun laSubidaNoSueltaElArchivoDeUnResultadoQueSeEstaAgregando() {
+        val cache = LabFileCache(dir, Plain())
+        val store = LabFileStore(cache, gate)
+        val ticket = store.ticket()
+        val written = store.save(ticket, content) { savedSha ->
+            assertEquals(sha, savedSha)
+            assertTrue(cache.isPending(sha))
+            File(dir, "pendientes/$sha").setLastModified(System.currentTimeMillis() - 3_600_000)
+            // La vuelta de la subida, en medio: todavía ninguna fila lo nombra
+            store.settleOrphan(ticket, sha) { true }
+            assertTrue("Apartado: sigue pendiente", cache.isPending(sha))
+            "fila"
+        }
+        assertEquals("fila", written)
+        assertTrue(cache.isPending(sha))
+        // Ya sin apartar, un huérfano de verdad sí se suelta
+        store.settleOrphan(ticket, sha) { true }
+        assertFalse(cache.isPending(sha))
+        // Si la fila falla, el apartado también se suelta
+        val other = ByteArray(500) { (it * 3).toByte() }
+        val otherSha = LabFileRules.sha256(other)
+        runCatching { store.save(ticket, other) { error("Falló la base") } }
+        assertTrue(cache.isPending(otherSha))
+        store.settleOrphan(ticket, otherSha) { true }
+        assertFalse(cache.isPending(otherSha))
+    }
+
     @Test
     fun unShaQueNoLoEsDaUnMensaje() {
         val cloud = Cloud()

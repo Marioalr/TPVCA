@@ -111,12 +111,17 @@ class FormSession(
 class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, private val io: CoroutineDispatcher = Dispatchers.IO) {
     private var currentPage by mutableStateOf<TabletPage>(TabletPage.Hub)
 
-    /** Al entrar a Pacientes (desde el inicio o Sincronización), lo pospuesto con «Más tarde» se vuelve a ofrecer (`OnEnterPatientsSectionForHandoff`); ir entre el inicio y la ficha no cuenta. */
+    /**
+     * La página. Al entrar a Pacientes (desde el inicio o Sincronización), lo pospuesto con «Más tarde» se vuelve a ofrecer (`OnEnterPatientsSectionForHandoff`); ir entre el inicio y la ficha no cuenta.
+     * Lo que se abrió encima de una ficha es de esa ficha: al irse de ella se cierran la hoja de la consulta (con su «Corregir receta») y el formulario de un resultado, para que nunca queden encima de otro paciente.
+     */
     var page: TabletPage
         get() = currentPage
         private set(value) {
             val entering = !isPatientsSection(currentPage) && isPatientsSection(value)
+            if (value != currentPage) detail = null
             currentPage = value
+            labResults.leftChart(value)
             if (entering) handoff.onEnterPatients()
         }
 
@@ -307,14 +312,17 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
 
     /** La flecha de atrás de Android: lo más de encima primero. `false` si ya no hay a dónde regresar. */
     fun back(): Boolean {
+        val onConsultation = page == TabletPage.Consultation
         when {
             detail != null -> detail = null
             handoff.sheetOpen -> handoff.closeSendSheet()
-            // La alerta de alergia se contesta primero, y Atrás la contesta «No recetarlo»: nunca se cierra la hoja dejándola sin respuesta
-            consultation.prescription.allergyAlert != null -> consultation.prescription.cancelAllergy()
+            // La alerta de alergia se contesta primero, y Atrás la contesta «No recetarlo»: nunca se cierra la hoja dejándola sin respuesta. Las hojas de la consulta solo se ven en ella
+            onConsultation && consultation.prescription.allergyAlert != null -> consultation.prescription.cancelAllergy()
             agendaOpen -> closeAgenda()
-            consultation.checkout != null -> consultation.closeCheckout()
-            consultation.sheet != null -> consultation.closeSheet()
+            onConsultation && consultation.checkout != null -> consultation.closeCheckout()
+            onConsultation && consultation.sheet != null -> consultation.closeSheet()
+            // El resultado a medias de esta ficha: se cierra, preguntando si se perdería lo escrito. Atrás nunca lo deja encima de otra
+            (page as? TabletPage.Chart)?.let { labResults.formFor(it.syncId) } != null -> labResults.back()
             page == TabletPage.Form -> backFromForm()
             // La consulta sigue: su aviso lleva de regreso. Atrás nunca la cierra
             page == TabletPage.Consultation -> page = TabletPage.PatientsHome
@@ -351,9 +359,11 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
 
     /** «Agendar» desde la ficha: el paciente ya viene puesto. */
     fun preselectPatient(syncId: String) {
+        // Solo el formulario que se abrió para él: si mientras se leía se cerró o se abrió otro hueco (quizá desde otra ficha), no se le pone este paciente
+        val request = appointment.request
         scope.launch {
             val patient = withContext(io) { runCatching { env.phone.reader.activePatient(syncId) }.getOrNull() } ?: return@launch
-            if (appointment.isOpen && appointment.patient == null) {
+            if (appointment.request == request && appointment.isOpen && appointment.patient == null) {
                 appointment.patient = AgendaPatient(syncId, patient.fullName, patient.recordNumber, patient.phone)
                 appointmentChanged()
             }
@@ -839,6 +849,7 @@ class TabletWorkspace(val env: TabletEnv, private val scope: CoroutineScope, pri
         preview = null
         info = null
         toast = null
+        labResults.clearMemory()
         consultation.clearMemory()
         handoff.clearMemory()
         page = TabletPage.Hub

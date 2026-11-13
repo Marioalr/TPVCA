@@ -123,7 +123,7 @@ fun PatientChartScreen(workspace: TabletWorkspace, chrome: TabletChrome, syncId:
                         Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             Column(Modifier.width(400.dp).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                                 Essentials(workspace, syncId, data, patient)
-                                LabResultsCard(workspace, syncId, data.labs)
+                                LabResultsCard(workspace, syncId, patient.fullName, data.labs)
                                 Antecedents(workspace, syncId, patient)
                             }
                             TCard(Modifier.weight(1f).fillMaxHeight(), padding = 0.dp) {
@@ -133,7 +133,7 @@ fun PatientChartScreen(workspace: TabletWorkspace, chrome: TabletChrome, syncId:
                     } else {
                         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             Essentials(workspace, syncId, data, patient)
-                            LabResultsCard(workspace, syncId, data.labs)
+                            LabResultsCard(workspace, syncId, patient.fullName, data.labs)
                             Antecedents(workspace, syncId, patient)
                             TCard(Modifier.fillMaxWidth(), padding = 0.dp) { History(workspace, syncId, data) }
                         }
@@ -141,7 +141,8 @@ fun PatientChartScreen(workspace: TabletWorkspace, chrome: TabletChrome, syncId:
                 }
             }
         }
-        workspace.labResults.form?.let { form -> LabResultFormDialog(workspace.labResults, form) }
+        // Solo el de este paciente: el de otro nunca se dibuja aquí
+        workspace.labResults.formFor(syncId)?.let { form -> LabResultFormDialog(workspace.labResults, form) }
     }
 }
 

@@ -161,9 +161,15 @@ class PhoneAgendaTest {
         compose.waitForIdle()
     }
 
+    /** Los huecos se leen en otro hilo: se espera a que estén. */
+    private fun slot(time: String): SemanticsNodeInteraction {
+        waitTag(PhoneTags.slot(time))
+        return tag(PhoneTags.slot(time))
+    }
+
     private fun fill(time: String = "11:00") {
         choosePatient("roberto", "EXP-2025-152")
-        tag(PhoneTags.slot(time)).performScrollTo().performClick()
+        slot(time).performScrollTo().performClick()
         tag(PhoneTags.SCHEDULE_REASON).performScrollTo().performTextInput("Control de prueba")
     }
 
@@ -217,7 +223,7 @@ class PhoneAgendaTest {
         openForm()
         tag(PhoneTags.SCHEDULE_SAVE).performClick()
         waitText(AgendaController.PICK_TIME)
-        tag(PhoneTags.slot("11:00")).performScrollTo().performClick()
+        slot("11:00").performScrollTo().performClick()
         tag(PhoneTags.SCHEDULE_SAVE).performClick()
         waitText("Elija el paciente")
         choosePatient("roberto", "EXP-2025-152")
@@ -391,7 +397,7 @@ class PhoneAgendaTest {
         compose.onNodeWithText("Cambiar fecha u hora").performClick()
         waitTag(PhoneTags.MOVE)
         waitText("Elija el nuevo horario para Paciente Juan Ejemplo Gómez")
-        tag(PhoneTags.slot("11:00")).performScrollTo().performClick()
+        slot("11:00").performScrollTo().performClick()
         waitOutbox(1)
         waitFor { workspace.agenda.moving == null }
         gone(PhoneTags.MOVE)
@@ -451,7 +457,7 @@ class PhoneAgendaTest {
         tag(PhoneTags.SCHEDULE).assertHeightIsAtLeast(48.dp)
         openForm()
         tag(PhoneTags.SCHEDULE_CLOSE).assertHeightIsAtLeast(48.dp)
-        tag(PhoneTags.slot("11:00")).assertHeightIsAtLeast(48.dp)
+        slot("11:00").assertHeightIsAtLeast(48.dp)
         tag(PhoneTags.SCHEDULE_SAVE).assertHeightIsAtLeast(48.dp)
     }
 }

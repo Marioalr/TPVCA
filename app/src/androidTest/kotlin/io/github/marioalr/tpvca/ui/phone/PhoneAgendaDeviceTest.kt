@@ -97,6 +97,7 @@ class PhoneAgendaDeviceTest {
         compose.onNodeWithTag(PhoneTags.SCHEDULE_PATIENT).performTextInput("ana")
         waitText("EXP-2026-014")
         compose.onNodeWithText("EXP-2026-014", substring = true).performClick()
+        waitTag(PhoneTags.slot("16:00"))
         compose.onNodeWithTag(PhoneTags.slot("16:00")).performScrollTo().performClick()
         compose.onNodeWithText("60").performScrollTo().performClick()
         compose.onNodeWithTag(PhoneTags.SCHEDULE_REASON).performScrollTo().performTextInput("Control de prueba")

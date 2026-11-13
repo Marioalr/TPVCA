@@ -90,7 +90,8 @@ class PhoneAppTest {
         compose.waitForIdle()
     }
 
-    private fun waitText(text: String) = compose.waitUntil(5000) { compose.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty() }
+    // 10 s: en la CI, con todo el paquete corriendo, 5 s a veces no alcanzan para la primera lectura
+    private fun waitText(text: String) = compose.waitUntil(10_000) { compose.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty() }
 
     private fun tab(tab: PhoneTab) {
         compose.onNodeWithTag(PhoneTags.tab(tab)).performClick()

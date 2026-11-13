@@ -197,29 +197,63 @@ class WriteEngine(
     @Suppress("UNCHECKED_CAST")
     private fun <T> guarded(block: () -> T): T = guard { block() } as T
 
-    /** Una fila nueva. Regresa su `SyncId`. */
+    /**
+     * Una fila nueva. Regresa su `SyncId`. Lo que deriva del expediente se recalcula **dentro de la misma transacción**: si falla, no queda nada, así que «no se pudo guardar» siempre es cierto y volver a intentar no
+     * duplica nada.
+     */
     fun create(table: String, values: Map<String, Any?>, syncId: String = SyncIds.random()): String = guarded {
         if (!WritePolicy.canWrite(requireWritable(), table, creating = true)) refuse("escribir en $table")
-        writer.create(table, syncId.lowercase(Locale.ROOT), values)
-        afterWrite(table, syncId, values)
+        store.transaction {
+            writer.create(table, syncId.lowercase(Locale.ROOT), values)
+            afterWrite(table, syncId, values)
+        }
         syncId
     }
 
     /** Lo que cambió de una fila, con marca nueva; un expediente, con sus marcas por campo. `false` si la fila ya no existe. */
     fun edit(table: String, syncId: String, values: Map<String, Any?>): Boolean = guarded {
         if (!WritePolicy.canWrite(requireWritable(), table, creating = false)) refuse("escribir en $table")
-        val done = writer.edit(table, syncId, values)
-        afterWrite(table, syncId, values)
-        done
+        // Con su recálculo en la misma transacción, como [create]
+        store.transaction {
+            val done = writer.edit(table, syncId, values)
+            afterWrite(table, syncId, values)
+            done
+        }
     }
 
     /** Borrar, con su cascada. Lo que dependa de él con `restrict` lo impide. */
     fun delete(table: String, syncId: String) = guarded {
         if (!WritePolicy.canWrite(requireWritable(), table, creating = false)) refuse("borrar en $table")
-        val patients = referencedPatient(table, syncId)
-        if (!writer.delete(table, syncId)) throw WriteRefused(WriteRefused.Reason.CONFLICT, "Todavía tiene registros que dependen de él.")
-        recalculate(patients)
+        store.transaction {
+            val patients = referencedPatient(table, syncId)
+            if (!writer.delete(table, syncId)) throw WriteRefused(WriteRefused.Reason.CONFLICT, "Todavía tiene registros que dependen de él.")
+            recalculate(patients)
+        }
     }
+
+    /** Lo que dejó «Agendar». [repeated]: esa cita ya estaba (un segundo intento después de guardarla, o un borrador de antes de que se cerrara el proceso): no se escribió otra vez. [row], la cita como quedó. */
+    data class ScheduledAppointment(val syncId: String, val repeated: Boolean, val row: LocalRow)
+
+    /**
+     * Agendar (`SaveAppointmentAsync`): el expediente se lee y la cita se escribe **en la misma transacción**, con su entrada en la cola y el resumen del expediente recalculado. Una bajada que da de baja al paciente, o
+     * lo une a otro, no se cruza entre leerlo y escribir la cita. [values] arma la cita con la fila de ahora (nombre, folio y teléfono). [syncId] es el del formulario desde que se abrió: si esa cita ya existe, se
+     * regresa sin escribir nada (como el carrito de K9), así que volver a intentar o recuperar el borrador nunca la duplica. `null` si el expediente ya no existe, se dio de baja o se unió a otro: no se escribe nada.
+     */
+    fun createAppointment(patientSyncId: String, values: (LocalRow) -> Map<String, Any?>, syncId: String = SyncIds.random()): ScheduledAppointment? = guarded {
+        if (!WritePolicy.canWrite(requireWritable(), "Appointments", creating = true)) refuse("escribir en Appointments")
+        val id = syncId.lowercase(Locale.ROOT)
+        store.transaction {
+            writer.find(writer.table("Appointments"), id)?.let { return@transaction ScheduledAppointment(id, repeated = true, row = it) }
+            val row = writer.find(writer.table("Patients"), patientSyncId)?.takeIf { it["IsActive"] == 1L && it["MergedIntoSyncId"] == null } ?: return@transaction null
+            val set = values(row)
+            writer.create("Appointments", id, set)
+            afterWrite("Appointments", id, set)
+            ScheduledAppointment(id, repeated = false, row = writer.find(writer.table("Appointments"), id) ?: set)
+        }
+    }
+
+    /** Si la cita de ese `SyncId` ya está aquí: un borrador cuya cita ya se guardó no se reabre. */
+    fun appointmentExists(syncId: String): Boolean = guarded { writer.find(writer.table("Appointments"), syncId.lowercase(Locale.ROOT)) != null }
 
     /** Lanza [WriteRefused] si ahora no se puede escribir: para no confundir «todavía no baja» con «ya no existe». */
     fun checkWritable() {

@@ -5,8 +5,8 @@ App nativa de Android (Kotlin) del consultorio, para la **tablet** y el **celula
 
 - **Tablet:** una copia exacta de la app de la PC con la interfaz adaptada al tacto: expedientes, consulta, receta, citas,
   cobro, inventario y configuración del consultorio, también sin internet. Lo único que no hace es administrar la nube.
-- **Celular:** más angosto: reportes del negocio, consulta del inventario, pacientes solo para consultar y agenda (K4); después
-  agenda citas y registra entradas de mercancía (K4b).
+- **Celular:** más angosto: reportes del negocio, consulta del inventario, pacientes solo para consultar y agenda (K4); agenda,
+  cambia de horario, confirma y cancela citas (K4b). Las entradas de mercancía esperan al 8.20 de la PC.
 
 Es una sola app: el rol de cada equipo lo decide la PC en `DeviceRegistry`, y la app oculta pantallas y bloquea escrituras
 según ese rol (`DevicePermissions`, la misma matriz que `Models/TursoConfig.cs` en la PC).
@@ -27,7 +27,7 @@ según ese rol (`DevicePermissions`, la misma matriz que `Models/TursoConfig.cs`
 | `:sync` | Kotlin/JVM | El contrato de sincronización (`SyncSchema`, `SyncContract.REVISION`), el cliente Hrana, los motores de lectura y escritura, la vinculación con la revocación y las reglas del 401, la bajada y subida de los archivos de laboratorio y la consulta entre equipos (`HandoffService`, `HandoffPayload`, la cadencia de la revisión; [`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)). |
 | `:domain` | Kotlin/JVM | Reglas portadas de la PC con sus vectores (K1, lo del celular): roles y permisos (`DevicePermissions`), búsqueda, negocio e inventario, pacientes y agenda, receta y ticket. Cada vector → función → estado en [`docs/REGLAS.md`](docs/REGLAS.md). Después: cuenta, folios, dosis y cobro. |
 | `:data` | Biblioteca de Android | Room con SQLCipher: entidades generadas de `schema.json` y `RoomSyncStore`. La llave de la base y la credencial, envueltas con el Keystore. Las lecturas de las pantallas (`ClinicDao`, `ClinicReader`) y la caché cifrada de laboratorio, con lo que la tablet agregó y falta subir. |
-| `:app` | App de Android | Compose + Material 3, tema con la paleta de la PC (claro, oscuro, ámbar y personalizado), el inicio, las pantallas de vincular, el bloqueo de la app, las del celular (`ui/phone`, con la receta y el ticket en PDF en `documents`) y las de la tablet (`ui/tablet`; la agenda en `ui/agenda`, para que K4b la use). |
+| `:app` | App de Android | Compose + Material 3, tema con la paleta de la PC (claro, oscuro, ámbar y personalizado), el inicio, las pantallas de vincular, el bloqueo de la app, las del celular (`ui/phone`, con la receta y el ticket en PDF en `documents`) y las de la tablet (`ui/tablet`). La agenda que escribe, la misma en los dos (`ui/agenda`: `AgendaSession` y `AgendaController`). |
 
 `:sync` y `:domain` son Kotlin puro: sus pruebas corren en la JVM, sin Android. Las compilaciones de depuración traen además una
 pantalla de desarrollo para probar la sincronización con una base de prueba y las demostraciones del celular y la tablet con datos inventados; la de publicación no las trae.
@@ -44,7 +44,7 @@ Pila: Jetpack Compose con Material 3, Room + SQLCipher, OkHttp, kotlinx.serializ
 | **K2** | Cliente Hrana y motor de lectura: primer arranque, descarga completa, cursor por página, recálculo, generación y freno ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)) | ✅ Hecho |
 | **K3** | Vinculación y seguridad: pegar o escanear la URL y el token, aprobación de la PC, Keystore, SQLCipher, bloqueo y revocación ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)) | ✅ Hecho |
 | **K4** | Celular: negocio, inventario, pacientes y agenda de solo lectura, compartir receta y ticket, con el diseño aprobado ([`docs/diseno-celular/`](docs/diseno-celular/)). **Primera versión del celular** | ✅ Hecho |
-| K4b | Celular: agendar con aviso de empalme y registrar entradas de mercancía | Pendiente |
+| K4b | Celular: agendar con aviso de empalme y registrar entradas de mercancía. **Agendar, hecho:** «Agendar cita» del menú de Inicio y de la Agenda, con la `AgendaSession` de la tablet (paciente que ya existe con la búsqueda de la PC, día, hueco libre, motivo, duración, la pregunta del empalme contra la base y el borrador cifrado), y en cada cita confirmar, cambiar de horario y cancelar; arriba de la Agenda, el aviso de los empalmes que llegaron. **Entradas de mercancía:** se ven y dicen «En la siguiente versión» hasta el 8.20 de la PC ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)) | Agendar ✅; entradas pendientes (8.20) |
 | **K5** | Motor de escritura: cola de salida, LWW, cerca de generación, combinación de pacientes, movimientos, folios y WorkManager | Hecho ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)) |
 | **K6** | Tablet: inicio, ficha, agenda con aviso de empalme, alta y edición con aviso de duplicado, avisos y «Volver a aplicar» (`ui/tablet`). La consulta y lo demás se ven deshabilitados | ✅ Hecho |
 | **K7** | Consulta completa: receta, insumos, servicios, cuenta, terminar y cobrar, también sin conexión; la orden de laboratorio y los resultados desde la tablet, con su subida ([`docs/SINCRONIZACION.md`](docs/SINCRONIZACION.md)) | ✅ Hecho |
@@ -67,7 +67,7 @@ scripts/check-secrets.sh
 ./gradlew :data:connectedDebugAndroidTest :app:connectedDebugAndroidTest # SQLCipher, Keystore y ML Kit: con un equipo o emulador; no corren en la CI
 ```
 
-La CI (`.github/workflows/ci.yml`) corre `scripts/check-secrets.sh` y `./gradlew test lint assembleDebug` con JDK 17 en
+La CI (`.github/workflows/ci.yml`) corre `scripts/check-secrets.sh`, `./gradlew test` y luego `./gradlew lint assembleDebug` (aparte: lint ocupa todos los núcleos y frenaba las pruebas) con JDK 17 en
 cada push y PR.
 
 | Pieza | Versión |

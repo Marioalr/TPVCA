@@ -82,6 +82,7 @@ class MainActivity : FragmentActivity() {
                     val dataVersion by controller.dataVersion.collectAsStateWithLifecycle()
                     PhoneApp(
                         env = graph.phone,
+                        workspace = graph.phoneWorkspace,
                         status = PhoneStatus(linked.notice, linked.braked, lastSuccess, syncing, linked.clinicName),
                         dataVersion = dataVersion,
                         onSync = controller::refreshNow,

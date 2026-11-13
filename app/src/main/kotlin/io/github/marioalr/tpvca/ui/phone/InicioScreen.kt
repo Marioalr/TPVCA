@@ -192,7 +192,7 @@ fun readHome(env: PhoneEnv, today: LocalDate): HomeView {
 }
 
 @Composable
-fun InicioScreen(env: PhoneEnv, status: PhoneStatus, dataVersion: Long, nav: PhoneNav, onSync: () -> Unit, onResumeBrake: () -> Unit, onOpenNegocio: () -> Unit) {
+fun InicioScreen(env: PhoneEnv, workspace: PhoneWorkspace, status: PhoneStatus, dataVersion: Long, nav: PhoneNav, onSync: () -> Unit, onResumeBrake: () -> Unit, onOpenNegocio: () -> Unit) {
     io.github.marioalr.tpvca.ui.link.PatientDataWindow()
     val today = env.today()
     val state by load(today, refresh = dataVersion) { readHome(env, today) }
@@ -245,7 +245,7 @@ fun InicioScreen(env: PhoneEnv, status: PhoneStatus, dataVersion: Long, nav: Pho
                 SwipeHint(PhoneText.HINT_NEGOCIO, PhoneText.OPEN_NEGOCIO, PhoneIcons.ChevronUp, PhoneTags.HINT_NEGOCIO, iconFirst = true, onOpenNegocio)
             }
         }
-        if (menuOpen) QuickMenu(nav) { menuOpen = false }
+        if (menuOpen) QuickMenu(nav, onSchedule = { workspace.openSchedule(today) }) { menuOpen = false }
         Fab(menuOpen, Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 20.dp)) { menuOpen = !menuOpen }
     }
 }
@@ -368,7 +368,7 @@ private fun Fab(open: Boolean, modifier: Modifier, onClick: () -> Unit) {
 }
 
 @Composable
-private fun QuickMenu(nav: PhoneNav, onClose: () -> Unit) {
+private fun QuickMenu(nav: PhoneNav, onSchedule: () -> Unit, onClose: () -> Unit) {
     Box(
         Modifier
             .fillMaxSize()
@@ -398,7 +398,17 @@ private fun QuickMenu(nav: PhoneNav, onClose: () -> Unit) {
                 PText(PhoneText.SEARCH_PATIENT, weight = FontWeight.Medium)
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(PhoneColors.Border))
-            DisabledMenuItem(PhoneIcons.CalendarAdd, PhoneText.SCHEDULE)
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable {
+                    onClose()
+                    onSchedule()
+                }.testTag(PhoneTags.QUICK_SCHEDULE).padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(PhoneIcons.CalendarAdd, null, Modifier.size(20.dp), tint = PhoneColors.Accent)
+                PText(PhoneText.SCHEDULE, weight = FontWeight.Medium)
+            }
             Box(Modifier.fillMaxWidth().height(1.dp).background(PhoneColors.Border))
             DisabledMenuItem(PhoneIcons.Box, PhoneText.STOCK_ENTRY)
         }

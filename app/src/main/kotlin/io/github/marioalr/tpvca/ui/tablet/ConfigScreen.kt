@@ -152,7 +152,7 @@ private fun ConfigMenu(workspace: TabletWorkspace, modifier: Modifier) {
                                 ConfigSection.Movements -> inventory.summaries?.movements
                                 else -> null
                             }
-                            MenuItem(section.title, summary, iconOf(section), section == inventory.section, !section.ready, tag = TabletTags.configSection(section.name)) { inventory.open(section) }
+                            MenuItem(section.title, summary, iconOf(section), section == inventory.section, !section.ready, tag = TabletTags.configSection(section.name), reserveSummary = section in SECTIONS_WITH_SUMMARY) { inventory.open(section) }
                         }
                     }
                 }
@@ -161,6 +161,9 @@ private fun ConfigMenu(workspace: TabletWorkspace, modifier: Modifier) {
         TCaption("TPVC Consultorio para Android", Modifier.padding(start = 10.dp, top = 8.dp))
     }
 }
+
+/** Las secciones con un resumen que se lee aparte. */
+private val SECTIONS_WITH_SUMMARY = setOf(ConfigSection.Dashboard, ConfigSection.Business, ConfigSection.Services, ConfigSection.Clinic, ConfigSection.Data, ConfigSection.Inventory, ConfigSection.Batches, ConfigSection.Movements)
 
 private fun iconOf(section: ConfigSection): ImageVector = when (section) {
     ConfigSection.Dashboard -> TIcons.Chart
@@ -179,7 +182,7 @@ private fun iconOf(section: ConfigSection): ImageVector = when (section) {
 
 /** Un elemento del menú (`NavItem`): icono, título y resumen; el activo con su barra de acento. Uno que no es de esta versión se ve y no se abre. */
 @Composable
-private fun MenuItem(title: String, summary: String?, icon: ImageVector?, active: Boolean, off: Boolean, tag: String? = null, onClick: () -> Unit) {
+private fun MenuItem(title: String, summary: String?, icon: ImageVector?, active: Boolean, off: Boolean, tag: String? = null, reserveSummary: Boolean = false, onClick: () -> Unit) {
     val colors = LocalTpvcColors.current
     val shape = RoundedCornerShape(8.dp)
     var m = Modifier.fillMaxWidth().padding(bottom = 2.dp).heightIn(min = TOUCH_MIN).clip(shape).background(if (active) colors["ThemeSelectionBackground"] else Color.Transparent)
@@ -201,7 +204,8 @@ private fun MenuItem(title: String, summary: String?, icon: ImageVector?, active
             Column {
                 TText(title, size = TType.body, weight = FontWeight.SemiBold, color = if (off) colors.textSecondary else colors.text)
                 val caption = if (off) NEXT_VERSION_TEXT else summary
-                if (!caption.isNullOrEmpty()) TCaption(caption, maxLines = 1)
+                // Lo que se lee aparte ya tiene su renglón: al llegar no mueve el menú (un toque en ese momento caía en otro lugar)
+                if (!caption.isNullOrEmpty()) TCaption(caption, maxLines = 1) else if (reserveSummary) TCaption(" ", maxLines = 1)
             }
         }
     }

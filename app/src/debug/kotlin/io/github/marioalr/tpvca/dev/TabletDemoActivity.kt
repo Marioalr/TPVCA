@@ -75,6 +75,23 @@ fun tabletDemoExtras(store: SyncStore) {
     )
 }
 
+/**
+ * El celular de la demostración (K4b): su rol aprobado y la descarga hecha, para que agende sin nube. Con [notice], también el aviso de los dos empalmes de hoy como si hubieran llegado de otro equipo. Todo inventado.
+ */
+fun phoneDemoExtras(store: SyncStore, notice: Boolean) {
+    val appointments = store.select("Appointments", listOf("SyncId", "Time")).filter { it["Time"] == "10:30" || it["Time"] == "10:45" }.map { it["SyncId"] as String }.sorted()
+    store.apply(
+        StoreChanges(
+            meta = buildMap {
+                put(SyncEngine.DEVICE_ROLE, DeviceRole.AndroidMobileAdmin.name)
+                put(SyncEngine.DEVICE_CODE, "C1")
+                put(SyncEngine.FIRST_DOWNLOAD_DONE, ProtocolDate.format(java.time.LocalDateTime.of(2026, 1, 1, 0, 0)))
+                if (notice && appointments.size == 2) put(SyncEngine.NOTICES, SyncNotices.write(setOf(SyncNotice(SyncNotices.OVERLAP, appointments[0], appointments[1]))))
+            },
+        ),
+    )
+}
+
 /** Solo en la demostración: una jeringa dada de alta otra vez en «otro equipo» con el mismo código, y su aviso arriba de Productos (K9b). Inventado. */
 fun catalogDuplicateDemo(store: SyncStore) {
     val products = store.select("Products", listOf("SyncId", "Code", "CategorySyncId"))

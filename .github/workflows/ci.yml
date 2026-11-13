@@ -36,8 +36,12 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
-      - name: Pruebas, lint y APK
-        run: ./gradlew test lint assembleDebug --console=plain
+      # Las pruebas solas: con lint en paralelo (que ocupa todos los núcleos del equipo compartido) una lectura de 1 s tardaba más de 10
+      - name: Pruebas
+        run: ./gradlew test --console=plain
+
+      - name: Lint y APK
+        run: ./gradlew lint assembleDebug --console=plain
 
       - name: Reportes de pruebas y lint
         if: failure()

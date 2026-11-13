@@ -1,11 +1,15 @@
 package io.github.marioalr.tpvca.ui.phone
 
+import kotlinx.coroutines.cancel
+import io.github.marioalr.tpvca.ui.waitForCondition
 import android.content.Context
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -61,6 +65,8 @@ class PhoneAppTest {
 
     private lateinit var database: TpvcaDatabase
     private lateinit var env: PhoneEnv
+    private lateinit var workspace: PhoneWorkspace
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
     private val context: Context = ApplicationProvider.getApplicationContext()
     private var synced = 0
 
@@ -69,19 +75,30 @@ class PhoneAppTest {
         database = Room.inMemoryDatabaseBuilder(context, TpvcaDatabase::class.java).build()
         val assets = File(context.cacheDir, "membrete-phone")
         env = PhoneEnv(ClinicReader({ database.clinic() }, { assets }), SharedDocuments(context), labFiles = null)
+        val store = RoomSyncStore(database, assets)
+        workspace = PhoneWorkspace(
+            env,
+            PhoneWrites({ io.github.marioalr.tpvca.sync.engine.WriteEngine(store, { "celular" }, io.github.marioalr.tpvca.sync.link.MemoryFolioNumbers(), { null }) }, { io.github.marioalr.tpvca.sync.engine.LocalSide(store) }, { true }, {}),
+            scope,
+        )
     }
 
     @After
-    fun close() = database.close()
+    fun close() {
+        // Lo que lanzó esta prueba no sigue corriendo contra una base cerrada, ni se cruza con la siguiente
+        scope.cancel()
+        database.close()
+    }
 
     private fun seed() = PhoneDemoSeed(RoomSyncStore(database, File(context.cacheDir, "membrete-phone")), Clinic.today(Instant.now())).fill()
 
     private fun show(status: PhoneStatus = PhoneStatus(null, false, Instant.now().minusSeconds(120), false, "")) {
-        compose.setContent { TpvcTheme(TpvcThemes.claro) { PhoneApp(env, status, 0L, onSync = { synced++ }, onResumeBrake = {}) } }
+        compose.setContent { TpvcTheme(TpvcThemes.claro) { PhoneApp(env, workspace, status, 0L, onSync = { synced++ }, onResumeBrake = {}) } }
         compose.waitForIdle()
     }
 
-    private fun waitText(text: String) = compose.waitUntil(5000) { compose.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty() }
+    // 10 s: en la CI, con todo el paquete corriendo, 5 s a veces no alcanzan para la primera lectura
+    private fun waitText(text: String) = compose.waitForCondition { compose.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty() }
 
     private fun tab(tab: PhoneTab) {
         compose.onNodeWithTag(PhoneTags.tab(tab)).performClick()
@@ -159,6 +176,8 @@ class PhoneAppTest {
     fun negocioTieneTodoElPanel() {
         seed()
         show()
+        // Primero lo que se lee de Inicio: al llegar empuja la pista hacia abajo, y un toque a la mitad caía en otro lugar
+        waitText("Próximas citas")
         compose.onNodeWithTag(PhoneTags.HINT_NEGOCIO).performScrollTo().performClick()
         waitText("Por sección")
         for (text in listOf("Hoy", "Esta semana", "Este mes", "Mes anterior", "Este año", "Rango…", "Todo", "Consultas", "Medicamentos", "Insumos", "Servicios", "Otros", "Ventas", "Costo", "Ganancia", "Margen", "Tickets", "Ticket promedio", "Compras", "Valor del inventario", "En el tiempo", "Servicios más pedidos", "Por proveedor", "Por tipo", "Consumo de insumos", "Corte de caja", "CSV")) {
@@ -171,11 +190,14 @@ class PhoneAppTest {
         show()
         compose.onNodeWithTag(PhoneTags.FAB).performClick()
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("Agendar cita, en la siguiente versión").assert(disabled)
+        // K4b: agendar ya se puede; la entrada de mercancía espera al 8.20 de la PC
+        compose.onNodeWithTag(PhoneTags.QUICK_SCHEDULE).assertHasClickAction()
+        assertEquals(0, compose.onAllNodesWithContentDescription("Agendar cita, en la siguiente versión").fetchSemanticsNodes().size)
         compose.onNodeWithContentDescription("Entrada de mercancía, en la siguiente versión").assert(disabled)
         compose.onNodeWithTag(PhoneTags.FAB).performClick()
         tab(PhoneTab.Agenda)
-        compose.onNodeWithContentDescription("Agendar cita, en la siguiente versión").assert(disabled)
+        compose.onNodeWithTag(PhoneTags.SCHEDULE).assertHasClickAction()
+        assertEquals(0, compose.onAllNodesWithContentDescription("Agendar cita, en la siguiente versión").fetchSemanticsNodes().size)
         tab(PhoneTab.Inventario)
         compose.onNodeWithContentDescription("Entrada de mercancía, en la siguiente versión").assert(disabled)
     }
@@ -219,7 +241,7 @@ class PhoneAppTest {
         compose.onNodeWithText("Stock bajo: 4 (+3/5)").assertExists()
         compose.onNodeWithText("Sobre con 5 · abierto 3/5 pzas").assertExists()
         compose.onNodeWithTag(PhoneTags.PRODUCT_SEARCH).performTextInput("paracetamol")
-        compose.waitUntil(5000) { compose.onAllNodesWithText("Gasa", substring = true).fetchSemanticsNodes().isEmpty() }
+        compose.waitForCondition { compose.onAllNodesWithText("Gasa", substring = true).fetchSemanticsNodes().isEmpty() }
         waitText("revisar inventario")
         compose.onNode(hasText("Tempra", substring = true)).assertExists()
     }
@@ -240,7 +262,7 @@ class PhoneAppTest {
         waitText("Stock bajo")
         compose.onNodeWithText("Stock bajo").performClick()
         waitText("Con aviso")
-        compose.waitUntil(5000) { compose.onAllNodesWithText("Omeprazol", substring = true).fetchSemanticsNodes().isEmpty() }
+        compose.waitForCondition { compose.onAllNodesWithText("Omeprazol", substring = true).fetchSemanticsNodes().isEmpty() }
         waitText("Amoxicilina")
     }
 
@@ -262,13 +284,13 @@ class PhoneAppTest {
             }
             seen.add(current + "=" + (state as? Loaded.Ready)?.value)
         }
-        compose.waitUntil(5000) { seen.contains("A=A") }
+        compose.waitForCondition { seen.contains("A=A") }
         assertTrue("Fuera del hilo principal", thread !== android.os.Looper.getMainLooper().thread)
         key = "B"
         compose.waitForIdle()
         assertEquals("Con la llave nueva y sin lo suyo: cargando", "B=null", seen.last())
         release.countDown()
-        compose.waitUntil(5000) { seen.contains("B=B") }
+        compose.waitForCondition { seen.contains("B=B") }
         assertTrue("Nunca lo de A bajo B: $seen", "B=A" !in seen)
     }
 
@@ -282,11 +304,11 @@ class PhoneAppTest {
             val state by load("A", refresh = v) { "v$v" }
             seen.add(((state as? Loaded.Ready)?.value).toString())
         }
-        compose.waitUntil(5000) { seen.contains("v0") }
+        compose.waitForCondition { seen.contains("v0") }
         seen.clear()
         version = 1
         compose.waitForIdle()
-        compose.waitUntil(5000) { seen.contains("v1") }
+        compose.waitForCondition { seen.contains("v1") }
         assertTrue("$seen", "null" !in seen)
     }
 
@@ -294,7 +316,7 @@ class PhoneAppTest {
     fun sinMemoriaSeDiceYNoSeCierraLaApp() {
         var result: Loaded<String>? = null
         compose.setContent { result = load("A") { throw OutOfMemoryError() }.value }
-        compose.waitUntil(5000) { result == Loaded.Failed }
+        compose.waitForCondition { result == Loaded.Failed }
     }
 
     /** Abrir un resultado dañado da un mensaje: nada se lanza hasta la pantalla. */
@@ -323,7 +345,7 @@ class PhoneAppTest {
     @Test
     fun unaPestanaCierraLaVistaYBorraElArchivo() {
         val file = previewFile()
-        compose.setContent { TpvcTheme(TpvcThemes.claro) { PhoneApp(env, PhoneStatus(null, false, null, false, ""), 0L, {}, {}, initialPreview = PreviewDoc("Resultado", file, "image/jpeg")) } }
+        compose.setContent { TpvcTheme(TpvcThemes.claro) { PhoneApp(env, workspace, PhoneStatus(null, false, null, false, ""), 0L, {}, {}, initialPreview = PreviewDoc("Resultado", file, "image/jpeg")) } }
         compose.waitForIdle()
         compose.onNodeWithTag(PhoneTags.PREVIEW).assertExists()
         assertTrue(file.exists())
@@ -417,7 +439,7 @@ class PhoneAppTest {
         compose.setContent {
             AppRoot(
                 state, gate, true, "0.1.0", 21, layout, Actions, { _, _ -> },
-                phone = { PhoneApp(env, PhoneStatus(null, false, null, false, ""), 0L, {}, {}) },
+                phone = { PhoneApp(env, workspace, PhoneStatus(null, false, null, false, ""), 0L, {}, {}) },
                 designedLinkScreen = true,
             )
         }

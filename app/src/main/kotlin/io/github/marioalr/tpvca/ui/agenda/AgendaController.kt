@@ -14,6 +14,7 @@ import io.github.marioalr.tpvca.domain.model.Appointment
 import io.github.marioalr.tpvca.sync.ProtocolDate
 import io.github.marioalr.tpvca.sync.engine.WriteEngine
 import io.github.marioalr.tpvca.sync.engine.WriteRefused
+import io.github.marioalr.tpvca.sync.rules.SyncIds
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -31,10 +32,11 @@ import java.time.LocalDate
 data class AgendaPatient(val syncId: String, val fullName: String, val recordNumber: String, val phone: String)
 
 /**
- * El formulario para agendar en un hueco (`AgendaPanelViewModel`). Vive fuera de la pantalla: girar la tablet no lo pierde, y lo escrito va además a un borrador cifrado. La pantalla del celular (K4b) puede usar este mismo.
+ * El formulario para agendar en un hueco (`AgendaPanelViewModel`). Vive fuera de la pantalla: girar no lo pierde, y lo escrito va además a un borrador cifrado. Lo usan la tablet (en el hueco que se tocó) y el celular (K4b: abre
+ * en un día y la hora se elige después, así que puede estar abierto con [slotTime] en `null`).
  */
 class AppointmentFormState {
-    /** El día y la hora del hueco. `null`: el formulario está cerrado. */
+    /** El día del formulario; `null`: está cerrado. [slotTime], la hora del hueco: en el celular, `null` hasta que se elige. */
     var slotDate by mutableStateOf<LocalDate?>(null)
     var slotTime by mutableStateOf<String?>(null)
     var patient by mutableStateOf<AgendaPatient?>(null)
@@ -49,9 +51,16 @@ class AppointmentFormState {
     /** Cambia cuando el médico abre o cierra el formulario: un guardado que esperó a la nube y lo encuentra distinto no guarda nada. */
     var request = 0
 
-    val isOpen: Boolean get() = slotTime != null
+    /**
+     * El `SyncId` de la cita, desde que se abre el formulario (va en el borrador): volver a intentar después de un error, o recuperar el borrador después de que Android cerró el proceso entre guardar y borrarlo,
+     * encuentra la cita que ya se guardó en lugar de crear otra (como el carrito de K9).
+     */
+    var newSyncId: String = SyncIds.random()
+        private set
 
-    fun open(date: LocalDate, time: String, selected: AgendaPatient?) {
+    val isOpen: Boolean get() = slotDate != null
+
+    fun open(date: LocalDate, time: String?, selected: AgendaPatient?) {
         val hadForm = isOpen
         slotDate = date
         slotTime = time
@@ -60,11 +69,19 @@ class AppointmentFormState {
         if (keepValues || hadForm) {
             keepValues = false
         } else {
+            newSyncId = SyncIds.random()
             patient = selected
             patientQuery = ""
             reason = ""
             duration = 30
         }
+        error = null
+    }
+
+    /** El celular: otro día u otra hora en el mismo formulario. Lo escrito se queda. */
+    fun pick(date: LocalDate, time: String?) {
+        slotDate = date
+        slotTime = time
         error = null
     }
 
@@ -94,6 +111,7 @@ class AppointmentFormState {
             "query" to JsonPrimitive(patientQuery),
             "reason" to JsonPrimitive(reason),
             "duration" to JsonPrimitive(duration),
+            "syncId" to JsonPrimitive(newSyncId),
         ),
     ).toString()
 
@@ -107,8 +125,10 @@ class AppointmentFormState {
         patientQuery = s("query").orEmpty()
         reason = s("reason").orEmpty()
         duration = root["duration"]?.jsonPrimitive?.intOrNull ?: 30
+        // Un borrador de antes de K4b no lo trae: uno nuevo
+        newSyncId = s("syncId")?.takeIf { runCatching { java.util.UUID.fromString(it) }.isSuccess } ?: SyncIds.random()
         request++
-        slotTime != null
+        slotDate != null
     } catch (_: IllegalArgumentException) {
         false
     } catch (_: java.time.format.DateTimeParseException) {
@@ -160,45 +180,50 @@ class AgendaController(
         saving = true
         try {
             val date = form.slotDate ?: return null
-            val time = form.slotTime ?: return null
             val request = form.request
             val patient = form.patient
+            val time = form.slotTime
+            if (time == null) {
+                form.error = PICK_TIME
+                return null
+            }
             if (patient == null) {
                 form.error = "Elija el paciente (escriba su nombre en la lista)."
                 return null
             }
-            if (form.reason.isBlank()) {
+            // Una sola foto del formulario: la misma para revisar el empalme y para escribir, aunque algo cambie mientras se espera a la nube
+            val reason = form.reason.trim()
+            val syncId = form.newSyncId
+            if (reason.isEmpty()) {
                 form.error = "Escriba el motivo de la cita o elija uno frecuente."
                 return null
             }
             val duration = if (form.duration > 0) form.duration else 30
-            val candidate = Appointment(patientName = patient.fullName, date = date, time = time, durationMinutes = duration, reason = form.reason.trim(), status = "Programada")
+            // Con su `SyncId`: si ya se había guardado (otro intento), no se empalma consigo misma
+            val candidate = Appointment(syncId = java.util.UUID.fromString(syncId), patientName = patient.fullName, date = date, time = time, durationMinutes = duration, reason = reason, status = "Programada")
             if (!confirmNoOverlap(candidate) { request == form.request }) return null
-            val current: AgendaPatient?
+            val current: String?
             try {
                 current = withContext(io) {
-                    val writes = engine()
-                    // Primero si se puede escribir: a media descarga, que no esté no quiere decir que se borró
-                    writes.checkWritable()
-                    val row = writes.patientRow(patient.syncId) ?: return@withContext null
-                    // Lo que la cita copia, del expediente de ahora: no de cuando se eligió o se escribió el borrador
-                    val fresh = AgendaPatient(patient.syncId, row["FullName"] as String? ?: "", row["RecordNumber"] as String? ?: "", row["Phone"] as String? ?: "")
-                    writes.create(
-                        "Appointments",
+                    // El expediente se lee y la cita se escribe en una transacción: dado de baja o unido a otro, no se agenda. A media descarga, el motor no deja escribir (que no esté no quiere decir que se borró)
+                    val done = engine().createAppointment(patient.syncId, { row ->
+                        // Lo que la cita copia, del expediente de ahora: no de cuando se eligió o se escribió el borrador
+                        val copied = AgendaPatient(patient.syncId, row["FullName"] as String? ?: "", row["RecordNumber"] as String? ?: "", row["Phone"] as String? ?: "")
                         mapOf(
-                            "PatientRecordSyncId" to fresh.syncId,
-                            "PatientName" to fresh.fullName,
-                            "PatientRecordNumber" to fresh.recordNumber,
-                            "PatientPhone" to fresh.phone,
+                            "PatientRecordSyncId" to copied.syncId,
+                            "PatientName" to copied.fullName,
+                            "PatientRecordNumber" to copied.recordNumber,
+                            "PatientPhone" to copied.phone,
                             "Date" to ProtocolDate.format(date.atStartOfDay()),
                             "Time" to time,
                             "DurationMinutes" to duration,
-                            "Reason" to form.reason.trim(),
+                            "Reason" to reason,
                             "Status" to "Programada",
                             "CreatedAt" to ProtocolDate.format(Clinic.localNow(now())),
-                        ),
-                    )
-                    fresh
+                        )
+                    }, syncId) ?: return@withContext null
+                    // La que ya estaba (otro intento) dice lo que se guardó entonces
+                    done.row["PatientName"] as String? ?: patient.fullName
                 }
             } catch (e: Exception) {
                 form.error = "No se pudo guardar la cita: ${problem(e)}"
@@ -211,7 +236,7 @@ class AgendaController(
             }
             form.close()
             noteLocalWrite()
-            return AgendaTexts.scheduled(current.fullName, date, time)
+            return AgendaTexts.scheduled(current, date, time)
         } finally {
             saving = false
         }
@@ -261,6 +286,7 @@ class AgendaController(
 
     companion object {
         const val PATIENT_GONE = "El paciente de esta cita ya no existe: elija otro."
+        const val PICK_TIME = "Elija la hora de la cita."
         const val NOT_READY = "Este equipo todavía no puede guardar: revise la vinculación."
 
         /** El texto de una excepción podría traer una ruta o un dato: no se muestra. */

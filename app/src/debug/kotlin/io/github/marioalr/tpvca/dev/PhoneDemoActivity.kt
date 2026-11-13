@@ -22,6 +22,14 @@ import io.github.marioalr.tpvca.ui.phone.PhoneStatus
 import io.github.marioalr.tpvca.ui.phone.VincularScreen
 import io.github.marioalr.tpvca.ui.theme.TpvcTheme
 import io.github.marioalr.tpvca.ui.theme.TpvcThemes
+import io.github.marioalr.tpvca.sync.engine.LocalSide
+import io.github.marioalr.tpvca.sync.engine.WriteEngine
+import io.github.marioalr.tpvca.sync.link.MemoryFolioNumbers
+import io.github.marioalr.tpvca.ui.phone.PhoneWorkspace
+import io.github.marioalr.tpvca.ui.phone.PhoneWrites
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import java.io.File
 import java.time.Instant
 
@@ -35,29 +43,48 @@ class PhoneDemoActivity : FragmentActivity() {
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) setRecentsScreenshotEnabled(false)
         val mode = intent.getStringExtra("modo").orEmpty()
-        val name = "demo-${mode.ifEmpty { "datos" }}.db"
-        val fresh = !getDatabasePath(name).exists()
-        val database = TpvcaDatabase.open(this, name, SqlCipher.factory(ByteArray(32)))
-        val assets = File(cacheDir, "demo-membrete")
-        val store = RoomSyncStore(database, assets)
-        if (fresh) {
-            val seed = PhoneDemoSeed(store, Clinic.today(Instant.now()))
-            when (mode) {
-                "vacio" -> Unit
-                "volumen" -> seed.fillVolume(3000, 2000)
-                else -> seed.fill()
-            }
-        }
-        val env = PhoneEnv(ClinicReader({ database.clinic() }, { assets }), SharedDocuments(this), labFiles = null)
+        val (env, workspace) = demo(this, mode)
         setContent {
             var status by remember { mutableStateOf(PhoneStatus(null, false, Instant.now().minusSeconds(120), false, "Consultorio de Prueba")) }
             TpvcTheme(TpvcThemes.claro) {
                 if (mode == "vincular") {
                     VincularScreen(true, NoLinkActions, {}, {})
                 } else {
-                    PhoneApp(env, status, 0L, onSync = { status = status.copy(lastSuccess = Instant.now()) }, onResumeBrake = {})
+                    PhoneApp(env, workspace, status, 0L, onSync = { status = status.copy(lastSuccess = Instant.now()) }, onResumeBrake = {})
                 }
             }
+        }
+    }
+
+    private companion object {
+        /** Girar no la vuelve a armar: lo escrito en una cita sigue ahí. Que Android cierre el proceso sí, y entonces se recupera del borrador. */
+        private val held = HashMap<String, Pair<PhoneEnv, PhoneWorkspace>>()
+
+        fun demo(context: android.content.Context, mode: String): Pair<PhoneEnv, PhoneWorkspace> = held.getOrPut(mode) {
+            val app = context.applicationContext
+            val name = "demo-${mode.ifEmpty { "datos" }}.db"
+            val fresh = !app.getDatabasePath(name).exists()
+            val database = TpvcaDatabase.open(app, name, SqlCipher.factory(ByteArray(32)))
+            val assets = File(app.cacheDir, "demo-membrete")
+            val store = RoomSyncStore(database, assets)
+            if (fresh) {
+                val seed = PhoneDemoSeed(store, Clinic.today(Instant.now()))
+                when (mode) {
+                    "vacio" -> Unit
+                    "volumen" -> seed.fillVolume(3000, 2000)
+                    else -> seed.fill()
+                }
+            }
+            // El celular agenda (K4b): con su rol aprobado y la descarga hecha, sin nube. Lo que agenda se queda en la cola de esta base
+            if (mode != "vincular") phoneDemoExtras(store, fresh && mode.isEmpty())
+            val env = PhoneEnv(ClinicReader({ database.clinic() }, { assets }), SharedDocuments(app), labFiles = null)
+            val folios = MemoryFolioNumbers()
+            val workspace = PhoneWorkspace(
+                env,
+                PhoneWrites(writes = { WriteEngine(store, { "demo-celular" }, folios, { null }) }, local = { LocalSide(store) }, quickSync = { true }, noteLocalWrite = {}),
+                CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+            )
+            env to workspace
         }
     }
 

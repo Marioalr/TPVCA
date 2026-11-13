@@ -221,6 +221,8 @@ private fun SlotRow(workspace: TabletWorkspace, slot: AgendaSlot, rows: List<App
 }
 
 private fun openSlot(workspace: TabletWorkspace, date: LocalDate, time: String) {
+    // Mientras se guarda (hasta 3 s esperando a la nube) no se cambia de hueco: el guardado es de lo que se ve
+    if (workspace.agendaSession.busy) return
     if (workspace.moving != null) {
         workspace.moveTo(date, time)
         return
@@ -299,24 +301,26 @@ fun AppointmentFormCard(workspace: TabletWorkspace, form: AppointmentFormState, 
         Modifier.bringIntoViewRequester(bring).fillMaxWidth().clip(shape).background(colors.surfaceSubtle).border(2.dp, colors["ThemeFocus"], shape).testTag(TabletTags.SLOT_FORM).padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        // Mientras se guarda, nada se cambia: se guarda lo que se ve. «Cancelar» sí: así no se guarda
+        val busy = workspace.agendaSession.busy
         TText("Agendar a las $time", weight = FontWeight.SemiBold)
-        PatientPicker(workspace, form)
-        TField(form.reason, { form.reason = it; workspace.appointmentChanged() }, label = "Motivo", tag = TabletTags.field("Reason"))
+        PatientPicker(workspace, form, busy)
+        TField(form.reason, { if (!busy) { form.reason = it; workspace.appointmentChanged() } }, label = "Motivo", tag = TabletTags.field("Reason"), readOnly = busy)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (preset in AgendaTexts.REASON_PRESETS) TButton(preset, { form.reason = preset; workspace.appointmentChanged() })
+            for (preset in AgendaTexts.REASON_PRESETS) TButton(preset, { form.reason = preset; workspace.appointmentChanged() }, enabled = !busy)
         }
         FieldLabel("Duración (minutos)")
-        TChips(AgendaTexts.DURATIONS.map { it.toString() }, form.duration.toString(), { form.duration = it.toInt(); workspace.appointmentChanged() })
+        TChips(AgendaTexts.DURATIONS.map { it.toString() }, form.duration.toString(), { form.duration = it.toInt(); workspace.appointmentChanged() }, enabled = !busy)
         form.error?.let { TText(it, size = TType.caption, color = colors.dangerText) }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
             TButton("Cancelar", workspace::closeAppointmentForm)
-            TButton("Agendar", workspace::scheduleAppointment, kind = TButtonKind.Primary, tag = TabletTags.SLOT_SAVE)
+            TButton(if (busy) "Revisando la agenda…" else "Agendar", workspace::scheduleAppointment, kind = TButtonKind.Primary, tag = TabletTags.SLOT_SAVE, enabled = !busy)
         }
     }
 }
 
 @Composable
-private fun PatientPicker(workspace: TabletWorkspace, form: AppointmentFormState) {
+private fun PatientPicker(workspace: TabletWorkspace, form: AppointmentFormState, busy: Boolean) {
     val colors = LocalTpvcColors.current
     val selected = form.patient
     Column {
@@ -327,16 +331,16 @@ private fun PatientPicker(workspace: TabletWorkspace, form: AppointmentFormState
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TText(selected.fullName, Modifier.weight(1f))
-                TIconButton(TIcons.Close, "Cambiar de paciente", { form.patient = null; form.patientQuery = ""; workspace.appointmentChanged() })
+                TIconButton(TIcons.Close, "Cambiar de paciente", { form.patient = null; form.patientQuery = ""; workspace.appointmentChanged() }, enabled = !busy)
             }
         } else {
-            TField(form.patientQuery, { form.patientQuery = it; workspace.appointmentChanged() }, placeholder = "Escriba el nombre", tag = TabletTags.field("Patient"))
+            TField(form.patientQuery, { if (!busy) { form.patientQuery = it; workspace.appointmentChanged() } }, placeholder = "Escriba el nombre", tag = TabletTags.field("Patient"), readOnly = busy)
             val query = form.patientQuery
             // Leer y buscar, fuera del hilo principal
             val results by load(query) { if (query.isBlank()) emptyList<PatientRow>() else searchPatients(workspace.env.phone.reader.allPatients(), query).take(5) }
             for (row in (results as? Loaded.Ready)?.value.orEmpty()) key(row.syncId) {
                 Column(
-                    Modifier.fillMaxWidth().heightIn(min = TOUCH_MIN).clickable(role = Role.Button) {
+                    Modifier.fillMaxWidth().heightIn(min = TOUCH_MIN).clickable(enabled = !busy, role = Role.Button) {
                         form.patient = AgendaPatient(row.syncId, row.patient.fullName, row.patient.recordNumber, row.patient.phone)
                         form.patientQuery = ""
                         workspace.appointmentChanged()

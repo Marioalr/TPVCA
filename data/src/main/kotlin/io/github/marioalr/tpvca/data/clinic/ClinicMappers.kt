@@ -249,5 +249,6 @@ object ClinicMappers {
         university = e?.university,
         phone = e?.phone,
         address = e?.address,
+        specialty = e?.specialty,
     )
 }

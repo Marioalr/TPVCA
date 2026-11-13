@@ -635,6 +635,9 @@ class WriteEngine(
         }
     }
 
+    /** Ese ticket ya está registrado aquí: la cuenta guardada que lo iba a cobrar sobra. */
+    fun saleExists(saleSyncId: String): Boolean = soldBefore(saleSyncId.lowercase(Locale.ROOT)) != null
+
     private fun writeSale(lines: List<SaleLine>, folio: String, patientName: String?, paymentMethod: String?, responsible: String, saleId: String): SaleResult {
         val client = patientName?.trim()?.takeIf { it.isNotEmpty() } ?: "Público General"
         val method = paymentMethod?.trim()?.takeIf { it.isNotEmpty() } ?: "Efectivo"

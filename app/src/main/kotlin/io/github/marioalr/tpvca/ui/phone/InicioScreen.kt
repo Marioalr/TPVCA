@@ -48,6 +48,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick
@@ -205,6 +206,8 @@ fun InicioScreen(env: PhoneEnv, workspace: PhoneWorkspace, status: PhoneStatus, 
             Modifier
                 .fillMaxSize()
                 .edgeSwipeArea(swipe)
+                // Con el menú + abierto, lo de atrás no se toca (el velo) ni lo lee TalkBack: el menú y el botón que lo cierra
+                .then(if (menuOpen) Modifier.clearAndSetSemantics {} else Modifier)
                 .semantics {
                     customActions = listOf(CustomAccessibilityAction(PhoneText.OPEN_NEGOCIO) {
                         onOpenNegocio()
@@ -373,7 +376,8 @@ private fun QuickMenu(nav: PhoneNav, onSchedule: () -> Unit, onClose: () -> Unit
         Modifier
             .fillMaxSize()
             .background(PhoneColors.Scrim)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose),
+            // Tocar el velo cierra el menú. No es un botón para TalkBack (leía «Acciones rápidas» y cerraba el menú): se cierra con el botón de abajo o con Atrás
+            .scrimDismiss(onClose),
     ) {
         Column(
             Modifier
@@ -384,7 +388,7 @@ private fun QuickMenu(nav: PhoneNav, onSchedule: () -> Unit, onClose: () -> Unit
                 .shadow(12.dp, RoundedCornerShape(16.dp))
                 .clip(RoundedCornerShape(16.dp))
                 .background(PhoneColors.Surface)
-                .semantics { contentDescription = PhoneText.QUICK_ACTIONS },
+                .sheetPane(PhoneText.QUICK_ACTIONS, onClose),
         ) {
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable {

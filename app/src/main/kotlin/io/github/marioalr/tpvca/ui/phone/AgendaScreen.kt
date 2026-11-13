@@ -2,7 +2,6 @@ package io.github.marioalr.tpvca.ui.phone
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -40,6 +39,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -116,8 +116,10 @@ fun AgendaScreen(env: PhoneEnv, workspace: PhoneWorkspace, dataVersion: Long, na
         actionsFor = null
     }
 
+    // Con la hoja de una cita abierta, lo de atrás no se toca (el velo) ni lo lee TalkBack
+    val sheetOpen = actionsFor != null
     Box(Modifier.fillMaxSize().testTag(PhoneTags.AGENDA)) {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().then(if (sheetOpen) Modifier.clearAndSetSemantics {} else Modifier)) {
             Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 TitleRow("Agenda") {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -153,7 +155,7 @@ fun AgendaScreen(env: PhoneEnv, workspace: PhoneWorkspace, dataVersion: Long, na
                 }
             }
         }
-        Column(Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 16.dp), horizontalAlignment = Alignment.End) {
+        Column(Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 16.dp).then(if (sheetOpen) Modifier.clearAndSetSemantics {} else Modifier), horizontalAlignment = Alignment.End) {
             Row(
                 Modifier
                     .heightIn(min = 52.dp)
@@ -238,15 +240,15 @@ private fun AppointmentActions(item: DayAppointment, profile: ClinicProfile?, wo
     val context = LocalContext.current
     BackHandler(onBack = onClose)
     Box(
-        Modifier.fillMaxSize().background(PhoneColors.Scrim)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose),
+        // Tocar el velo cierra la hoja. No es un botón para TalkBack (leía toda la hoja como un botón que la cerraba): ahí se cierra con Atrás o con «Cerrar»
+        Modifier.fillMaxSize().background(PhoneColors.Scrim).scrimDismiss(onClose),
     ) {
         Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                 .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
                 .background(PhoneColors.Surface)
-                // Lo que se toca en la hoja no pasa a lo de atrás
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                // Lo que se toca en la hoja no pasa a lo de atrás; TalkBack la anuncia como un panel que se puede cerrar
+                .sheetPane("Acciones de la cita", onClose)
                 .testTag(PhoneTags.APPOINTMENT_SHEET)
                 // Con la letra grande, en un celular chico, no cabe: se desplaza
                 .verticalScroll(rememberScrollState())

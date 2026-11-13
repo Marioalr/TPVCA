@@ -40,6 +40,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
@@ -333,7 +334,8 @@ private fun SectionTitle(text: String, modifier: Modifier = Modifier) = Heading(
 @Composable
 fun PField(value: String, onChange: (String) -> Unit, label: String, tag: String, enabled: Boolean = true) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SectionTitle(label)
+        // TalkBack lee la etiqueta con el campo (su descripción): leída aparte, «Motivo» se oía dos veces
+        PText(label, Modifier.padding(horizontal = 4.dp).clearAndSetSemantics {}, size = 13.sp, weight = FontWeight.SemiBold, color = PhoneColors.Muted)
         BasicTextField(
             value,
             onChange,

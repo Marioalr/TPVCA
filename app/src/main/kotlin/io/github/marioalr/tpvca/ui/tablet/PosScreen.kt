@@ -32,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
@@ -70,8 +71,10 @@ fun PosScreen(workspace: TabletWorkspace, chrome: TabletChrome) {
     val pos = workspace.pos
     // Al entrar y cada vez que algo cambia: el catálogo de ahora (`OnInventoryChanged`)
     LaunchedEffect(chrome.dataVersion, workspace.localVersion) { pos.refresh() }
+    // Con una hoja encima, lo de abajo no se toca (el velo) ni lo lee TalkBack; con el ticket o «Nuevo servicio» encima de una hoja, tampoco la hoja
+    val onTop = pos.receipt != null || (pos.sheet == PosSheet.Services && workspace.services.posEditor != null)
     Box(Modifier.fillMaxSize().testTag(TabletTags.POS)) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 14.dp).then(if (pos.sheet != null || onTop) Modifier.clearAndSetSemantics {} else Modifier), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             TopBar(workspace)
             PosConsultationBanner(workspace)
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
@@ -89,12 +92,14 @@ fun PosScreen(workspace: TabletWorkspace, chrome: TabletChrome) {
                 }
             }
         }
-        when (pos.sheet) {
-            PosSheet.Catalog -> CatalogSheet(pos)
-            PosSheet.Services -> PosServicesSheet(workspace)
-            PosSheet.Tickets -> TicketsSheet(pos)
-            PosSheet.CashCut -> CashCutSheet(pos)
-            null -> Unit
+        Box(if (onTop) Modifier.clearAndSetSemantics {} else Modifier) {
+            when (pos.sheet) {
+                PosSheet.Catalog -> CatalogSheet(pos)
+                PosSheet.Services -> PosServicesSheet(workspace)
+                PosSheet.Tickets -> TicketsSheet(pos)
+                PosSheet.CashCut -> CashCutSheet(pos)
+                null -> Unit
+            }
         }
         // «Nuevo servicio» va encima de la hoja de servicios: es de ella
         if (pos.sheet == PosSheet.Services) workspace.services.posEditor?.let { NewServiceSheet(workspace, it) }

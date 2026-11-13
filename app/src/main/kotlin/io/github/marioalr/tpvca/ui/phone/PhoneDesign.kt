@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +33,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
@@ -41,6 +43,8 @@ import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.dismiss
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.role
@@ -461,6 +465,22 @@ fun Modifier.disabledUntilNextVersion(label: String): Modifier =
         stateDescription = "deshabilitado"
         role = Role.Button
         disabled()
+    }
+
+/**
+ * El velo detrás de un menú o una hoja: tocarlo los cierra. Sin nodo de TalkBack: un `clickable` aquí se llevaba el texto de lo de encima y lo leía como un botón que
+ * lo cerraba. Con TalkBack se cierran con Atrás o con la acción «Cerrar» de [sheetPane].
+ */
+fun Modifier.scrimDismiss(onDismiss: () -> Unit): Modifier = pointerInput(onDismiss) { detectTapGestures { onDismiss() } }
+
+/** Una hoja o un menú encima del velo: los toques no pasan a lo de atrás, y TalkBack lo anuncia con su [title] y la acción de cerrarlo. */
+fun Modifier.sheetPane(title: String, onDismiss: () -> Unit): Modifier =
+    pointerInput(Unit) { detectTapGestures { } }.semantics {
+        paneTitle = title
+        dismiss(PhoneText.CLOSE) {
+            onDismiss()
+            true
+        }
     }
 
 @Composable

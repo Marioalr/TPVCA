@@ -26,6 +26,7 @@ object PhoneText {
     fun slotPast(time: String) = "El hueco de las $time ya pasó. Elija otro: se conservan el paciente, el motivo y la duración."
     const val QUICK_ACTIONS = "Acciones rápidas"
     const val CLOSE_QUICK_ACTIONS = "Cerrar acciones rápidas"
+    const val CLOSE = "Cerrar"
 
     const val NO_NOTICES = "Sin avisos"
     const val NO_UPCOMING = "Sin citas pendientes"

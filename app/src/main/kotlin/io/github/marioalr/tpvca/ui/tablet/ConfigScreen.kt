@@ -355,7 +355,7 @@ private fun BatchListRow(workspace: TabletWorkspace, row: BatchRow, today: java.
             TText(row.productName, weight = FontWeight.SemiBold, maxLines = 1)
             row.notes?.takeIf { it.isNotBlank() }?.let { TCaption(it, maxLines = 1) }
         }
-        Column(Modifier.width(140.dp)) {
+        Column(Modifier.width(120.dp)) {
             TCaption("Lote")
             TText(b.batchNumber, mono = true, maxLines = 1)
         }
@@ -363,7 +363,7 @@ private fun BatchListRow(workspace: TabletWorkspace, row: BatchRow, today: java.
             TCaption("Quedan")
             TText(b.quantity.toString(), mono = true, weight = FontWeight.SemiBold)
         }
-        Column(Modifier.width(190.dp)) {
+        Column(Modifier.width(250.dp)) {
             TCaption("Caduca")
             TBadge("${b.expirationDate.format(DAY)} · ${b.statusTextOn(today)}", fill, content, maxLines = 1)
         }

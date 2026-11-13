@@ -316,4 +316,34 @@ class ConfigTabletTest {
         compose.runOnIdle { workspace.back() }
         assertNull(workspace.pos.sheet)
     }
+
+    /** Revisión de #12: un «Nuevo servicio» que falla después de salir del punto de venta avisa abajo y se suelta: nunca vuelve a salir encima de otra pantalla ni se queda con el error escondido. */
+    @Test
+    fun unNuevoServicioQueFallaDespuesDeSalirAvisaYNoVuelve() {
+        show()
+        compose.onNodeWithTag(TabletTags.HUB_POS).performClick()
+        compose.runOnIdle { workspace.pos.openSheet(PosSheet.Services) }
+        waitFor { workspace.pos.catalog != null }
+        compose.onNodeWithTag(TabletTags.POS_SERVICE_NEW).performClick()
+        waitFor { workspace.services.posEditor?.code == "SERV-023" }
+        field("servicio-nombre", "Certificado de ejemplo")
+        quickGate = CompletableDeferred()
+        compose.onNodeWithTag(TabletTags.SERVICE_SAVE).performClick()
+        waitFor { quickSyncs == 1 }
+        // Mientras espera la nube, otro equipo ya usó SERV-023 y el médico se va al inicio
+        compose.runOnIdle {
+            LocalWriter(store, { "pc" }).create("ClinicalServices", io.github.marioalr.tpvca.sync.rules.SyncIds.random(), mapOf("Code" to "SERV-023", "Name" to "Otro", "Category" to "Consulta", "Price" to "1", "IsActive" to true))
+            workspace.goHub()
+        }
+        quickGate!!.complete(Unit)
+        waitFor { workspace.toast?.text?.contains("El código SERV-023 ya lo usa otro servicio.") == true }
+        assertTrue(workspace.toast!!.warning)
+        assertNull(workspace.services.posEditor)
+        assertTrue(services().none { it["Name"] == "Certificado de ejemplo" })
+        // Al volver a los servicios del punto de venta, la hoja no reaparece
+        compose.onNodeWithTag(TabletTags.HUB_POS).performClick()
+        compose.runOnIdle { workspace.pos.openSheet(PosSheet.Services) }
+        compose.waitForIdle()
+        assertTrue(compose.onAllNodesWithTag(TabletTags.POS_NEW_SERVICE_SHEET).fetchSemanticsNodes().isEmpty())
+    }
 }

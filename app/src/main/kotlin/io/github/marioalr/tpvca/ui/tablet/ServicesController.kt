@@ -295,12 +295,25 @@ class ServicesController internal constructor(private val workspace: TabletWorks
                 }
             } catch (ex: Exception) {
                 val text = "No se pudo guardar${if (e.fromPos) " el servicio" else ""}: ${workspace.problem(ex)}"
-                val open = if (e.fromPos) posEditor === e else editor === e
-                if (open) e.error = text else workspace.show("«${values.name}»: $text", warning = true)
+                if (isVisible(e)) {
+                    e.error = text
+                } else {
+                    // Ya no se ve (se salió mientras guardaba): el error va al aviso y el formulario se suelta, para que nunca vuelva a salir encima de otra pantalla
+                    workspace.show("«${values.name}»: $text", warning = true)
+                    if (posEditor === e) posEditor = null
+                    if (editor === e) editor = null
+                }
             } finally {
                 e.saving = false
             }
         }
+    }
+
+    /** El formulario está en pantalla: la hoja «Nuevo servicio» sobre la de servicios del punto de venta, o el panel de Configuración → Servicios. */
+    private fun isVisible(e: ServiceEditor): Boolean = if (e.fromPos) {
+        posEditor === e && workspace.pos.sheet == PosSheet.Services && workspace.page == TabletPage.Pos
+    } else {
+        editor === e && workspace.page == TabletPage.Config && workspace.inventory.section == ConfigSection.Services
     }
 
     // ------------------------------------------------------------------ activar, desactivar y eliminar

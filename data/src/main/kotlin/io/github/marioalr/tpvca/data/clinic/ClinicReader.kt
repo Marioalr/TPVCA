@@ -315,9 +315,9 @@ class ClinicReader(private val dao: () -> ClinicDao, private val assetsDir: () -
             // Operaciones, no renglones del libro (paso 8.19), como [movementsToday]
             movementsToday = movements.count { it.delta == 0L } + movements.filter { it.delta != 0L }.map { listOf(it.productSyncId, it.movementType, it.date, it.saleItemSyncId, it.reason, it.responsible) }.distinct().size,
             consumedInConsultationToday = movements.filter { MovementRules.typeOf(it.movementType.toInt()) == MovementType.SalidaConsulta }.sumOf { it.quantity }.toInt(),
-            // Como la PC: todas las ventas del día, también las canceladas (`todaySales` no las quita)
-            salesTodayCount = c.salesToday.size,
-            salesTodayTotal = c.salesToday.fold(BigDecimal.ZERO) { sum, sale -> sum.add(ClinicMappers.decimal(sale.total)) },
+            // Sin las canceladas, como el corte y «Negocio» (la PC lo corrige en v1.57.0: a `todaySales` le faltaba `!s.IsCancelled`)
+            salesTodayCount = c.salesToday.count { it.isCancelled == 0L },
+            salesTodayTotal = c.salesToday.filter { it.isCancelled == 0L }.fold(BigDecimal.ZERO) { sum, sale -> sum.add(ClinicMappers.decimal(sale.total)) },
             inventoryValue = value,
             stockedWithoutCost = withoutCost,
         )

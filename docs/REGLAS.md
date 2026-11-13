@@ -174,7 +174,7 @@ Sin vectores nuevos: el panel y «Negocio» usan los de K1 (`business-summary`, 
 
 Cómo difiere de la PC:
 
-- **«Ventas de hoy» del panel suma también los tickets cancelados**, como la PC (`GetDashboardMetricsAsync` no filtra `IsCancelled`; el corte y «Negocio» sí los quitan). Se deja igual para que los dos equipos digan lo mismo; está reportado como posible error de la PC.
+- «Ventas de hoy» del panel **no cuenta los tickets cancelados**, como el corte y «Negocio». La PC los contaba (a `GetDashboardMetricsAsync` le faltaba `!s.IsCancelled`) y lo corrige en v1.57.0.
 - «Nuevo servicio» del punto de venta revisa el código como Configuración (la PC no lo revisa en esa hoja) y sugiere el siguiente con el mayor SERV-00N más uno (la PC usa el número de servicios más uno, que con huecos repite uno que ya existe). Su lista de categorías no trae «Todos» (la de la PC sí, y se podría guardar un servicio con categoría «Todos»).
 - «Desactivar» solo cambia `IsActive` (la PC vuelve a guardar el servicio entero con lo que tenía la lista: lo mismo, salvo lo que haya bajado mientras tanto).
 - Un número que no se lee en el precio o los minutos lo dice al guardar; en la PC el cuadro no lo acepta.
